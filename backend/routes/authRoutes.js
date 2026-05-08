@@ -1,0 +1,14 @@
+// File: backend/routes/authRoutes.js
+const express = require('express');
+const router = express.Router();
+
+// Destructure the specific functions from the controller
+const { registerOwner, loginOwner } = require('../controllers/authController');
+
+// Public Route: Register a new owner
+router.post('/register', registerOwner);
+
+// Public Route: Login an existing owner
+router.post('/login', loginOwner);
+
+module.exports = router;
