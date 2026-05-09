@@ -10,7 +10,7 @@ A comprehensive full-stack mobile application designed to streamline property ma
 
 ## 📖 About
 
-TenantPro is a mobile-first property management solution built to simplify the complex relationship between landlords and tenants. The app provides an intuitive platform for managing rental properties, tracking transactions, handling tenant records, and maintaining clear communication between all parties involved.
+TenantPro is a mobile-first property management solution built to simplify the complex relationship between landlords and tenants. The app provides an intuitive platform for managing rental properties, tracking transactions, handling tenant records, and maintaini ng clear communication between all parties involved.
 
 ## ✨ Features
 
