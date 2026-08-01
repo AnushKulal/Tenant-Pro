@@ -26,6 +26,7 @@ const tenantRoutes = require('./routes/tenantRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
 const { initCronJobs, checkAndSendRentReminders } = require('./services/cronService');
 const initDb = require('./config/initDb');
+const seedDemo = require('./config/seedDemo');
 
 // --- Mount Routes ---
 app.use('/api/auth', authRoutes);
@@ -58,6 +59,13 @@ const PORT = process.env.PORT || 5000;
         await initDb();
     } catch (err) {
         console.error('❌ Database schema init failed:', err.message);
+    }
+
+    // 1b. Seed the demo account with sample data (only if it doesn't exist yet).
+    try {
+        await seedDemo();
+    } catch (err) {
+        console.error('❌ Demo seed failed:', err.message);
     }
 
     // 2. Start the reminder automation engine.
