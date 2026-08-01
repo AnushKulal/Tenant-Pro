@@ -5,7 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
-import client, { SERVER_URL } from '../api/client';
+import client, { SERVER_URL, mediaUrl } from '../api/client';
 import TenantProfileTab from './TenantProfileTab';
 
 // IMPORT OUR NEW COMPONENT
@@ -33,7 +33,7 @@ const FormInput = ({ label, placeholder, value, onChangeText, keyboardType = 'de
 const RoomImage = ({ imageUrl, status }) => {
     const [hasError, setHasError] = useState(false);
     const defaultImage = `${SERVER_URL}/uploads/rooms/default-room.png`;
-    const imageSource = (imageUrl && !hasError) ? { uri: `${SERVER_URL}${imageUrl}` } : { uri: defaultImage };
+    const imageSource = (imageUrl && !hasError) ? { uri: mediaUrl(imageUrl) } : { uri: defaultImage };
 
     const getStatusColor = () => {
         if (status === 'Occupied') return '#3B82F6';
@@ -137,7 +137,7 @@ export default function RoomsTab({ isDark, selectedProperty }) {
         setBaseRent(room.base_rent?.toString() || '');
         setCapacity(room.capacity ? room.capacity.toString() : '1');
         setRoomType(room.room_type || '1 BHK');
-        setImageUri(room.image_url ? `${SERVER_URL}${room.image_url}` : null);
+        setImageUri(room.image_url ? mediaUrl(room.image_url) : null);
         setUnitRentSplit(room.rent_split_type || 'Equal');
 
         setTimeout(() => {

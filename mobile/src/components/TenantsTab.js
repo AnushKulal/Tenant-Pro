@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
-import client, { SERVER_URL } from '../api/client';
+import client, { SERVER_URL, mediaUrl } from '../api/client';
 import EditTenantModal from './EditTenantModal';
 import ChangeRoomModal from './ChangeRoomModal';
 import UpdateFinancialsModal from './UpdateFinancialsModal';
@@ -378,7 +378,7 @@ export default function TenantsTab({ isDark, onViewProfile, activePropertyId }) 
                                 <View style={styles.avatarWrapper}>
                                     <View style={styles.tenantAvatar}>
                                         {tenant.image_url ? (
-                                            <Image source={{ uri: `${SERVER_URL}${tenant.image_url}` }} style={styles.tenantImage} />
+                                            <Image source={{ uri: mediaUrl(tenant.image_url) }} style={styles.tenantImage} />
                                         ) : (
                                             <Text style={styles.tenantInitials}>{tenant.name.substring(0, 2).toUpperCase()}</Text>
                                         )}

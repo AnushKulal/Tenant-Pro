@@ -1,13 +1,14 @@
 // File: backend/src/controllers/ownerController.js
-const db = require('../config/db'); 
+const db = require('../config/db');
 const bcrypt = require('bcryptjs');
+const { getFileUrl } = require('../middleware/uploadMiddleware');
 
 const updateProfile = async (req, res) => {
     const ownerId = req.user.id; // Extracted from token via authMiddleware
     const { name, phone, currentPassword, newPassword } = req.body;
     
     // If an image was uploaded, create the public URL path
-    const profilePicPath = req.file ? `/uploads/profiles/${req.file.filename}` : null;
+    const profilePicPath = getFileUrl(req.file);
 
     try {
         // 1. Fetch current owner from DB (Updated to db.execute for consistency)

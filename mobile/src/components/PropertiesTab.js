@@ -6,7 +6,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import { useNavigation } from '@react-navigation/native';
-import client, { SERVER_URL } from '../api/client';
+import client, { SERVER_URL, mediaUrl } from '../api/client';
 
 const { width, height } = Dimensions.get('window');
 
@@ -14,7 +14,7 @@ const { width, height } = Dimensions.get('window');
 const PropertyImage = ({ imageUrl }) => {
     const [hasError, setHasError] = useState(false);
     const defaultImage = `${SERVER_URL}/uploads/property/default-property.jpg`;
-    const imageSource = (imageUrl && !hasError) ? `${SERVER_URL}${imageUrl}` : defaultImage;
+    const imageSource = (imageUrl && !hasError) ? mediaUrl(imageUrl) : defaultImage;
 
     return (
         <Image
@@ -174,7 +174,7 @@ export default function PropertiesTab({ isDark }) {
         setLocality(prop.locality);
         setCity(prop.city);
         setPincode(prop.pincode);
-        setImageUri(prop.image_url ? `${SERVER_URL}${prop.image_url}` : null);
+        setImageUri(prop.image_url ? mediaUrl(prop.image_url) : null);
         setIsNewImage(false); 
         setAddModalVisible(true);
     };

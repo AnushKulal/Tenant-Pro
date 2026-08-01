@@ -1,5 +1,6 @@
 // File: backend/src/controllers/propertyController.js
 const db = require('../config/db');
+const { getFileUrl } = require('../middleware/uploadMiddleware');
 
 // Add a new property
 const addProperty = async (req, res) => {
@@ -8,7 +9,7 @@ const addProperty = async (req, res) => {
         const { name, property_type, address, locality, city, pincode } = req.body;
         
         // If an image was uploaded, store its path. Otherwise, leave it null.
-        const image_url = req.file ? `/uploads/property/${req.file.filename}` : null;
+        const image_url = getFileUrl(req.file);
 
         const query = `
             INSERT INTO properties 
@@ -80,7 +81,7 @@ const updateProperty = async (req, res) => {
 
         // 3. Handle Image Upload (if a new one was selected)
         if (req.file) {
-            const imageUrl = `/uploads/property/${req.file.filename}`;
+            const imageUrl = getFileUrl(req.file);
             query += `, image_url = ?`;
             values.push(imageUrl);
         }

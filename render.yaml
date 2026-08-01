@@ -33,6 +33,9 @@ services:
         value: "true"
       - key: JWT_SECRET
         generateValue: true   # Render generates a strong random secret
+      # Cloudinary keeps uploaded images alive across redeploys (recommended).
+      - key: CLOUDINARY_URL
+        sync: false
       - key: EMAIL_USER
         sync: false
       - key: EMAIL_PASS

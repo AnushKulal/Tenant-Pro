@@ -1,4 +1,5 @@
 const db = require('../config/db');
+const { getFileUrl } = require('../middleware/uploadMiddleware');
 
 // --- 1. ADD TENANT ---
 const addTenant = async (req, res) => {
@@ -28,7 +29,7 @@ const addTenant = async (req, res) => {
             }
         }
 
-        const image_url = req.file ? `/uploads/profiles/${req.file.filename}` : null;
+        const image_url = getFileUrl(req.file);
         const finalUnitId = unit_id || null;
         const finalStatus = 'Active';
 
@@ -251,7 +252,7 @@ const updateTenant = async (req, res) => {
 
         // 3. Handle Image Upload (if a new one was selected)
         if (req.file) {
-            const imageUrl = `/uploads/profiles/${req.file.filename}`;
+            const imageUrl = getFileUrl(req.file);
             query += `, image_url = ?`;
             values.push(imageUrl);
         }

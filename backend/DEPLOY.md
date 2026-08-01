@@ -64,21 +64,36 @@ installed app now talks to your live backend from any network.
 
 ---
 
-## ⚠️ Known limitation: uploaded images don't persist
+## 🖼️ Image uploads: use Cloudinary in production
 
-The app saves uploaded photos (profiles, property/room images, QR codes) to a
-local `uploads/` folder. On Render's free tier the filesystem is **ephemeral** —
-those files are wiped on every redeploy or restart. Text data in MySQL is safe;
-only uploaded images are affected.
+The app saves uploaded photos (profiles, property/room images, QR codes). On
+Render's free tier the local filesystem is **ephemeral** — anything saved to
+disk is wiped on every redeploy. To keep images permanently, the backend has
+built-in **Cloudinary** support that turns on automatically when configured.
 
-**Fix (recommended follow-up):** move uploads to a storage service like
-**Cloudinary** (has a free tier). This is a code change to `uploadMiddleware.js`
-and the controllers — ask and it can be added as a separate enhancement.
+1. Create a free account at [cloudinary.com](https://cloudinary.com).
+2. On the dashboard, copy the **`CLOUDINARY_URL`** (looks like
+   `cloudinary://<api_key>:<api_secret>@<cloud_name>`).
+3. Add it as an env var on your host (Render → service → Environment):
+   ```
+   CLOUDINARY_URL=cloudinary://123456789:abcdefg@your-cloud-name
+   ```
+4. Redeploy. On boot you'll see `🖼️  Uploads: Cloudinary mode` in the logs, and
+   new uploads will return permanent `https://res.cloudinary.com/...` URLs.
 
-## 🔒 Before going fully public
-- Remove or guard the `/api/test-cron` route in `server.js` (it's flagged
-  "Remove before production" in the code).
-- Restrict CORS to your app's origin instead of the current open `cors()`.
+Leave `CLOUDINARY_URL` blank locally to keep using the local `uploads/` folder —
+no code changes needed to switch between the two. (The mobile app already
+handles both absolute Cloudinary URLs and local `/uploads/...` paths.)
+
+> Images uploaded **before** enabling Cloudinary still point at the old local
+> paths and won't survive a redeploy — only uploads made after switching are
+> permanent.
+
+## 🔒 Production hardening (already wired up)
+- The `/api/test-cron` route is now **automatically disabled** when
+  `NODE_ENV=production` (which `render.yaml` sets).
+- CORS can be restricted by setting `CORS_ORIGIN` to a comma-separated
+  allowlist; left blank it stays open (fine for the mobile app).
 
 ---
 

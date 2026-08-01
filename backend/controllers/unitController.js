@@ -1,10 +1,11 @@
 const db = require('../config/db');
+const { getFileUrl } = require('../middleware/uploadMiddleware');
 
 const addUnit = async (req, res) => {
     try {
         // 1. ADDED 'capacity' to the destructuring here
         const { property_id, unit_number, room_type, base_rent, capacity, status, rent_split_type } = req.body;
-        const image_url = req.file ? `/uploads/rooms/${req.file.filename}` : null;
+        const image_url = getFileUrl(req.file);
 
         // Security check: Ensure the logged-in owner actually owns this property
         const [propCheck] = await db.query('SELECT id FROM properties WHERE id = ? AND owner_id = ?', [property_id, req.user.id]);
@@ -69,7 +70,7 @@ const updateUnit = async (req, res) => {
         // Handle Image: Keep existing if no new image is uploaded
         let image_url = check[0].image_url;
         if (req.file) {
-            image_url = `/uploads/rooms/${req.file.filename}`;
+            image_url = getFileUrl(req.file);
         }
 
         // 2. ADDED rent_split_type to the SQL UPDATE query

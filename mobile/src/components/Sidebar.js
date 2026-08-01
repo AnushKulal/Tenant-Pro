@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
-import { SERVER_URL } from '../api/client';
+import { SERVER_URL, mediaUrl } from '../api/client';
 
 const { width } = Dimensions.get('window');
 
@@ -78,7 +78,7 @@ export default function Sidebar({ isOpen, onClose, navigation, currentRoute = 'D
     const renderAvatar = () => {
         if (profilePic) {
             const imageUrl = profilePic.startsWith('/uploads')
-                ? `${SERVER_URL}${profilePic}`
+                ? mediaUrl(profilePic)
                 : profilePic;
             return <Image source={{ uri: imageUrl }} style={styles.avatarImage} />;
         }

@@ -9,7 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
-import client, { SERVER_URL } from '../api/client';
+import client, { SERVER_URL, mediaUrl } from '../api/client';
 
 const FormInput = ({ label, placeholder, value, onChangeText, keyboardType = 'default', isDark, error }) => (
     <View style={styles.inputContainer}>
@@ -128,7 +128,7 @@ export default function EditTenantModal({ isVisible, onClose, tenant, onSuccess,
     // Determine what image to show (newly picked vs existing vs placeholder)
     let displayImage = null;
     if (imageUri) displayImage = { uri: imageUri };
-    else if (tenant.image_url) displayImage = { uri: `${SERVER_URL}${tenant.image_url}` };
+    else if (tenant.image_url) displayImage = { uri: mediaUrl(tenant.image_url) };
 
     return (
         <Modal animationType="slide" transparent={true} visible={isVisible} onRequestClose={onClose}>

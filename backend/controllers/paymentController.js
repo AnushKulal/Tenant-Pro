@@ -1,4 +1,5 @@
 const db = require('../config/db');
+const { getFileUrl } = require('../middleware/uploadMiddleware');
 
 // --- FETCH PAYMENT SETTINGS ---
 const getPaymentSettings = async (req, res) => {
@@ -50,8 +51,8 @@ const savePaymentSettings = async (req, res) => {
         // --- 2. HANDLE QR CODE IMAGE ---
         let qr_code_url = null;
         if (req.file) {
-            // Reusing your existing upload structure
-            qr_code_url = `/uploads/payments/${req.file.filename}`; 
+            // Works for both local disk and Cloudinary storage
+            qr_code_url = getFileUrl(req.file);
         }
 
         // --- 3. UPSERT LOGIC (Update if exists, Insert if new) ---

@@ -6,7 +6,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import client, { SERVER_URL } from '../api/client';
+import client, { SERVER_URL, mediaUrl } from '../api/client';
 import EditTenantModal from './EditTenantModal';
 import DateTimePicker from '@react-native-community/datetimepicker';
 
@@ -226,7 +226,7 @@ export default function TenantProfileTab({ isDark, tenant, goBack }) {
                         ]} />
 
                         {tenant.image_url ? (
-                            <Image source={{ uri: `${SERVER_URL}${tenant.image_url}` }} style={styles.avatar} />
+                            <Image source={{ uri: mediaUrl(tenant.image_url) }} style={styles.avatar} />
                         ) : (
                             <View style={styles.placeholderAvatar}>
                                 <Text style={styles.avatarInitials}>{tenant.name.substring(0, 2).toUpperCase()}</Text>

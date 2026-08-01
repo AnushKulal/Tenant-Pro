@@ -3,13 +3,13 @@ import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Animated, Image, Modal, ScrollView, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import client, { SERVER_URL } from '../api/client'; 
+import client, { SERVER_URL, mediaUrl } from '../api/client'; 
 
 // Reusable Smart Image for the Bottom Sheet List
 const PropertyListImage = ({ imageUrl }) => {
     const [hasError, setHasError] = useState(false);
     const defaultImage = `${SERVER_URL}/uploads/property/default-property.jpg`;
-    const imageSource = (imageUrl && !hasError) ? `${SERVER_URL}${imageUrl}` : defaultImage;
+    const imageSource = (imageUrl && !hasError) ? mediaUrl(imageUrl) : defaultImage;
 
     return (
         <Image 
@@ -44,7 +44,7 @@ export default function Header({ userName, profilePic, isDark, onProfilePress, f
 
     const renderAvatar = () => {
         if (profilePic) {
-            const imageUrl = profilePic.startsWith('/uploads') ? `${SERVER_URL}${profilePic}` : profilePic;
+            const imageUrl = profilePic.startsWith('/uploads') ? mediaUrl(profilePic) : profilePic;
             return <Image source={{ uri: imageUrl }} style={styles.avatarImage} />;
         }
         return <Text style={styles.avatarText}>{getInitials(userName)}</Text>;

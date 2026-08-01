@@ -5,7 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
-import client, { SERVER_URL } from '../api/client';
+import client, { SERVER_URL, mediaUrl } from '../api/client';
 
 // UPGRADED: FormInput now supports 'error' props for inline validation
 const FormInput = ({ label, placeholder, value, onChangeText, keyboardType = 'default', isDark, error }) => (
@@ -149,7 +149,7 @@ export default function PaymentSettingsTab({ isDark }) {
 
     let displayQr = null;
     if (qrImageUri) displayQr = { uri: qrImageUri };
-    else if (existingQrUrl) displayQr = { uri: `${SERVER_URL}${existingQrUrl}` };
+    else if (existingQrUrl) displayQr = { uri: mediaUrl(existingQrUrl) };
 
     if (isLoading) {
         return (

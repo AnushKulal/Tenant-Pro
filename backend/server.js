@@ -7,8 +7,11 @@ const db = require('./config/db');
 const app = express();
 
 // --- Middleware ---
-app.use(cors());
-app.use(express.json()); 
+// CORS: open by default (needed for the mobile app, which sends no browser origin).
+// Set CORS_ORIGIN to a comma-separated allowlist to restrict browser access.
+const corsOrigin = process.env.CORS_ORIGIN;
+app.use(cors(corsOrigin ? { origin: corsOrigin.split(',').map((s) => s.trim()) } : {}));
+app.use(express.json());
 
 // --- Serve Static Files (Images & Documents) ---
 // This exposes your 'uploads' folder to the web. 
@@ -36,12 +39,14 @@ app.get('/', (req, res) => {
     res.send('TenantPro Backend is running!');
 });
 
-// --- 🚨 SECRET TEST ROUTE (Remove before production!) ---
-app.get('/api/test-cron', async (req, res) => {
-    console.log("🛠️ Manual Cron Triggered via /api/test-cron");
-    await checkAndSendRentReminders();
-    res.send("Cron job executed! Check your backend terminal.");
-});
+// --- 🚨 TEST ROUTE (development only — disabled when NODE_ENV=production) ---
+if (process.env.NODE_ENV !== 'production') {
+    app.get('/api/test-cron', async (req, res) => {
+        console.log("🛠️ Manual Cron Triggered via /api/test-cron");
+        await checkAndSendRentReminders();
+        res.send("Cron job executed! Check your backend terminal.");
+    });
+}
 
 // --- Start Automation Engine ---
 initCronJobs();

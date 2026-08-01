@@ -7,7 +7,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker'; 
 
 // IMPORT YOUR CENTRALIZED CLIENT AND SERVER URL!
-import client, { SERVER_URL } from '../api/client';
+import client, { SERVER_URL, mediaUrl } from '../api/client';
 
 export default function ProfileTab({ isDark, onProfileUpdate }) {
     // Personal Info State
@@ -142,7 +142,7 @@ export default function ProfileTab({ isDark, onProfileUpdate }) {
         
         // If it's a relative path from our database, prepend the SERVER_URL from client.js
         if (profilePic.startsWith('/uploads')) {
-            return <Image source={{ uri: `${SERVER_URL}${profilePic}` }} style={styles.avatarImage} />;
+            return <Image source={{ uri: mediaUrl(profilePic) }} style={styles.avatarImage} />;
         }
         
         // Otherwise, it's a local file picked from the gallery

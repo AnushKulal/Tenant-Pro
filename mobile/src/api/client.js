@@ -27,6 +27,15 @@ export const SERVER_URL =
 // Kept for backwards compatibility (some screens import IP_ADDRESS).
 export const IP_ADDRESS = FALLBACK_IP;
 
+// Resolve an image/file URL coming from the backend.
+//   • Absolute URLs (Cloudinary: "https://...") are returned as-is.
+//   • Relative paths (local disk: "/uploads/...") are prefixed with SERVER_URL.
+// Use this everywhere instead of `${SERVER_URL}${path}` so both storage modes work.
+export const mediaUrl = (p) => {
+    if (!p) return null;
+    return /^https?:\/\//i.test(p) ? p : `${SERVER_URL}${p}`;
+};
+
 const client = axios.create({
     baseURL: `${SERVER_URL}/api`,
     headers: {

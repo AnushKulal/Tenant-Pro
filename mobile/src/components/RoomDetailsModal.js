@@ -7,7 +7,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import { useNavigation } from '@react-navigation/native';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import client, { SERVER_URL } from '../api/client';
+import client, { SERVER_URL, mediaUrl } from '../api/client';
 
 import EditTenantModal from './EditTenantModal';
 import ChangeRoomModal from './ChangeRoomModal';
@@ -362,7 +362,7 @@ export default function RoomDetailsModal({ isVisible, onClose, room, isDark, onR
 
                 {/* Parallax Image Header */}
                 <View style={styles.detailsHero}>
-                    <Image source={{ uri: room?.image_url ? `${SERVER_URL}${room.image_url}` : `${SERVER_URL}/uploads/rooms/default-room.png` }} style={styles.detailsHeroImage} />
+                    <Image source={{ uri: room?.image_url ? mediaUrl(room.image_url) : `${SERVER_URL}/uploads/rooms/default-room.png` }} style={styles.detailsHeroImage} />
                     <LinearGradient colors={['rgba(0,0,0,0.6)', 'transparent', 'rgba(0,0,0,0.8)']} style={styles.detailsHeroGradient} />
 
                     <TouchableOpacity style={styles.detailsBackBtn} onPress={onClose}>
@@ -593,7 +593,7 @@ export default function RoomDetailsModal({ isVisible, onClose, room, isDark, onR
                                     >
                                         <View style={styles.tenantAvatarLarge}>
                                             {tenant.image_url ? (
-                                                <Image source={{ uri: `${SERVER_URL}${tenant.image_url}` }} style={styles.tenantImage} />
+                                                <Image source={{ uri: mediaUrl(tenant.image_url) }} style={styles.tenantImage} />
                                             ) : (
                                                 <Text style={styles.tenantInitialsLarge}>{tenant.name.substring(0, 2).toUpperCase()}</Text>
                                             )}
@@ -1114,7 +1114,7 @@ export default function RoomDetailsModal({ isVisible, onClose, room, isDark, onR
                                                         <View style={styles.settingInfo}>
                                                             <View style={[styles.tenantAvatarLarge, { width: 48, height: 48, borderRadius: 24, marginRight: 14 }]}>
                                                                 {tenant.image_url ? (
-                                                                    <Image source={{ uri: `${SERVER_URL}${tenant.image_url}` }} style={styles.tenantImage} />
+                                                                    <Image source={{ uri: mediaUrl(tenant.image_url) }} style={styles.tenantImage} />
                                                                 ) : (
                                                                     <Text style={[styles.tenantInitialsLarge, { fontSize: 16 }]}>{tenant.name.substring(0, 2).toUpperCase()}</Text>
                                                                 )}
