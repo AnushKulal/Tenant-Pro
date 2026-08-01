@@ -4,12 +4,18 @@ require('dotenv').config();
 // Create a connection pool (better for performance than a single connection)
 const pool = mysql.createPool({
     host: process.env.DB_HOST,
+    port: process.env.DB_PORT || 3306,       // cloud MySQL often uses a custom port
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD,
     database: process.env.DB_NAME,
     waitForConnections: true,
     connectionLimit: 10,
-    queueLimit: 0
+    queueLimit: 0,
+    // Cloud MySQL providers (Aiven, PlanetScale, Railway, etc.) require SSL.
+    // Set DB_SSL=true in production to enable it. Left off for local dev.
+    ...(process.env.DB_SSL === 'true'
+        ? { ssl: { rejectUnauthorized: true } }
+        : {})
 });
 
 // Test the connection

@@ -1,0 +1,47 @@
+# Render Blueprint for the TenantPro backend.
+# In Render: New + -> "Blueprint" -> connect this repo. Render reads this file,
+# creates the web service, then prompts you to fill in the env vars marked below.
+#
+# NOTE: Render does not offer managed MySQL, so the database lives on a separate
+# provider (Aiven / Railway / PlanetScale). Put its credentials in the DB_* vars.
+services:
+  - type: web
+    name: tenantpro-backend
+    runtime: node
+    rootDir: backend
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.js
+    healthCheckPath: /
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Render sets PORT automatically — do not hard-code it.
+      - key: BASE_URL
+        sync: false   # e.g. https://tenantpro-backend.onrender.com
+      - key: DB_HOST
+        sync: false
+      - key: DB_PORT
+        sync: false
+      - key: DB_USER
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      - key: DB_NAME
+        sync: false
+      - key: DB_SSL
+        value: "true"
+      - key: JWT_SECRET
+        generateValue: true   # Render generates a strong random secret
+      - key: EMAIL_USER
+        sync: false
+      - key: EMAIL_PASS
+        sync: false
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_PHONE_NUMBER
+        sync: false
+      - key: TWILIO_WHATSAPP_NUMBER
+        sync: false
