@@ -25,6 +25,7 @@ const unitRoutes = require('./routes/unitRoutes');
 const tenantRoutes = require('./routes/tenantRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
 const { initCronJobs, checkAndSendRentReminders } = require('./services/cronService');
+const initDb = require('./config/initDb');
 
 // --- Mount Routes ---
 app.use('/api/auth', authRoutes);
@@ -48,11 +49,22 @@ if (process.env.NODE_ENV !== 'production') {
     });
 }
 
-// --- Start Automation Engine ---
-initCronJobs();
-
 // --- Boot Server ---
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-    console.log(`✅ Server is running on port ${PORT}`);
-});
+
+(async () => {
+    // 1. Create database tables automatically on first run (safe to run every boot).
+    try {
+        await initDb();
+    } catch (err) {
+        console.error('❌ Database schema init failed:', err.message);
+    }
+
+    // 2. Start the reminder automation engine.
+    initCronJobs();
+
+    // 3. Start listening.
+    app.listen(PORT, () => {
+        console.log(`✅ Server is running on port ${PORT}`);
+    });
+})();

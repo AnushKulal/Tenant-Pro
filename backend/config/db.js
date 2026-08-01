@@ -1,5 +1,6 @@
 const mysql = require('mysql2');
 require('dotenv').config();
+const { sslOption } = require('./dbOptions');
 
 // Create a connection pool (better for performance than a single connection)
 const pool = mysql.createPool({
@@ -11,11 +12,7 @@ const pool = mysql.createPool({
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0,
-    // Cloud MySQL providers (Aiven, PlanetScale, Railway, etc.) require SSL.
-    // Set DB_SSL=true in production to enable it. Left off for local dev.
-    ...(process.env.DB_SSL === 'true'
-        ? { ssl: { rejectUnauthorized: true } }
-        : {})
+    ...(sslOption() ? { ssl: sslOption() } : {})
 });
 
 // Test the connection
