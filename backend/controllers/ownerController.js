@@ -79,64 +79,74 @@ const getDashboardStats = async (req, res) => {
             queryParams.push(property_id);
         }
 
-        // 2. Query 1: Active Tenants & Pending Rent
-        const [tenantStats] = await db.query(`
-            SELECT 
-                COUNT(t.id) as total_tenants,
-                SUM(CASE WHEN t.next_rent_due <= CURDATE() THEN t.rent_share ELSE 0 END) as total_pending
-            FROM tenants t
-            LEFT JOIN units u ON t.unit_id = u.id
-            LEFT JOIN properties p ON u.property_id = p.id
-            WHERE t.owner_id = ? AND t.status = 'Active' ${propertyFilter}
-        `, queryParams);
+        // Run all 5 independent queries in PARALLEL instead of one-by-one.
+        // This is much faster, especially when the DB is in a different region.
+        const [
+            [tenantStats],
+            [unitStats],
+            [collectionStats],
+            [chartData],
+            [recentPayments]
+        ] = await Promise.all([
+            // Query 1: Active Tenants & Pending Rent
+            db.query(`
+                SELECT
+                    COUNT(t.id) as total_tenants,
+                    SUM(CASE WHEN t.next_rent_due <= CURDATE() THEN t.rent_share ELSE 0 END) as total_pending
+                FROM tenants t
+                LEFT JOIN units u ON t.unit_id = u.id
+                LEFT JOIN properties p ON u.property_id = p.id
+                WHERE t.owner_id = ? AND t.status = 'Active' ${propertyFilter}
+            `, queryParams),
 
-        // 3. Query 2: Vacant Units
-        const [unitStats] = await db.query(`
-            SELECT COUNT(u.id) as vacant_units
-            FROM units u
-            JOIN properties p ON u.property_id = p.id
-            WHERE p.owner_id = ? AND u.status = 'Vacant' ${propertyFilter}
-        `, queryParams);
+            // Query 2: Vacant Units
+            db.query(`
+                SELECT COUNT(u.id) as vacant_units
+                FROM units u
+                JOIN properties p ON u.property_id = p.id
+                WHERE p.owner_id = ? AND u.status = 'Vacant' ${propertyFilter}
+            `, queryParams),
 
-        // 4. Query 3: Rent Collected THIS Month
-        const [collectionStats] = await db.query(`
-            SELECT SUM(pay.amount_paid) as collected_this_month
-            FROM payments pay
-            JOIN tenants t ON pay.tenant_id = t.id
-            LEFT JOIN units u ON t.unit_id = u.id
-            LEFT JOIN properties p ON u.property_id = p.id
-            WHERE t.owner_id = ? AND MONTH(pay.payment_date) = MONTH(CURDATE()) AND YEAR(pay.payment_date) = YEAR(CURDATE())
-            ${propertyFilter}
-        `, queryParams);
+            // Query 3: Rent Collected THIS Month
+            db.query(`
+                SELECT SUM(pay.amount_paid) as collected_this_month
+                FROM payments pay
+                JOIN tenants t ON pay.tenant_id = t.id
+                LEFT JOIN units u ON t.unit_id = u.id
+                LEFT JOIN properties p ON u.property_id = p.id
+                WHERE t.owner_id = ? AND MONTH(pay.payment_date) = MONTH(CURDATE()) AND YEAR(pay.payment_date) = YEAR(CURDATE())
+                ${propertyFilter}
+            `, queryParams),
 
-        // 5. Query 4: Chart Data (Last 6 Months Revenue)
-        const [chartData] = await db.query(`
-            SELECT 
-                DATE_FORMAT(pay.payment_date, '%b') as month,
-                SUM(pay.amount_paid) as value
-            FROM payments pay
-            JOIN tenants t ON pay.tenant_id = t.id
-            LEFT JOIN units u ON t.unit_id = u.id
-            LEFT JOIN properties p ON u.property_id = p.id
-            WHERE t.owner_id = ? AND pay.payment_date >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
-            ${propertyFilter}
-            GROUP BY YEAR(pay.payment_date), MONTH(pay.payment_date), DATE_FORMAT(pay.payment_date, '%b')
-            ORDER BY YEAR(pay.payment_date) ASC, MONTH(pay.payment_date) ASC
-        `, queryParams);
+            // Query 4: Chart Data (Last 6 Months Revenue)
+            db.query(`
+                SELECT
+                    DATE_FORMAT(pay.payment_date, '%b') as month,
+                    SUM(pay.amount_paid) as value
+                FROM payments pay
+                JOIN tenants t ON pay.tenant_id = t.id
+                LEFT JOIN units u ON t.unit_id = u.id
+                LEFT JOIN properties p ON u.property_id = p.id
+                WHERE t.owner_id = ? AND pay.payment_date >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
+                ${propertyFilter}
+                GROUP BY YEAR(pay.payment_date), MONTH(pay.payment_date), DATE_FORMAT(pay.payment_date, '%b')
+                ORDER BY YEAR(pay.payment_date) ASC, MONTH(pay.payment_date) ASC
+            `, queryParams),
 
-        // ✨ 6. NEW: Query 5: Recent 5 Payments ✨
-        const [recentPayments] = await db.query(`
-            SELECT 
-                pay.id, pay.amount_paid, pay.payment_date, pay.payment_method, 
-                t.name as tenant_name, u.unit_number
-            FROM payments pay
-            JOIN tenants t ON pay.tenant_id = t.id
-            LEFT JOIN units u ON t.unit_id = u.id
-            LEFT JOIN properties p ON u.property_id = p.id
-            WHERE t.owner_id = ? ${propertyFilter}
-            ORDER BY pay.created_at DESC
-            LIMIT 5
-        `, queryParams);
+            // Query 5: Recent 5 Payments
+            db.query(`
+                SELECT
+                    pay.id, pay.amount_paid, pay.payment_date, pay.payment_method,
+                    t.name as tenant_name, u.unit_number
+                FROM payments pay
+                JOIN tenants t ON pay.tenant_id = t.id
+                LEFT JOIN units u ON t.unit_id = u.id
+                LEFT JOIN properties p ON u.property_id = p.id
+                WHERE t.owner_id = ? ${propertyFilter}
+                ORDER BY pay.created_at DESC
+                LIMIT 5
+            `, queryParams)
+        ]);
 
         res.status(200).json({
             stats: {

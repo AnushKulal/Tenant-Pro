@@ -38,6 +38,9 @@ export const mediaUrl = (p) => {
 
 const client = axios.create({
     baseURL: `${SERVER_URL}/api`,
+    // Free hosting can take ~50s to "wake up" after inactivity. A generous
+    // timeout lets that first request succeed instead of failing instantly.
+    timeout: 60000,
     headers: {
         'Content-Type': 'application/json'
     }
