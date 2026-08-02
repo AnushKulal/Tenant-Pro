@@ -1,3 +1,4 @@
+// TenantPro backend — auto-deploy webhook test marker.
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
