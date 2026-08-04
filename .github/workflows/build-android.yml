@@ -9,6 +9,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 45   # fail fast instead of hanging for hours
+    permissions:
+      contents: write     # needed to publish the APK as a Release
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -58,3 +60,12 @@ jobs:
           name: tenantpro-apk
           path: tenantpro.apk
           if-no-files-found: error
+
+      - name: Publish APK as a Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: TenantPro Android (build ${{ github.run_number }})
+          body: "Download **tenantpro.apk** below and open it on your Android phone to install."
+          files: tenantpro.apk
+          make_latest: true
