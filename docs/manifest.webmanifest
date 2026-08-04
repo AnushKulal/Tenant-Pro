@@ -1,0 +1,15 @@
+{
+  "name": "TenantPro — Smart Property Management",
+  "short_name": "TenantPro",
+  "description": "Manage properties, rooms, tenants and rent — with automatic reminders.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0d1120",
+  "theme_color": "#3b82f6",
+  "icons": [
+    { "src": "icon.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
