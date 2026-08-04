@@ -22,21 +22,12 @@ const initDb = async () => {
     });
 
     try {
-        const [rows] = await conn.query(
-            `SELECT COUNT(*) AS c FROM information_schema.tables
-             WHERE table_schema = ? AND table_name = 'owners'`,
-            [process.env.DB_NAME]
-        );
-
-        if (rows[0].c > 0) {
-            console.log('🗄️  Database tables already exist — skipping schema init.');
-            return;
-        }
-
-        console.log('🗄️  No tables found — creating schema from schema.sql...');
+        // schema.sql is fully idempotent (CREATE TABLE IF NOT EXISTS), so we run
+        // it every boot. New tables added to schema.sql get created on existing
+        // databases automatically, while existing tables are left untouched.
         const sql = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
         await conn.query(sql);
-        console.log('✅ Database schema created successfully!');
+        console.log('✅ Database schema is up to date.');
     } finally {
         await conn.end();
     }

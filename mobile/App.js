@@ -8,6 +8,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import SplashScreen from './src/screens/SplashScreen';
 import LoginScreen from './src/screens/LoginScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
+import ForgotPasswordScreen from './src/screens/ForgotPasswordScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import UpdateGate from './src/components/UpdateGate';
 
@@ -22,6 +23,7 @@ export default function App() {
                         <Stack.Screen name="Splash" component={SplashScreen} />
                         <Stack.Screen name="Login" component={LoginScreen} />
                         <Stack.Screen name="Register" component={RegisterScreen} />
+                        <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
 
                         {/* Home is now your Master Layout for everything! */}
                         <Stack.Screen name="Home" component={HomeScreen} />
