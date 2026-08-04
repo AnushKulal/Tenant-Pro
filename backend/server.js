@@ -1,11 +1,20 @@
-// TenantPro backend — auto-deploy webhook test marker.
+// TenantPro backend.
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const path = require('path'); 
+const path = require('path');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const db = require('./config/db');
 
 const app = express();
+
+// Render/hosts run behind a proxy; trust the first proxy so client IPs
+// (used by rate limiting) are read correctly from X-Forwarded-For.
+app.set('trust proxy', 1);
+
+// --- Security middleware ---
+app.use(helmet());
 
 // --- Middleware ---
 // CORS: open by default (needed for the mobile app, which sends no browser origin).
@@ -13,6 +22,26 @@ const app = express();
 const corsOrigin = process.env.CORS_ORIGIN;
 app.use(cors(corsOrigin ? { origin: corsOrigin.split(',').map((s) => s.trim()) } : {}));
 app.use(express.json());
+
+// --- Rate limiting ---
+// General API limit: guards against abuse/floods.
+const apiLimiter = rateLimit({
+    windowMs: 60 * 1000,       // 1 minute
+    max: 200,                  // 200 requests/min per IP
+    standardHeaders: true,
+    legacyHeaders: false
+});
+app.use('/api', apiLimiter);
+
+// Stricter limit on auth: blunts brute-force login/registration attempts.
+const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,  // 15 minutes
+    max: 30,                   // 30 attempts/15 min per IP
+    message: { message: 'Too many attempts. Please try again in a few minutes.' },
+    standardHeaders: true,
+    legacyHeaders: false
+});
+app.use('/api/auth', authLimiter);
 
 // --- Serve Static Files (Images & Documents) ---
 // This exposes your 'uploads' folder to the web. 
