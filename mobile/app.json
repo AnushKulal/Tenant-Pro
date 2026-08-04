@@ -12,6 +12,7 @@
     },
     "updates": {
       "enabled": true,
+      "url": "https://u.expo.dev/3b258101-bef2-412f-8be0-53af8b224dfb",
       "checkAutomatically": "ON_ERROR_RECOVERY",
       "fallbackToCacheTimeout": 0
     },
@@ -35,6 +36,11 @@
     },
     "plugins": [
       "@react-native-community/datetimepicker"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "3b258101-bef2-412f-8be0-53af8b224dfb"
+      }
+    }
   }
 }

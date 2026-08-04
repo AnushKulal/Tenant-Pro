@@ -27,12 +27,6 @@ jobs:
         working-directory: mobile
         run: npm install
 
-      - name: Link EAS project (creates/links project ID non-interactively)
-        working-directory: mobile
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-        run: npx eas-cli init --non-interactive
-
       - name: Build APK (EAS local — bypasses the Expo queue)
         working-directory: mobile
         env:
