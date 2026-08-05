@@ -41,4 +41,7 @@ jobs:
         run: |
           MSG="${{ github.event.inputs.message }}"
           if [ -z "$MSG" ]; then MSG="${{ github.event.head_commit.message }}"; fi
+          # Publish to BOTH channels so it reaches sideloaded "preview" APKs
+          # (what's installed today) and future "production" Play Store builds.
+          eas update --branch preview --message "$MSG" --non-interactive
           eas update --branch production --message "$MSG" --non-interactive
