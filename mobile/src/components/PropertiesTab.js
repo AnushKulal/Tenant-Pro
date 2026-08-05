@@ -260,10 +260,13 @@ export default function PropertiesTab({ isDark }) {
 
                                     {/* MAIN CARD: Has overflow: hidden, so popover must be OUTSIDE of this view */}
                                     <View style={[styles.propertyCard, isDark ? styles.darkCard : styles.lightCard]}>
-                                        <TouchableOpacity
-                                            activeOpacity={0.9}
-                                            onPress={() => navigation.navigate('PropertyDetails', { property: prop })}
-                                        >
+                                        {/* Card body is not tappable: it used to call
+                                            navigation.navigate('PropertyDetails'), but this
+                                            component never receives a `navigation` prop and no
+                                            PropertyDetails route exists, so any tap threw
+                                            "Cannot read property 'navigate' of undefined".
+                                            Per-property actions live in the ⋯ popover above. */}
+                                        <TouchableOpacity activeOpacity={1} disabled>
                                             <View style={styles.cardTopHalf}>
                                                 <PropertyImage imageUrl={prop.image_url} />
                                                 <View style={styles.typeBadge}>
