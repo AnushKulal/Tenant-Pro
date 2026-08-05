@@ -11,6 +11,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { useTheme } from '../theme';
 import { Avatar } from '../ui';
+import { confirmSignOut } from '../navigation/flow';
 
 // Your Components
 import Header from '../components/Header';
@@ -282,7 +283,11 @@ export default function HomeScreen({ navigation }) {
                 userName={userName}
                 profilePic={profilePic}
                 isDark={isDark}
-                onProfilePress={() => setIsSidebarOpen(true)}
+                // The avatar goes to the profile; the ⋯ button owns the menu.
+                onProfilePress={() => goToTab('Profile')}
+                onNavigate={goToTab}
+                onOpenDrawer={() => setIsSidebarOpen(true)}
+                onSignOut={() => confirmSignOut(navigation)}
                 fadeAnim={fadeAnimHeader}
                 currentRoute={activeTab}
                 selectedProperty={selectedProperty}

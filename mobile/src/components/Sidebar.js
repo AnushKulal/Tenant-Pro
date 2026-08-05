@@ -17,7 +17,6 @@ import {
     Dimensions,
     TouchableWithoutFeedback,
     ScrollView,
-    Alert,
     Platform,
     InteractionManager
 } from 'react-native';
@@ -27,7 +26,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import { GlassView, Avatar } from '../ui';
 import { useTheme, withAlpha } from '../theme';
-import { signOut } from '../navigation/flow';
+import { confirmSignOut } from '../navigation/flow';
 
 const { width } = Dimensions.get('window');
 const PANEL_WIDTH = width * 0.70;
@@ -95,26 +94,12 @@ export default function Sidebar({ isOpen, onClose, navigation, currentRoute = 'D
         };
     }, [isOpen]);
 
-    // signOut clears every session key AND resets the stack to RoleSelection.
-    // The old replace('Login') left the authenticated screen underneath, so
-    // Android back walked straight back into the app after logging out.
-    const handleLogout = () => {
-        Alert.alert(
-            'Log out?',
-            'You will need to sign in again to manage your properties.',
-            [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                    text: 'Log Out',
-                    style: 'destructive',
-                    onPress: () => {
-                        onClose();
-                        signOut(navigation);
-                    }
-                }
-            ]
-        );
-    };
+    // confirmSignOut warns, then clears every session key AND resets the stack to
+    // RoleSelection. The old replace('Login') left the authenticated screen
+    // underneath, so Android back walked straight back into the app after logging
+    // out. Shared with the header's "more options" menu so both paths behave the
+    // same way.
+    const handleLogout = () => confirmSignOut(navigation, onClose);
 
     const navigateTo = (screenName) => {
         onClose();

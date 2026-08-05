@@ -6,7 +6,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import client, { SERVER_URL, mediaUrl } from '../api/client';
 import Avatar from '../ui/Avatar';
 import { GlassView } from '../ui';
-import { useTheme } from '../theme';
+import { useTheme, withAlpha } from '../theme';
+import HeaderMenu from './HeaderMenu';
 
 // Reusable Smart Image for the Bottom Sheet List
 const PropertyListImage = ({ imageUrl }) => {
@@ -25,7 +26,22 @@ const PropertyListImage = ({ imageUrl }) => {
     );
 };
 
-export default function Header({ userName, profilePic, isDark, onProfilePress, fadeAnim, currentRoute, selectedProperty, setSelectedProperty }) {
+export default function Header({
+    userName,
+    profilePic,
+    isDark,
+    // Tapping the avatar now means what it looks like it means: go to the
+    // profile. It used to open the drawer, which is why the drawer was
+    // undiscoverable — see HeaderMenu for the full reasoning.
+    onProfilePress,
+    onNavigate,
+    onOpenDrawer,
+    onSignOut,
+    fadeAnim,
+    currentRoute,
+    selectedProperty,
+    setSelectedProperty
+}) {
     // `isDark` is still accepted for callers, but the theme context is the source
     // of truth (it also carries the user's manual override).
     const t = useTheme();
@@ -35,6 +51,29 @@ export default function Header({ userName, profilePic, isDark, onProfilePress, f
     const [isSheetOpen, setIsSheetOpen] = useState(false);
     const [properties, setProperties] = useState([]);
     const [isLoadingProps, setIsLoadingProps] = useState(false);
+
+    // --- "More options" menu ---
+    // The menu is anchored to this button, so its on-screen rect is measured at
+    // press time (layout can shift with the property pill's width, the notch, or
+    // rotation — a hardcoded offset would drift).
+    const [isMenuOpen, setIsMenuOpen] = useState(false);
+    const [menuAnchor, setMenuAnchor] = useState(null);
+    const menuBtnRef = useRef(null);
+    const menuPress = useRef(new Animated.Value(0)).current;
+
+    const openMenu = () => {
+        const node = menuBtnRef.current;
+        if (!node?.measureInWindow) {
+            setIsMenuOpen(true);
+            return;
+        }
+        node.measureInWindow((x, y, width, height) => {
+            // A zero-sized measure means the node isn't laid out yet; opening with
+            // no anchor falls back to the top-right corner rather than 0,0.
+            setMenuAnchor(width && height ? { x, y, width, height } : null);
+            setIsMenuOpen(true);
+        });
+    };
 
     useEffect(() => {
         Animated.loop(
@@ -139,7 +178,14 @@ export default function Header({ userName, profilePic, isDark, onProfilePress, f
                                 {getPageTitle()}
                             </Text>
 
-                            <Text style={[t.typography.caption, { color: t.colors.textMuted }]}>
+                            {/* Single line on purpose: with three controls on the
+                                right, this string wraps at 360dp and silently makes
+                                the whole bar taller. Truncating keeps the header one
+                                fixed height on every device. */}
+                            <Text
+                                style={[t.typography.caption, { color: t.colors.textMuted }]}
+                                numberOfLines={1}
+                            >
                                  {getHeaderText()}
                             </Text>
                         </View>
@@ -160,7 +206,7 @@ export default function Header({ userName, profilePic, isDark, onProfilePress, f
                                 onPress={onProfilePress}
                                 activeOpacity={0.9}
                                 accessibilityRole="button"
-                                accessibilityLabel="Open menu"
+                                accessibilityLabel="Open my profile"
                             >
                                 <Animated.View style={[styles.avatarRing, { borderColor: t.colors.borderStrong, transform: [{ scale: ringPulseAnim }] }]}>
                                     <View style={[styles.profileAvatar, { backgroundColor: t.colors.primary }, t.shadows.glow]}>
@@ -168,10 +214,66 @@ export default function Header({ userName, profilePic, isDark, onProfilePress, f
                                     </View>
                                 </Animated.View>
                             </TouchableOpacity>
+
+                            {/* The overflow control. Rightmost, because that is where
+                                every platform puts "more" — and labelled as such, so
+                                nobody has to guess that a portrait hides the menu. */}
+                            <View ref={menuBtnRef} collapsable={false}>
+                                <Animated.View
+                                    style={{
+                                        transform: [{
+                                            scale: menuPress.interpolate({
+                                                inputRange: [0, 1],
+                                                outputRange: [1, 0.9]
+                                            })
+                                        }]
+                                    }}
+                                >
+                                    <TouchableOpacity
+                                        onPress={openMenu}
+                                        onPressIn={() => Animated.spring(menuPress, {
+                                            toValue: 1, useNativeDriver: true, ...t.motion.spring
+                                        }).start()}
+                                        onPressOut={() => Animated.spring(menuPress, {
+                                            toValue: 0, useNativeDriver: true, ...t.motion.spring
+                                        }).start()}
+                                        activeOpacity={1}
+                                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                                        accessibilityRole="button"
+                                        accessibilityLabel="More options"
+                                        accessibilityState={{ expanded: isMenuOpen }}
+                                        style={[
+                                            styles.menuBtn,
+                                            {
+                                                borderColor: t.colors.borderStrong,
+                                                backgroundColor: isMenuOpen
+                                                    ? withAlpha(t.colors.primary, t.isDark ? 0.24 : 0.14)
+                                                    : t.colors.glassHighlight
+                                            }
+                                        ]}
+                                    >
+                                        <Ionicons
+                                            name="ellipsis-horizontal"
+                                            size={20}
+                                            color={isMenuOpen ? t.colors.primary : t.colors.text}
+                                        />
+                                    </TouchableOpacity>
+                                </Animated.View>
+                            </View>
                         </View>
                     </View>
                 </GlassView>
             </Animated.View>
+
+            <HeaderMenu
+                visible={isMenuOpen}
+                onClose={() => setIsMenuOpen(false)}
+                anchor={menuAnchor}
+                currentRoute={currentRoute}
+                onNavigate={(tab) => onNavigate?.(tab)}
+                onOpenDrawer={() => onOpenDrawer?.()}
+                onSignOut={() => onSignOut?.()}
+            />
 
             {/* --- NEW: BOTTOM SHEET MODAL --- */}
             <Modal animationType="slide" transparent={true} visible={isSheetOpen} onRequestClose={() => setIsSheetOpen(false)}>
@@ -288,9 +390,16 @@ const styles = StyleSheet.create({
     locationText: { textTransform: 'uppercase', maxWidth: 150 },
     userName: { letterSpacing: -0.5, marginBottom: 4 },
 
-    rightActions: { flexDirection: 'row', alignItems: 'center', gap: 16 },
+    // 12, not 16: there are three controls here now, and at 360dp the extra 8dp
+    // came straight out of the page title.
+    rightActions: { flexDirection: 'row', alignItems: 'center', gap: 12 },
     notificationBtn: { padding: 4, justifyContent: 'center', alignItems: 'center' },
     badge: { position: 'absolute', top: 4, right: 5, width: 9, height: 9, borderRadius: 4.5, borderWidth: 1.5 },
+
+    menuBtn: {
+        width: 38, height: 38, borderRadius: 19, borderWidth: 1,
+        alignItems: 'center', justifyContent: 'center'
+    },
 
     avatarRing: { padding: 3, borderRadius: 30, borderWidth: 1.5 },
     // Must stay 40x40 / r20 to match the <Avatar size={40} radius={20} /> inside.

@@ -184,12 +184,17 @@ const THEME_KEY = 'themePreference'; // 'system' | 'dark' | 'light'
 
 const ThemeContext = createContext(null);
 
-export function ThemeProvider({ children }) {
+// `initialPreference` pins the theme instead of following the OS. The app leaves
+// it alone ('system' → restore whatever the user last chose); it exists so a
+// screen can be rendered in a known theme for inspection or tests.
+export function ThemeProvider({ children, initialPreference = 'system' }) {
     const systemScheme = useColorScheme();
-    const [preference, setPreference] = useState('system');
+    const [preference, setPreference] = useState(initialPreference);
 
-    // Restore the saved preference (falls back to following the OS).
+    // Restore the saved preference (falls back to following the OS). Skipped when
+    // a preference was pinned, so the pin isn't overwritten a frame later.
     useEffect(() => {
+        if (initialPreference !== 'system') return;
         (async () => {
             try {
                 const saved = await AsyncStorage.getItem(THEME_KEY);
@@ -198,7 +203,7 @@ export function ThemeProvider({ children }) {
                 // Non-fatal: keep following the system theme.
             }
         })();
-    }, []);
+    }, [initialPreference]);
 
     const setMode = useCallback(async (mode) => {
         setPreference(mode);
