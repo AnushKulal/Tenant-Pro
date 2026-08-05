@@ -88,7 +88,7 @@ export default function HelpSupportTab({ isDark }) {
                 <FAQItem
                     isDark={isDark}
                     question="How do I add a new property?"
-                    answer="You can add a new property by navigating to the 'My Properties' tab from the sidebar menu and tapping the '+ Add Property' button in the top right corner."
+                    answer="Open the Properties tab from the bottom navigation bar, then tap the '+ Add Property' button in the top right corner."
                 />
                 <FAQItem
                     isDark={isDark}

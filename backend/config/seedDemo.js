@@ -125,27 +125,54 @@ const createDemo = async () => {
     }
 };
 
-// --- Backfill images onto an existing demo account (only where missing) ---
+// --- Ensure the demo account's sample images are set ---
+//
+// This used to only fill rows where image_url was NULL or '', which meant any row
+// that had once been written with a value the app could not display stayed broken
+// forever — demo photos were reported missing on device even though the URLs load
+// fine in a browser. These are the DEMO account's own cosmetic sample images and
+// their correct values are known constants, so writing them unconditionally is
+// safe and lets the account self-heal on every boot.
+//
+// Row counts are logged because this runs on a remote host: when demo images are
+// reported missing, the log tells us whether the UPDATEs matched nothing (a name
+// mismatch) or matched and the problem is client-side.
 const backfillDemoImages = async (ownerId) => {
-    const blank = '(image_url IS NULL OR image_url = "")';
+    let owners = 0, properties = 0, units = 0, tenants = 0;
 
-    await db.query('UPDATE owners SET profile_pic = ? WHERE id = ? AND (profile_pic IS NULL OR profile_pic = "")', [IMG.owner, ownerId]);
+    const [o] = await db.query('UPDATE owners SET profile_pic = ? WHERE id = ?', [IMG.owner, ownerId]);
+    owners = o.affectedRows || 0;
 
     for (const [name, url] of Object.entries(IMG.properties)) {
-        await db.query(`UPDATE properties SET image_url = ? WHERE owner_id = ? AND name = ? AND ${blank}`, [url, ownerId, name]);
+        const [r] = await db.query(
+            'UPDATE properties SET image_url = ? WHERE owner_id = ? AND name = ?',
+            [url, ownerId, name]
+        );
+        properties += r.affectedRows || 0;
     }
     for (const [unitNumber, url] of Object.entries(IMG.units)) {
-        await db.query(
+        const [r] = await db.query(
             `UPDATE units u JOIN properties p ON u.property_id = p.id
              SET u.image_url = ?
-             WHERE p.owner_id = ? AND u.unit_number = ? AND (u.image_url IS NULL OR u.image_url = "")`,
+             WHERE p.owner_id = ? AND u.unit_number = ?`,
             [url, ownerId, unitNumber]
         );
+        units += r.affectedRows || 0;
     }
     for (const [name, url] of Object.entries(IMG.tenants)) {
-        await db.query(`UPDATE tenants SET image_url = ? WHERE owner_id = ? AND name = ? AND ${blank}`, [url, ownerId, name]);
+        const [r] = await db.query(
+            'UPDATE tenants SET image_url = ? WHERE owner_id = ? AND name = ?',
+            [url, ownerId, name]
+        );
+        tenants += r.affectedRows || 0;
     }
-    console.log('🖼️  Demo account images ensured.');
+
+    console.log(
+        `🖼️  Demo images ensured — owner:${owners} properties:${properties} units:${units} tenants:${tenants}`
+    );
+    if (properties === 0 && units === 0 && tenants === 0) {
+        console.warn('⚠️  Demo image UPDATEs matched no rows — names may differ from the seed constants.');
+    }
 };
 
 const seedDemo = async () => {

@@ -16,7 +16,7 @@ import React from 'react';
 import { View, StyleSheet, Platform } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useTheme } from '../theme';
+import { useTheme, withAlpha } from '../theme';
 
 export default function GlassView({
     children,
@@ -31,12 +31,18 @@ export default function GlassView({
     // surface: blurring an already-blurred backdrop costs real GPU time on
     // Android and adds nothing visually. The tint + sheen still read as glass.
     blur = true,
+    // Physical-glass treatment: a crisp specular hairline along the top edge plus
+    // a vertical frost→clear falloff. Real glass is not uniformly milky — it
+    // catches light on its lit edge and turns almost transparent away from it,
+    // and that gradient is what separates "frosted glass" from "translucent
+    // rectangle". Pair it with a LOW-alpha tintColor so the backdrop shows
+    // through; a high-alpha tint hides the effect entirely.
+    edgeLight = false,
     ...rest
 }) {
     const t = useTheme();
     const r = radius ?? t.radii.xl;
     const fill = tintColor ?? (strong ? t.colors.glassBgStrong : t.colors.glassBg);
-
     return (
         <View
             style={[
@@ -69,7 +75,48 @@ export default function GlassView({
                 />
             ) : null}
 
+            {edgeLight ? (
+                <>
+                    {/* Frost → clear falloff: milky along the lit top edge, fading
+                        to nothing by mid-height so the backdrop reads through the
+                        lower half. This is the "frost and clear" mix. */}
+                    <LinearGradient
+                        colors={[
+                            withAlpha(t.colors.onPrimary, t.isDark ? 0.16 : 0.55),
+                            withAlpha(t.colors.onPrimary, t.isDark ? 0.05 : 0.18),
+                            'rgba(255,255,255,0)'
+                        ]}
+                        locations={[0, 0.42, 1]}
+                        start={{ x: 0.5, y: 0 }}
+                        end={{ x: 0.5, y: 1 }}
+                        style={StyleSheet.absoluteFill}
+                        pointerEvents="none"
+                    />
+                    {/* Specular hairline, as a horizontal gradient rather than a
+                        solid bar: a solid one has hard ends that read as a stray
+                        line across the pane (observed in a render). Fading both
+                        ends to zero makes it look like light catching the edge. */}
+                    <LinearGradient
+                        colors={[
+                            'rgba(255,255,255,0)',
+                            withAlpha(t.colors.onPrimary, t.isDark ? 0.38 : 0.85),
+                            'rgba(255,255,255,0)'
+                        ]}
+                        locations={[0, 0.5, 1]}
+                        start={{ x: 0, y: 0.5 }}
+                        end={{ x: 1, y: 0.5 }}
+                        style={styles.edgeHairline}
+                        pointerEvents="none"
+                    />
+                </>
+            ) : null}
+
             {children}
         </View>
     );
 }
+
+const styles = StyleSheet.create({
+    // 1px is a hairline on any density because RN sizes in dp.
+    edgeHairline: { position: 'absolute', top: 0, left: '4%', right: '4%', height: 1 }
+});

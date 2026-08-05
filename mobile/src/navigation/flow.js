@@ -17,6 +17,7 @@
 // Every screen should use these helpers instead of calling replace/navigate for
 // auth transitions, so the behaviour can never drift per-screen again.
 // -----------------------------------------------------------------------------
+import { Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Reset the stack so `routeName` is the one and only route.
@@ -67,4 +68,24 @@ export const signOut = async (navigation) => {
         // Continue regardless — navigating away is the important part.
     }
     exitToRoleSelection(navigation);
+};
+
+// Confirm, then sign out. Kept here rather than in the component that shows it so
+// every entry point warns identically — a confirm dialog that only some paths show
+// is how people lose a session by mis-tapping. Currently the header's "more
+// options" menu is the only owner-side caller; it lived here first because the
+// drawer shared it, and it stays here for the next surface that needs it.
+export const confirmSignOut = (navigation) => {
+    Alert.alert(
+        'Log out?',
+        'You will need to sign in again to manage your properties.',
+        [
+            { text: 'Cancel', style: 'cancel' },
+            {
+                text: 'Log Out',
+                style: 'destructive',
+                onPress: () => signOut(navigation)
+            }
+        ]
+    );
 };
