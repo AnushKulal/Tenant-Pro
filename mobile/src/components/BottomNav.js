@@ -19,6 +19,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { View, StyleSheet, Pressable, Animated, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useTheme, withAlpha } from '../theme';
@@ -91,17 +92,7 @@ export default function BottomNav({ activeTab, setActiveTab }) {
             {/* Shadow lives on the wrapper: the bar clips its own overflow, so an
                 inner shadow would be cut off. */}
             <View style={[styles.shadowWrap, { borderRadius: BAR_HEIGHT / 2 }, t.shadows.lg]}>
-                <View
-                    style={[
-                        styles.bar,
-                        {
-                            borderRadius: BAR_HEIGHT / 2,
-                            // The single bright rim. This one line is what makes the
-                            // pane read as a glass edge.
-                            borderColor: withAlpha(t.colors.onPrimary, t.isDark ? 0.22 : 0.85)
-                        }
-                    ]}
-                >
+                <View style={[styles.bar, { borderRadius: BAR_HEIGHT / 2 }]}>
                     {/* Frost. Bare, so nothing else is layered on top of it.
                         Intensity is kept LOW on purpose: expo-blur's tint lays a wash
                         of its own over the blur, and it scales with intensity — at 70
@@ -123,6 +114,22 @@ export default function BottomNav({ activeTab, setActiveTab }) {
                             { backgroundColor: withAlpha(t.colors.surfaceAlt, t.isDark ? 0.07 : 0.14) }
                         ]}
                     />
+                    {/* Soft edge instead of a stroke. A 1px border reads as a drawn
+                        outline; real glass shows a diffuse gradient where light grazes
+                        its top face. One gradient, fading out well before the bottom,
+                        so there is no hard line anywhere. */}
+                    <LinearGradient
+                        colors={[
+                            withAlpha(t.colors.onPrimary, t.isDark ? 0.13 : 0.5),
+                            withAlpha(t.colors.onPrimary, t.isDark ? 0.03 : 0.12),
+                            'rgba(255,255,255,0)'
+                        ]}
+                        locations={[0, 0.35, 1]}
+                        start={{ x: 0.5, y: 0 }}
+                        end={{ x: 0.5, y: 1 }}
+                        style={StyleSheet.absoluteFill}
+                        pointerEvents="none"
+                    />
 
                     <View style={styles.row} onLayout={(e) => setBarWidth(e.nativeEvent.layout.width)}>
                         {capsuleW ? (
@@ -133,24 +140,20 @@ export default function BottomNav({ activeTab, setActiveTab }) {
                                     { width: itemWidth, opacity: capsuleOpacity, transform: [{ translateX: capsuleX }] }
                                 ]}
                             >
-                                <View
-                                    style={[
-                                        styles.capsule,
-                                        {
-                                            width: capsuleW,
-                                            // Darker than the glass around it, so the
-                                            // selection reads as depth rather than colour.
-                                            backgroundColor: withAlpha(
-                                                t.isDark ? t.colors.bg : t.colors.text,
-                                                t.isDark ? 0.34 : 0.09
-                                            ),
-                                            // Hairline edge so the capsule's shape still
-                                            // reads over a DARK backdrop, where a dark fill
-                                            // alone would nearly vanish into the glass.
-                                            borderWidth: 1,
-                                            borderColor: withAlpha(t.colors.onPrimary, t.isDark ? 0.13 : 0.16)
-                                        }
+                                {/* A LIGHTER pane than the glass around it, with no stroke.
+                                    It was previously darker, which made the active tab a
+                                    recess — the opposite of highlighting it. Lifting it
+                                    instead is what makes the icon it sits under read as
+                                    selected, and a soft top-to-bottom falloff keeps it
+                                    from looking like a drawn box. */}
+                                <LinearGradient
+                                    colors={[
+                                        withAlpha(t.colors.onPrimary, t.isDark ? 0.16 : 0.5),
+                                        withAlpha(t.colors.onPrimary, t.isDark ? 0.07 : 0.26)
                                     ]}
+                                    start={{ x: 0.5, y: 0 }}
+                                    end={{ x: 0.5, y: 1 }}
+                                    style={[styles.capsule, { width: capsuleW }]}
                                 />
                             </Animated.View>
                         ) : null}
@@ -190,7 +193,7 @@ export default function BottomNav({ activeTab, setActiveTab }) {
 const styles = StyleSheet.create({
     container: { position: 'absolute', alignItems: 'center', zIndex: 50 },
     shadowWrap: { width: '100%' },
-    bar: { width: '100%', height: BAR_HEIGHT, borderWidth: 1, overflow: 'hidden' },
+    bar: { width: '100%', height: BAR_HEIGHT, overflow: 'hidden' },
     row: { flex: 1, flexDirection: 'row', alignItems: 'center' },
     navItem: { flex: 1, height: '100%', alignItems: 'center', justifyContent: 'center' },
 

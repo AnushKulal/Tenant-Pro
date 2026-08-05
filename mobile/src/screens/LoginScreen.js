@@ -400,10 +400,28 @@ export default function LoginScreen({ navigation, route }) {
             });
             const { token, owner } = response.data;
 
-            // Tag a friendly guest id so the session is recognisable as a guest visit.
-            const guestId = 'GUEST-' + Math.random().toString(36).slice(2, 7).toUpperCase();
+            // A guest gets their OWN identity rather than silently appearing as
+            // "Demo": a unique id is minted and becomes the display name for the
+            // session, while the data underneath is still the demo account's, since
+            // that is what makes the app worth exploring. Crockford-style alphabet
+            // (no I/O/0/1) so the id can be read aloud or typed without ambiguity.
+            const ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
+            const suffix = Array.from({ length: 6 }, () =>
+                ALPHABET[Math.floor(Math.random() * ALPHABET.length)]
+            ).join('');
+            const guestId = `GUEST-${suffix}`;
+
             await AsyncStorage.setItem('userToken', token);
-            await AsyncStorage.setItem('ownerData', JSON.stringify({ ...owner, isGuest: true, guestId }));
+            await AsyncStorage.setItem('ownerData', JSON.stringify({
+                ...owner,
+                // Shown throughout the app in place of the demo owner's name, so it
+                // is always obvious this is a guest session and not a real account.
+                name: `Guest ${suffix}`,
+                isGuest: true,
+                guestId,
+                // Keep the underlying demo identity for anything that needs it.
+                demoEmail: owner?.email ?? null
+            }));
             await AsyncStorage.setItem('guestId', guestId);
 
             Avatar.prefetch(owner?.profile_pic);
