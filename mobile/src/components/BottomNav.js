@@ -35,7 +35,7 @@ const TABS = [
 
 const ICON_SIZE = 24;
 const BAR_HEIGHT = 70;
-const CAPSULE_H = 52;
+const CAPSULE_H = 44;      // see note below on proportions
 const CAPSULE_INSET = 8;
 
 // t.motion.spring overshoots past 1, which would push interpolations past their

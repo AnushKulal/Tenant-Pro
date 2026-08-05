@@ -156,6 +156,16 @@ export default function HomeScreen({ navigation }) {
         setVisited((prev) => (prev.includes(activeTab) ? prev : [...prev, activeTab]));
     }, [activeTab]);
 
+    // The list actually rendered includes the active tab even before the effect
+    // above has committed it to state. Without this the first visit to a tab was
+    // BLANK: on the render where activeTab changed, the new tab was not yet in
+    // `visited` and the previous tab was already display:'none', so nothing was
+    // mounted at all — not even the tab's own loading spinner. It only appeared
+    // after the effect added it, which is why leaving and returning "fixed" it.
+    // Deriving the list keeps `visited` as the cache while guaranteeing the
+    // active tab mounts, and shows its spinner, on the very first frame.
+    const renderList = visited.includes(activeTab) ? visited : [...visited, activeTab];
+
     // Caching removed the transition as a side effect: once a tab was mounted,
     // switching to it just flipped display and appeared instantly, with no motion
     // at all. So the incoming tab gets its own entrance — reset to 0 and animate
@@ -237,7 +247,7 @@ export default function HomeScreen({ navigation }) {
     // Every visited tab stays mounted; only the active one is laid out.
     const renderTabs = () => (
         <View style={styles.tabHost}>
-            {visited.map((name) => {
+            {renderList.map((name) => {
                 const isActive = name === activeTab;
                 return (
                     <Animated.View
