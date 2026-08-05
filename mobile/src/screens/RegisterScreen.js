@@ -325,7 +325,7 @@ const styles = StyleSheet.create({
     inputWrapper: { flexDirection: 'row', alignItems: 'center', borderRadius: 14, borderWidth: 1.5, paddingHorizontal: 15 },
     lightInput: { backgroundColor: 'rgba(255, 255, 255, 0.9)', borderColor: '#E2E8F0' },
     darkInput: { backgroundColor: 'rgba(15, 23, 42, 0.8)', borderColor: '#334155' },
-    inputFocused: { borderColor: '#2563EB', backgroundColor: Platform.OS === 'ios' ? undefined : '#FFFFFF' },
+    inputFocused: { borderColor: '#2563EB' },
     
     inputError: { borderColor: '#EF4444' }, 
     errorText: { color: '#EF4444', fontSize: 13, marginTop: 6, marginLeft: 4, fontWeight: '500' },
