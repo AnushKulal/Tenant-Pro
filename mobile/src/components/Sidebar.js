@@ -1,7 +1,12 @@
 // File: mobile/src/components/Sidebar.js
-// Frosted slide-in drawer. The panel is a strong GlassView so the dimmed app
-// shows through it; only transform/opacity animate, keeping both animations on
-// the native driver.
+// Frosted slide-in drawer. Only transform/opacity animate, so both animations
+// stay on the native driver.
+//
+// Android perf note: expo-blur on Android (dimezisBlurView) re-captures and
+// re-blurs the backdrop on every frame. Doing that on a panel that is sliding
+// meant the whole open gesture stuttered on real devices, so the panel gets a
+// live blur on iOS only; on Android it is compensated with a near-opaque themed
+// tint, which reads as a solid frosted panel instead of a see-through one.
 import React, { useEffect, useRef, useState } from 'react';
 import {
     View,
@@ -12,7 +17,9 @@ import {
     Dimensions,
     TouchableWithoutFeedback,
     ScrollView,
-    Alert
+    Alert,
+    Platform,
+    InteractionManager
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -34,13 +41,21 @@ export default function Sidebar({ isOpen, onClose, navigation, currentRoute = 'D
     const [email, setEmail] = useState('admin@tenantpro.com');
     const [profilePic, setProfilePic] = useState(null);
 
+    // Keeps the panel mounted while it animates shut. Flipped false by the close
+    // animation's completion callback so we never inspect Animated internals.
+    const [visible, setVisible] = useState(isOpen);
+
     const sidebarAnim = useRef(new Animated.Value(CLOSED_X)).current;
     const backdropOpacity = useRef(new Animated.Value(0)).current;
 
     useEffect(() => {
+        let cancelled = false;
+        let task;
+
         const fetchUserData = async () => {
             try {
                 const ownerData = await AsyncStorage.getItem('ownerData');
+                if (cancelled) return; // unmounted / closed again while reading
                 if (ownerData) {
                     const parsedData = JSON.parse(ownerData);
                     setFullName(parsedData.name);
@@ -52,9 +67,15 @@ export default function Sidebar({ isOpen, onClose, navigation, currentRoute = 'D
             }
         };
 
-        if (isOpen) fetchUserData();
-
         if (isOpen) {
+            setVisible(true);
+            // The storage read + JSON.parse run on the JS thread; firing them
+            // alongside the animation is what made the first frames drop. The
+            // data still loads, just once the drawer has stopped moving.
+            task = InteractionManager.runAfterInteractions(() => {
+                if (!cancelled) fetchUserData();
+            });
+
             Animated.parallel([
                 Animated.timing(sidebarAnim, { toValue: 0, duration: t.motion.normal, useNativeDriver: true }),
                 Animated.timing(backdropOpacity, { toValue: 1, duration: t.motion.normal, useNativeDriver: true })
@@ -63,8 +84,15 @@ export default function Sidebar({ isOpen, onClose, navigation, currentRoute = 'D
             Animated.parallel([
                 Animated.timing(sidebarAnim, { toValue: CLOSED_X, duration: t.motion.normal, useNativeDriver: true }),
                 Animated.timing(backdropOpacity, { toValue: 0, duration: t.motion.normal, useNativeDriver: true })
-            ]).start();
+            ]).start(({ finished }) => {
+                if (finished && !cancelled) setVisible(false);
+            });
         }
+
+        return () => {
+            cancelled = true;
+            task?.cancel?.();
+        };
     }, [isOpen]);
 
     // signOut clears every session key AND resets the stack to RoleSelection.
@@ -111,7 +139,7 @@ export default function Sidebar({ isOpen, onClose, navigation, currentRoute = 'D
                 accessibilityState={{ selected: !!isActive }}
             >
                 {/* Frosted pill behind the active row. blur is off: the panel is
-                    already blurred, so a nested BlurView only costs GPU time. */}
+                    already frosted, so a nested BlurView only costs GPU time. */}
                 {isActive ? (
                     <GlassView
                         radius={t.radii.md}
@@ -146,7 +174,9 @@ export default function Sidebar({ isOpen, onClose, navigation, currentRoute = 'D
         );
     };
 
-    if (!isOpen && sidebarAnim._value === CLOSED_X) return null;
+    // Mount as soon as isOpen flips true (same render pass, before the effect
+    // starts the animation); stay mounted until the close animation reports done.
+    if (!isOpen && !visible) return null;
 
     return (
         <View style={styles.overlayContainer} pointerEvents={isOpen ? 'auto' : 'none'}>
@@ -161,6 +191,11 @@ export default function Sidebar({ isOpen, onClose, navigation, currentRoute = 'D
             </TouchableWithoutFeedback>
 
             <Animated.View
+                // Rasterize the moving layer: the panel is drawn to a texture once
+                // and the GPU just translates it, instead of Android re-drawing the
+                // whole subtree every frame of the slide.
+                renderToHardwareTextureAndroid={true}
+                shouldRasterizeIOS={true}
                 style={[
                     styles.sidebar,
                     t.shadows.lg,
@@ -171,6 +206,11 @@ export default function Sidebar({ isOpen, onClose, navigation, currentRoute = 'D
                     strong
                     radius={0}
                     bordered={false}
+                    // Live blur only where it is cheap. See the file header: an
+                    // animated BlurView is the Android jank. The opaque tint keeps
+                    // the drawer reading as a solid frosted panel there.
+                    blur={Platform.OS === 'ios'}
+                    tintColor={Platform.OS === 'android' ? withAlpha(t.colors.surface, 0.97) : undefined}
                     // Only the inner edge is rounded/ruled — the drawer is flush
                     // with the screen edge on the left.
                     style={[
