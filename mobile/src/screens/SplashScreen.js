@@ -56,19 +56,22 @@ export default function SplashScreen({ navigation }) {
         const checkAuthStatus = async () => {
             try {
                 const userToken = await AsyncStorage.getItem('userToken');
-                
+                const tenantToken = await AsyncStorage.getItem('tenantToken');
+
                 // Keep the splash screen visible for 3 seconds to show off the animations
                 setTimeout(() => {
                     if (userToken) {
-                        navigation.replace('Home');
+                        navigation.replace('Home');          // returning landlord
+                    } else if (tenantToken) {
+                        navigation.replace('TenantHome');    // returning tenant
                     } else {
-                        navigation.replace('Login');
+                        navigation.replace('RoleSelection'); // new user picks a role
                     }
-                }, 3000); 
+                }, 3000);
 
             } catch (error) {
                 console.log('Error checking token:', error);
-                navigation.replace('Login');
+                navigation.replace('RoleSelection');
             }
         };
 

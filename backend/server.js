@@ -42,6 +42,7 @@ const authLimiter = rateLimit({
     legacyHeaders: false
 });
 app.use('/api/auth', authLimiter);
+app.use('/api/tenant-auth', authLimiter);
 
 // --- Serve Static Files (Images & Documents) ---
 // This exposes your 'uploads' folder to the web. 
@@ -49,6 +50,7 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // --- Route Imports ---
 const authRoutes = require('./routes/authRoutes');
+const tenantAuthRoutes = require('./routes/tenantAuthRoutes');
 const ownerRoutes = require('./routes/ownerRoutes');
 const propertyRoutes = require('./routes/propertyRoutes');
 const unitRoutes = require('./routes/unitRoutes');
@@ -60,6 +62,7 @@ const seedDemo = require('./config/seedDemo');
 
 // --- Mount Routes ---
 app.use('/api/auth', authRoutes);
+app.use('/api/tenant-auth', tenantAuthRoutes);
 app.use('/api/owner', ownerRoutes);
 app.use('/api/properties', propertyRoutes);
 app.use('/api/units', unitRoutes);

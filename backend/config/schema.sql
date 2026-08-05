@@ -155,6 +155,20 @@ CREATE TABLE IF NOT EXISTS `rent_invoices` (
   CONSTRAINT `rent_invoices_ibfk_1` FOREIGN KEY (`lease_id`) REFERENCES `leases` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+-- 12. tenant_users (login accounts for tenants — separate from owner-created `tenants` records)
+CREATE TABLE IF NOT EXISTS `tenant_users` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `name` varchar(100) NOT NULL,
+  `email` varchar(100) NOT NULL,
+  `phone` varchar(15) NOT NULL,
+  `password_hash` varchar(255) NOT NULL,
+  `tenant_id` int(11) DEFAULT NULL,
+  `status` enum('Unlinked','Pending','Linked') DEFAULT 'Unlinked',
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `email` (`email`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
 -- 11. password_resets (email verification codes for "forgot password")
 CREATE TABLE IF NOT EXISTS `password_resets` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
