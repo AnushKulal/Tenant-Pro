@@ -40,7 +40,8 @@
     "extra": {
       "eas": {
         "projectId": "3b258101-bef2-412f-8be0-53af8b224dfb"
-      }
+      },
+      "whatsNew": "Fixed login text not showing in dark mode\nNew: Tenant portal — sign in as a tenant\nChoose Landlord or Tenant when you open the app"
     }
   }
 }

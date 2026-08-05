@@ -12,13 +12,22 @@ import * as Updates from 'expo-updates';
 export default function UpdateGate({ children }) {
     const [visible, setVisible] = useState(false);
     const [downloading, setDownloading] = useState(false);
+    const [whatsNew, setWhatsNew] = useState('');
 
     const checkForUpdate = useCallback(async () => {
         // Only run in real builds that have updates enabled (not in dev / Expo Go).
         if (__DEV__ || !Updates.isEnabled) return;
         try {
             const result = await Updates.checkForUpdateAsync();
-            if (result.isAvailable) setVisible(true);
+            if (result.isAvailable) {
+                // Pull the "what's new" note carried by the incoming update's config.
+                const m = result.manifest || {};
+                const notes =
+                    (m.extra && m.extra.expoClient && m.extra.expoClient.extra && m.extra.expoClient.extra.whatsNew) ||
+                    (m.extra && m.extra.whatsNew) || '';
+                setWhatsNew(typeof notes === 'string' ? notes : '');
+                setVisible(true);
+            }
         } catch (e) {
             // Offline or update server unreachable — ignore silently.
         }
@@ -50,9 +59,18 @@ export default function UpdateGate({ children }) {
                 <View style={styles.overlay}>
                     <View style={styles.card}>
                         <Text style={styles.title}>Update Available</Text>
-                        <Text style={styles.message}>
-                            A new version of TenantPro is ready with the latest features and fixes.
-                        </Text>
+                        {whatsNew ? (
+                            <View style={styles.notesBox}>
+                                <Text style={styles.notesHeading}>What's new</Text>
+                                {whatsNew.split('\n').map((line) => line.trim()).filter(Boolean).map((line, i) => (
+                                    <Text key={i} style={styles.notesLine}>{'• ' + line.replace(/^[-•]\s*/, '')}</Text>
+                                ))}
+                            </View>
+                        ) : (
+                            <Text style={styles.message}>
+                                A new version of TenantPro is ready with the latest features and fixes.
+                            </Text>
+                        )}
 
                         {downloading ? (
                             <View style={styles.loadingRow}>
@@ -108,6 +126,25 @@ const styles = StyleSheet.create({
         color: '#4b5563',
         lineHeight: 21,
         marginBottom: 20
+    },
+    notesBox: {
+        backgroundColor: '#f3f4f6',
+        borderRadius: 12,
+        padding: 14,
+        marginBottom: 20
+    },
+    notesHeading: {
+        fontSize: 12,
+        fontWeight: '700',
+        letterSpacing: 0.6,
+        textTransform: 'uppercase',
+        color: '#6b7280',
+        marginBottom: 8
+    },
+    notesLine: {
+        fontSize: 14,
+        color: '#374151',
+        lineHeight: 21
     },
     buttonRow: {
         flexDirection: 'row',
