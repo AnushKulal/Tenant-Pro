@@ -106,6 +106,7 @@ export default function Header({
             case 'Profile': return "Update your personal details.";
             case 'Settings': return "Manage your app preferences.";
             case 'HelpSupport': return "How can we help you today?";
+            case 'Documentation': return "How every part of the app works.";
             case 'Terms': return "Review our service terms.";
             case 'Properties': return "Manage your buildings and units.";
             case 'Tenants': return "View and manage your tenants.";
@@ -122,6 +123,7 @@ export default function Header({
             case 'Profile': return "My Profile";
             case 'Settings': return "Settings";
             case 'HelpSupport': return "Help & Support";
+            case 'Documentation': return "Documentation";
             case 'Terms': return "Terms of Service";
             case 'Properties': return "My Properties";
             case 'Tenants': return "Manage Tenants";
