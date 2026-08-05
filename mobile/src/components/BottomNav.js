@@ -102,21 +102,25 @@ export default function BottomNav({ activeTab, setActiveTab }) {
                         }
                     ]}
                 >
-                    {/* Frost. Used bare rather than through GlassView so nothing else
-                        is layered on top of it. */}
+                    {/* Frost. Bare, so nothing else is layered on top of it.
+                        Intensity is kept LOW on purpose: expo-blur's tint lays a wash
+                        of its own over the blur, and it scales with intensity — at 70
+                        with tint="dark" the bar came out nearly solid navy no matter
+                        how weak the tint below it was. Low intensity keeps the frost
+                        while letting the backdrop through. */}
                     <BlurView
-                        intensity={t.isDark ? 70 : 60}
+                        intensity={t.isDark ? 32 : 40}
                         tint={t.blurTint}
                         experimentalBlurMethod={Platform.OS === 'android' ? 'dimezisBlurView' : undefined}
                         style={StyleSheet.absoluteFill}
                     />
-                    {/* Clear. A deliberately WEAK tint — just enough to keep icon
-                        contrast, low enough that the backdrop still reads through. */}
+                    {/* Clear. Barely-there tint: only enough to hold icon contrast on a
+                        light backdrop, not enough to occlude what is behind. */}
                     <View
                         pointerEvents="none"
                         style={[
                             StyleSheet.absoluteFill,
-                            { backgroundColor: withAlpha(t.colors.surfaceAlt, t.isDark ? 0.16 : 0.24) }
+                            { backgroundColor: withAlpha(t.colors.surfaceAlt, t.isDark ? 0.07 : 0.14) }
                         ]}
                     />
 
@@ -138,8 +142,13 @@ export default function BottomNav({ activeTab, setActiveTab }) {
                                             // selection reads as depth rather than colour.
                                             backgroundColor: withAlpha(
                                                 t.isDark ? t.colors.bg : t.colors.text,
-                                                t.isDark ? 0.55 : 0.1
-                                            )
+                                                t.isDark ? 0.34 : 0.09
+                                            ),
+                                            // Hairline edge so the capsule's shape still
+                                            // reads over a DARK backdrop, where a dark fill
+                                            // alone would nearly vanish into the glass.
+                                            borderWidth: 1,
+                                            borderColor: withAlpha(t.colors.onPrimary, t.isDark ? 0.13 : 0.16)
                                         }
                                     ]}
                                 />
