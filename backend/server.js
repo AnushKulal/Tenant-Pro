@@ -83,7 +83,24 @@ app.get('/healthz', async (req, res) => {
         await db.query('SELECT 1');
         res.status(200).json({ status: 'ok', db: 'up', time: new Date().toISOString() });
     } catch (e) {
-        res.status(500).json({ status: 'degraded', db: 'down' });
+        // Surface the real driver error so connection problems can be diagnosed
+        // (wrong host/port/SSL/credentials, IP allowlist, etc.).
+        res.status(500).json({
+            status: 'degraded',
+            db: 'down',
+            code: e.code,
+            errno: e.errno,
+            message: e.message,
+            // Echo which host/port/SSL the server is actually trying (no secrets).
+            using: {
+                host: process.env.DB_HOST || '(unset)',
+                port: process.env.DB_PORT || '(unset→3306)',
+                database: process.env.DB_NAME || '(unset)',
+                user_set: !!process.env.DB_USER,
+                password_set: !!process.env.DB_PASSWORD,
+                db_ssl: process.env.DB_SSL || '(unset)'
+            }
+        });
     }
 });
 
