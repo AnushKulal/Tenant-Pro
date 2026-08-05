@@ -6,30 +6,41 @@ import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import client, { SERVER_URL, mediaUrl } from '../api/client';
+import { useTheme, withAlpha } from '../theme';
+import { GlassView } from '../ui';
 
 // UPGRADED: FormInput now supports 'error' props for inline validation
-const FormInput = ({ label, placeholder, value, onChangeText, keyboardType = 'default', isDark, error }) => (
-    <View style={styles.inputContainer}>
-        <Text style={[styles.inputLabel, isDark ? styles.darkSubText : styles.lightSubText]}>{label}</Text>
-        <View style={[styles.inputWrapper, isDark ? styles.darkInput : styles.lightInput, error && styles.inputErrorBorder]}>
-            <TextInput
-                style={[styles.input, isDark ? styles.darkText : styles.lightText]}
-                placeholder={placeholder}
-                placeholderTextColor={isDark ? '#475569' : '#94A3B8'}
-                value={value}
-                onChangeText={onChangeText}
-                keyboardType={keyboardType}
-            />
+const FormInput = ({ label, placeholder, value, onChangeText, keyboardType = 'default', isDark, error }) => {
+    const t = useTheme();
+
+    return (
+        <View style={styles.inputContainer}>
+            <Text style={[styles.inputLabel, { color: t.colors.textMuted }]}>{label}</Text>
+            <View style={[
+                styles.inputWrapper,
+                { backgroundColor: t.colors.surfaceAlt, borderColor: t.colors.border },
+                error && { borderColor: t.colors.danger, borderWidth: 1.5 }
+            ]}>
+                <TextInput
+                    style={[styles.input, { color: t.colors.text }]}
+                    placeholder={placeholder}
+                    placeholderTextColor={t.colors.textFaint}
+                    value={value}
+                    onChangeText={onChangeText}
+                    keyboardType={keyboardType}
+                />
+            </View>
+            {/* Render inline error if it exists */}
+            {error ? <Text style={[styles.inlineErrorText, { color: t.colors.danger }]}>{error}</Text> : null}
         </View>
-        {/* Render inline error if it exists */}
-        {error ? <Text style={styles.inlineErrorText}>{error}</Text> : null}
-    </View>
-);
+    );
+};
 
 export default function PaymentSettingsTab({ isDark }) {
+    const t = useTheme();
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
-    
+
     // Form States
     const [upiId, setUpiId] = useState('');
     const [upiNumber, setUpiNumber] = useState('');
@@ -51,7 +62,7 @@ export default function PaymentSettingsTab({ isDark }) {
             const response = await client.get('/payments/settings', {
                 headers: { Authorization: `Bearer ${token}` }
             });
-            
+
             if (response.data.settings) {
                 setUpiId(response.data.settings.upi_id || '');
                 setUpiNumber(response.data.settings.upi_number || '');
@@ -136,9 +147,9 @@ export default function PaymentSettingsTab({ isDark }) {
             });
 
             Alert.alert("Success", "Payment details saved successfully! These will be attached to tenant rent invoices.");
-            fetchPaymentSettings(); 
-            setQrImageUri(null); 
-            
+            fetchPaymentSettings();
+            setQrImageUri(null);
+
         } catch (error) {
             // Catch backend validation errors if any slip through
             setGeneralError(error.response?.data?.message || "Failed to save payment details.");
@@ -154,7 +165,7 @@ export default function PaymentSettingsTab({ isDark }) {
     if (isLoading) {
         return (
             <View style={[styles.container, styles.centerWrapper]}>
-                <ActivityIndicator size="large" color="#6366F1" />
+                <ActivityIndicator size="large" color={t.colors.primary} />
             </View>
         );
     }
@@ -162,75 +173,75 @@ export default function PaymentSettingsTab({ isDark }) {
     return (
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.container}>
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-                
+
                 {/* Info Card */}
-                <View style={[styles.infoCard, isDark ? styles.darkCard : styles.lightCard]}>
-                    <View style={styles.iconBg}>
-                        <Ionicons name="wallet" size={28} color="#10B981" />
+                <GlassView radius={t.radii.xl} style={[styles.infoCard, t.shadows.sm]}>
+                    <View style={[styles.iconBg, { backgroundColor: withAlpha(t.colors.success, 0.15) }]}>
+                        <Ionicons name="wallet" size={28} color={t.colors.success} />
                     </View>
                     <View style={styles.infoTextContainer}>
-                        <Text style={[styles.infoTitle, isDark ? styles.darkText : styles.lightText]}>Rent Collection Setup</Text>
-                        <Text style={[styles.infoSub, isDark ? styles.darkSubText : styles.lightSubText]}>
+                        <Text style={[styles.infoTitle, { color: t.colors.text }]}>Rent Collection Setup</Text>
+                        <Text style={[styles.infoSub, { color: t.colors.textMuted }]}>
                             Add your UPI details and QR code here. Tenants will see these details when rent is due.
                         </Text>
                     </View>
-                </View>
+                </GlassView>
 
                 {/* Form Section */}
-                <View style={[styles.formSection, isDark ? styles.darkCard : styles.lightCard]}>
-                    
-                    <FormInput 
-                        label="UPI ID (VPA)" 
-                        placeholder="e.g. yourname@okhdfcbank" 
-                        value={upiId} 
+                <GlassView radius={t.radii.xxl} style={styles.formSection}>
+
+                    <FormInput
+                        label="UPI ID (VPA)"
+                        placeholder="e.g. yourname@okhdfcbank"
+                        value={upiId}
                         error={errors?.upiId}
-                        onChangeText={(text) => { setUpiId(text); setErrors(prev => ({ ...prev, upiId: null })); setGeneralError(''); }} 
-                        isDark={isDark} 
+                        onChangeText={(text) => { setUpiId(text); setErrors(prev => ({ ...prev, upiId: null })); setGeneralError(''); }}
+                        isDark={isDark}
                     />
-                    
-                    <FormInput 
-                        label="UPI Phone Number" 
-                        placeholder="e.g. 9876543210" 
-                        value={upiNumber} 
+
+                    <FormInput
+                        label="UPI Phone Number"
+                        placeholder="e.g. 9876543210"
+                        value={upiNumber}
                         error={errors?.upiNumber}
-                        onChangeText={(text) => { setUpiNumber(text); setErrors(prev => ({ ...prev, upiNumber: null })); setGeneralError(''); }} 
-                        keyboardType="phone-pad" 
-                        isDark={isDark} 
+                        onChangeText={(text) => { setUpiNumber(text); setErrors(prev => ({ ...prev, upiNumber: null })); setGeneralError(''); }}
+                        keyboardType="phone-pad"
+                        isDark={isDark}
                     />
 
                     {/* QR Code Upload Section */}
-                    <Text style={[styles.inputLabel, isDark ? styles.darkSubText : styles.lightSubText, { marginTop: 10 }]}>Payment QR Code</Text>
-                    
-                    <TouchableOpacity activeOpacity={0.8} onPress={pickQrImage} style={[styles.qrUploadBox, isDark ? styles.darkInput : styles.lightInput]}>
+                    <Text style={[styles.inputLabel, { color: t.colors.textMuted }, { marginTop: 10 }]}>Payment QR Code</Text>
+
+                    <TouchableOpacity activeOpacity={0.8} onPress={pickQrImage} style={[styles.qrUploadBox, { backgroundColor: t.colors.surfaceAlt, borderColor: t.colors.border }]}>
                         {displayQr ? (
                             <Image source={displayQr} style={styles.qrImagePreview} />
                         ) : (
                             <View style={styles.qrPlaceholder}>
-                                <Ionicons name="qr-code-outline" size={48} color={isDark ? '#475569' : '#94A3B8'} />
-                                <Text style={[styles.uploadText, isDark ? styles.darkSubText : styles.lightSubText]}>Tap to upload PhonePe/GPay QR</Text>
+                                <Ionicons name="qr-code-outline" size={48} color={t.colors.textFaint} />
+                                <Text style={[styles.uploadText, { color: t.colors.textMuted }]}>Tap to upload PhonePe/GPay QR</Text>
                             </View>
                         )}
-                        <View style={styles.editBadge}>
-                            <Ionicons name="pencil" size={14} color="#FFFFFF" />
+                        <View style={[styles.editBadge, { backgroundColor: t.colors.success }, t.shadows.sm]}>
+                            <Ionicons name="pencil" size={14} color={t.colors.onPrimary} />
                         </View>
                     </TouchableOpacity>
 
-                </View>
+                </GlassView>
 
                 {/* General Error Display */}
                 {generalError ? (
-                    <View style={styles.generalErrorBox}>
-                        <Ionicons name="warning" size={18} color="#EF4444" />
-                        <Text style={styles.generalErrorText}>{generalError}</Text>
+                    <View style={[styles.generalErrorBox, { backgroundColor: withAlpha(t.colors.danger, 0.12), borderColor: withAlpha(t.colors.danger, 0.35) }]}>
+                        <Ionicons name="warning" size={18} color={t.colors.danger} />
+                        <Text style={[styles.generalErrorText, { color: t.colors.danger }]}>{generalError}</Text>
                     </View>
                 ) : null}
 
-                <TouchableOpacity style={styles.saveBtnWrapper} activeOpacity={0.8} onPress={handleSaveSettings} disabled={isSaving}>
-                    <LinearGradient colors={['#10B981', '#059669']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.saveBtn}>
-                        {isSaving ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.saveBtnText}>Save Payment Details</Text>}
+                <TouchableOpacity style={[styles.saveBtnWrapper, { shadowColor: t.colors.success }]} activeOpacity={0.8} onPress={handleSaveSettings} disabled={isSaving}>
+                    <LinearGradient colors={[t.colors.success, withAlpha(t.colors.success, 0.82)]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.saveBtn}>
+                        {isSaving ? <ActivityIndicator color={t.colors.onPrimary} /> : <Text style={[styles.saveBtnText, { color: t.colors.onPrimary }]}>Save Payment Details</Text>}
                     </LinearGradient>
                 </TouchableOpacity>
-                
+
                 <View style={{ height: 40 }} />
             </ScrollView>
         </KeyboardAvoidingView>
@@ -241,39 +252,31 @@ const styles = StyleSheet.create({
     container: { flex: 1 },
     centerWrapper: { justifyContent: 'center', alignItems: 'center' },
     scrollContent: { paddingHorizontal: 20, paddingTop: 10, paddingBottom: 100 },
-    
-    infoCard: { flexDirection: 'row', padding: 20, borderRadius: 20, marginBottom: 20, alignItems: 'center' },
-    lightCard: { backgroundColor: '#FFFFFF', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 10, elevation: 3 },
-    darkCard: { backgroundColor: '#151A25' },
-    iconBg: { width: 56, height: 56, borderRadius: 16, backgroundColor: 'rgba(16, 185, 129, 0.15)', justifyContent: 'center', alignItems: 'center', marginRight: 16 },
+
+    infoCard: { flexDirection: 'row', padding: 20, marginBottom: 20, alignItems: 'center' },
+    iconBg: { width: 56, height: 56, borderRadius: 16, justifyContent: 'center', alignItems: 'center', marginRight: 16 },
     infoTextContainer: { flex: 1 },
     infoTitle: { fontSize: 18, fontWeight: '800', marginBottom: 4 },
     infoSub: { fontSize: 13, lineHeight: 20, fontWeight: '500' },
 
-    formSection: { padding: 20, borderRadius: 24, marginBottom: 20 },
+    formSection: { padding: 20, marginBottom: 20 },
     inputContainer: { marginBottom: 20 },
     inputLabel: { fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8, marginLeft: 4 },
     inputWrapper: { borderRadius: 16, paddingHorizontal: 16, height: 55, borderWidth: 1, justifyContent: 'center' },
     input: { fontSize: 15, fontWeight: '500', height: '100%' },
-    
-    lightInput: { backgroundColor: '#F8FAFC', borderColor: '#E2E8F0' },
-    darkInput: { backgroundColor: '#0A0F1C', borderColor: '#1E293B' },
-    lightText: { color: '#0F172A' }, darkText: { color: '#FFFFFF' },
-    lightSubText: { color: '#64748B' }, darkSubText: { color: '#94A3B8' },
 
     qrUploadBox: { height: 220, borderRadius: 20, borderWidth: 1, borderStyle: 'dashed', justifyContent: 'center', alignItems: 'center', overflow: 'hidden' },
     qrPlaceholder: { alignItems: 'center' },
     qrImagePreview: { width: '100%', height: '100%', resizeMode: 'contain' },
     uploadText: { marginTop: 12, fontSize: 14, fontWeight: '600' },
-    editBadge: { position: 'absolute', bottom: 10, right: 10, backgroundColor: '#10B981', width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: {width: 0, height: 2}, shadowOpacity: 0.3, elevation: 4 },
+    editBadge: { position: 'absolute', bottom: 10, right: 10, width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center' },
 
-    saveBtnWrapper: { shadowColor: '#10B981', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.4, shadowRadius: 12, elevation: 8, borderRadius: 20 },
+    saveBtnWrapper: { shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.4, shadowRadius: 12, elevation: 8, borderRadius: 20 },
     saveBtn: { height: 60, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
-    saveBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700', letterSpacing: 0.5 },
+    saveBtnText: { fontSize: 16, fontWeight: '700', letterSpacing: 0.5 },
 
     // NEW: Error Styles
-    inputErrorBorder: { borderColor: '#EF4444', borderWidth: 1.5 },
-    inlineErrorText: { color: '#EF4444', fontSize: 11, fontWeight: '600', marginTop: 4, marginLeft: 4 },
-    generalErrorBox: { flexDirection: 'row', backgroundColor: '#FEF2F2', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#FECACA', alignItems: 'center', marginBottom: 15 },
-    generalErrorText: { color: '#EF4444', fontSize: 13, fontWeight: '700', marginLeft: 8, flex: 1 },
+    inlineErrorText: { fontSize: 11, fontWeight: '600', marginTop: 4, marginLeft: 4 },
+    generalErrorBox: { flexDirection: 'row', padding: 12, borderRadius: 10, borderWidth: 1, alignItems: 'center', marginBottom: 15 },
+    generalErrorText: { fontSize: 13, fontWeight: '700', marginLeft: 8, flex: 1 },
 });
