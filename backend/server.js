@@ -85,21 +85,13 @@ app.get('/healthz', async (req, res) => {
     } catch (e) {
         // Surface the real driver error so connection problems can be diagnosed
         // (wrong host/port/SSL/credentials, IP allowlist, etc.).
+        // Expose only the driver error CODE (not host/credentials) so outages
+        // are diagnosable without leaking connection details on a public URL.
         res.status(500).json({
             status: 'degraded',
             db: 'down',
             code: e.code,
-            errno: e.errno,
-            message: e.message,
-            // Echo which host/port/SSL the server is actually trying (no secrets).
-            using: {
-                host: process.env.DB_HOST || '(unset)',
-                port: process.env.DB_PORT || '(unset→3306)',
-                database: process.env.DB_NAME || '(unset)',
-                user_set: !!process.env.DB_USER,
-                password_set: !!process.env.DB_PASSWORD,
-                db_ssl: process.env.DB_SSL || '(unset)'
-            }
+            errno: e.errno
         });
     }
 });
