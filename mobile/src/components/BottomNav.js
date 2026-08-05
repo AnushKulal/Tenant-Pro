@@ -3,61 +3,45 @@
 // HomeScreen passes goToTab as setActiveTab, so every press must still call it
 // with the exact tab name it switches on.
 //
-// Design: icon-only, with the active tab marked by a glowing orb that slides
-// between slots. Dropping the labels is deliberate — the previous version put a
-// rounded highlight behind an icon+label stack and the highlight's curve cut
-// across the text. A circle around a lone glyph has nothing to clip, so that bug
-// cannot recur by construction.
+// Active tab treatment: a CLEAR glass capsule with a luminous rim, not a filled
+// colour blob. The capsule reads as a lens sitting on the bar — its interior is
+// slightly darker than the bar and it is defined almost entirely by the light
+// caught on its edge.
 //
-// The orb's glow is concentric uniform-alpha circles. Neither RN nor
-// expo-linear-gradient can draw a radial gradient, and a LinearGradient inside a
-// circular clip does NOT substitute: it ramps alpha along one axis only, so
-// perpendicular to that axis it is still opaque where it meets the clip, leaving
-// a hard crescent (this was seen on device with the aurora blobs). Uniform alpha
-// has no direction, so many faint circles composite into a smooth bloom.
+// Two geometry rules keep the old cropping bug from returning:
+//   • the capsule is sized to CONTAIN the icon+label stack, never to sit behind
+//     part of it, and
+//   • its corner radius is exactly half its height, so it is a true stadium and
+//     the curve can never intrude on the content box.
+//
+// Icons come from Ionicons because it ships filled/outline pairs: the active tab
+// switches to the filled glyph, which is what makes the selection read at a
+// glance. Feather (used previously) is outline-only and cannot do that.
 import React, { useEffect, useRef, useState } from 'react';
-import { View, StyleSheet, Pressable, Animated } from 'react-native';
-import { Feather } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
+import { View, Text, StyleSheet, Pressable, Animated } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useTheme, withAlpha } from '../theme';
 import { GlassView } from '../ui';
 
-// Same tab set, order and Feather icon names as the previous version
-// (Rooms replaced Profile here — do not reorder or rename).
+// Same tab set and order as before — do not reorder or rename. `icon` is the
+// filled glyph; the outline variant is derived by appending '-outline'.
 const TABS = [
     { name: 'Home', icon: 'home' },
     { name: 'Rooms', icon: 'key' },
     { name: 'Properties', icon: 'grid' },
-    { name: 'Tenants', icon: 'users' }
+    { name: 'Tenants', icon: 'people' }
 ];
 
-const ICON_SIZE = 23;
-const BAR_HEIGHT = 72;
-const ORB = 52;          // solid core diameter
-const BLOOM_MAX = 98;    // outermost glow ring
-// Ring count and per-ring alpha trade smoothness against draw calls. At 7 rings
-// the size step was ~5px and each ring contributed ~0.05 alpha, which was
-// visible as banding in a 3x render. 14 rings halves the geometric step and
-// halves the alpha step, putting the seams below the perceptual threshold.
-const BLOOM_RINGS = 14;
+const ICON_SIZE = 21;
+const BAR_HEIGHT = 76;
+const CAPSULE_H = 58;          // tall enough to hold icon + label with breathing room
+const CAPSULE_INSET = 7;       // horizontal gap between capsule and cell edge
 
 // Every interpolation is clamped: t.motion.spring overshoots past 1, which would
 // push opacity negative and scale beyond the intended lift.
 const CLAMP = { extrapolate: 'clamp' };
-
-// Precomputed once — ring geometry never depends on theme or props.
-const BLOOM = Array.from({ length: BLOOM_RINGS }, (_, i) => {
-    const p = i / (BLOOM_RINGS - 1);              // 0 = outermost, 1 = innermost
-    return {
-        // Ease the radii so rings bunch up near the core, where the falloff of a
-        // real glow is steepest, and spread out toward the faint outer edge.
-        size: BLOOM_MAX + (ORB - BLOOM_MAX) * Math.pow(p, 0.72),
-        // Denser toward the core so it reads as a light source, not a flat disc.
-        alpha: 0.018 + 0.032 * p
-    };
-});
 
 export default function BottomNav({ activeTab, setActiveTab }) {
     const t = useTheme();
@@ -65,17 +49,16 @@ export default function BottomNav({ activeTab, setActiveTab }) {
 
     const activeIndex = TABS.findIndex((tab) => tab.name === activeTab);
     // Drill-in tabs (Settings, TenantProfile, Transactions…) are not in the bar.
-    // Fade the orb out for them rather than snapping it back to Home.
+    // Fade the capsule out for them rather than snapping it back to Home.
     const hasActive = activeIndex >= 0;
 
     // translateX needs a real pixel width, so the row is measured.
     const [barWidth, setBarWidth] = useState(0);
     const itemWidth = barWidth ? barWidth / TABS.length : 0;
+    const capsuleW = itemWidth ? Math.max(0, itemWidth - CAPSULE_INSET * 2) : 0;
 
-    const orbX = useRef(new Animated.Value(0)).current;
-    const orbOpacity = useRef(new Animated.Value(0)).current;
-    // One 0→1 driver per tab for its icon lift. Held in a ref so animating never
-    // re-renders the bar.
+    const capsuleX = useRef(new Animated.Value(0)).current;
+    const capsuleOpacity = useRef(new Animated.Value(0)).current;
     const lifts = useRef(TABS.map((_, i) => new Animated.Value(i === activeIndex ? 1 : 0))).current;
     const placed = useRef(false); // the first position is a jump, not a slide
 
@@ -85,14 +68,14 @@ export default function BottomNav({ activeTab, setActiveTab }) {
         if (barWidth && hasActive) {
             const x = activeIndex * itemWidth;
             if (placed.current) {
-                anims.push(Animated.spring(orbX, { toValue: x, useNativeDriver: true, ...t.motion.spring }));
+                anims.push(Animated.spring(capsuleX, { toValue: x, useNativeDriver: true, ...t.motion.spring }));
             } else {
-                orbX.setValue(x);
+                capsuleX.setValue(x);
                 placed.current = true;
             }
         }
 
-        anims.push(Animated.timing(orbOpacity, {
+        anims.push(Animated.timing(capsuleOpacity, {
             toValue: barWidth && hasActive ? 1 : 0,
             duration: t.motion.fast,
             useNativeDriver: true
@@ -107,7 +90,7 @@ export default function BottomNav({ activeTab, setActiveTab }) {
         });
 
         Animated.parallel(anims).start();
-    }, [activeIndex, hasActive, barWidth, itemWidth, orbX, orbOpacity, lifts, t.motion]);
+    }, [activeIndex, hasActive, barWidth, itemWidth, capsuleX, capsuleOpacity, lifts, t.motion]);
 
     return (
         <View
@@ -121,65 +104,51 @@ export default function BottomNav({ activeTab, setActiveTab }) {
             <View style={[styles.shadowWrap, { borderRadius: t.radii.pill }, t.shadows.lg]}>
                 <GlassView
                     radius={t.radii.pill}
-                    // Frost + clear: real blur (frost) under a LOW-alpha tint so the
-                    // backdrop still reads through the bar (clear), with edgeLight
-                    // adding the lit top edge and the vertical falloff between the
-                    // two. `strong` is deliberately NOT set — its high-alpha fill
-                    // would make the pane opaque and hide the whole effect.
+                    // Frost + clear: real blur under a low-alpha tint, so the backdrop
+                    // still reads through the bar. `strong` is deliberately unset —
+                    // its high-alpha fill would make the pane opaque.
                     blur
                     intensity={t.blurIntensity + 30}
                     tintColor={withAlpha(t.colors.surfaceAlt, t.isDark ? 0.34 : 0.42)}
                     edgeLight
-                    style={[styles.bar, { borderColor: withAlpha(t.colors.primaryAlt, 0.34) }]}
+                    style={[styles.bar, { borderColor: withAlpha(t.colors.primaryAlt, 0.3) }]}
                 >
                     <View style={styles.row} onLayout={(e) => setBarWidth(e.nativeEvent.layout.width)}>
-                        {itemWidth ? (
+                        {capsuleW ? (
                             <Animated.View
                                 pointerEvents="none"
                                 style={[
-                                    styles.orbSlot,
-                                    { width: itemWidth, opacity: orbOpacity, transform: [{ translateX: orbX }] }
+                                    styles.capsuleSlot,
+                                    { width: itemWidth, opacity: capsuleOpacity, transform: [{ translateX: capsuleX }] }
                                 ]}
                             >
-                                {/* Outer bloom: faint concentric circles → smooth glow. */}
-                                {BLOOM.map(({ size, alpha }, i) => (
-                                    <View
-                                        key={i}
-                                        style={[
-                                            styles.centred,
-                                            {
-                                                width: size,
-                                                height: size,
-                                                borderRadius: size / 2,
-                                                backgroundColor: withAlpha(t.colors.primaryAlt, alpha)
-                                            }
-                                        ]}
-                                    />
-                                ))}
+                                {/* No outer halo. A first pass approximated a glow with a
+                                    few nested stadium outlines, but at 3x they read as
+                                    discrete concentric ripples rather than light — the
+                                    concentric trick that works for circles fails here
+                                    because a stroked outline stays visible as a line.
+                                    The rim alone gives the lens its edge, which is what
+                                    the reference does too. */}
 
-                                {/* Core: gradient fill plus a crisp light rim. */}
+                                {/* The lens: a plain bordered View, deliberately NOT a
+                                    GlassView. It sits inside the already-blurred bar, so it
+                                    gained nothing from a second blur pass, and its stacked
+                                    gradient layers were rendering faint concentric arcs
+                                    around the capsule at 3x. A flat translucent fill plus a
+                                    bright rim is visually identical here and has no layers
+                                    to alias. The interior is slightly DARKER than the bar,
+                                    which is what makes the rim read as light catching a
+                                    raised glass edge. */}
                                 <View
                                     style={[
-                                        styles.centred,
-                                        styles.orbCore,
-                                        { borderColor: withAlpha(t.colors.onPrimary, 0.5) }
+                                        styles.capsule,
+                                        {
+                                            width: capsuleW,
+                                            backgroundColor: withAlpha(t.colors.bg, t.isDark ? 0.5 : 0.16),
+                                            borderColor: withAlpha(t.colors.onPrimary, t.isDark ? 0.34 : 0.7)
+                                        }
                                     ]}
-                                >
-                                    <LinearGradient
-                                        colors={[t.colors.primaryAlt, t.colors.primary, t.colors.primaryDeep]}
-                                        start={{ x: 0.2, y: 0 }}
-                                        end={{ x: 0.8, y: 1 }}
-                                        style={styles.fill}
-                                    />
-                                    {/* Specular highlight on the upper-left, so the orb
-                                        reads as a lit sphere rather than a flat disc. */}
-                                    <View
-                                        style={[
-                                            styles.specular,
-                                            { backgroundColor: withAlpha(t.colors.onPrimary, 0.22) }
-                                        ]}
-                                    />
-                                </View>
+                                />
                             </Animated.View>
                         ) : null}
 
@@ -192,27 +161,40 @@ export default function BottomNav({ activeTab, setActiveTab }) {
                                     style={styles.navItem}
                                     onPress={() => setActiveTab(tab.name)}
                                     accessibilityRole="tab"
-                                    // Labels are a casualty of the icon-only design;
-                                    // screen readers still get the tab name.
                                     accessibilityLabel={`${tab.name} tab`}
                                     accessibilityState={{ selected: isActive }}
                                 >
                                     <Animated.View
-                                        style={{
-                                            transform: [{
-                                                scale: lift.interpolate({
-                                                    inputRange: [0, 1],
-                                                    outputRange: [1, 1.06],
-                                                    ...CLAMP
-                                                })
-                                            }]
-                                        }}
+                                        style={[
+                                            styles.itemInner,
+                                            {
+                                                transform: [{
+                                                    scale: lift.interpolate({
+                                                        inputRange: [0, 1],
+                                                        outputRange: [1, 1.04],
+                                                        ...CLAMP
+                                                    })
+                                                }]
+                                            }
+                                        ]}
                                     >
-                                        <Feather
-                                            name={tab.icon}
+                                        <Ionicons
+                                            // Filled when active, outline when not — the
+                                            // clearest possible selected state at 21px.
+                                            name={isActive ? tab.icon : `${tab.icon}-outline`}
                                             size={ICON_SIZE}
-                                            color={isActive ? t.colors.onPrimary : t.colors.textMuted}
+                                            color={isActive ? t.colors.onPrimary : t.colors.textFaint}
                                         />
+                                        <Text
+                                            numberOfLines={1}
+                                            style={[
+                                                t.typography.micro,
+                                                styles.label,
+                                                { color: isActive ? t.colors.onPrimary : t.colors.textMuted }
+                                            ]}
+                                        >
+                                            {tab.name}
+                                        </Text>
                                     </Animated.View>
                                 </Pressable>
                             );
@@ -230,19 +212,16 @@ const styles = StyleSheet.create({
     bar: { width: '100%', height: BAR_HEIGHT, borderWidth: 1 },
     row: { flex: 1, flexDirection: 'row', alignItems: 'center' },
     navItem: { flex: 1, height: '100%', alignItems: 'center', justifyContent: 'center' },
-    fill: { flex: 1 },
+    itemInner: { alignItems: 'center', justifyContent: 'center' },
 
-    // The slot spans one cell; every glow layer is centred inside it, so the orb
-    // stays concentric with the icon regardless of cell width.
-    orbSlot: { position: 'absolute', top: 0, bottom: 0, left: 0, alignItems: 'center', justifyContent: 'center' },
-    centred: { position: 'absolute' },
-    orbCore: { width: ORB, height: ORB, borderRadius: ORB / 2, borderWidth: 1.5, overflow: 'hidden' },
-    specular: {
-        position: 'absolute',
-        top: 5,
-        left: 8,
-        width: ORB * 0.5,
-        height: ORB * 0.34,
-        borderRadius: ORB / 2
-    }
+    // The slot spans one cell and centres the capsule in it, so the lens stays
+    // concentric with the icon+label stack whatever the cell width.
+    capsuleSlot: { position: 'absolute', top: 0, bottom: 0, left: 0, alignItems: 'center', justifyContent: 'center' },
+    // Radius is exactly half the height: a true stadium, so the curve is tangent
+    // to the content box rather than cutting into it.
+    capsule: { height: CAPSULE_H, borderRadius: CAPSULE_H / 2, borderWidth: 1.5 },
+
+    // Tighter tracking than typography.micro so "Properties" fits on one line
+    // inside the capsule.
+    label: { marginTop: 3, letterSpacing: 0.1 }
 });
