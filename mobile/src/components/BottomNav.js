@@ -120,9 +120,17 @@ export default function BottomNav({ activeTab, setActiveTab }) {
             {/* Shadow sits outside GlassView, which clips its own overflow. */}
             <View style={[styles.shadowWrap, { borderRadius: t.radii.pill }, t.shadows.lg]}>
                 <GlassView
-                    strong
                     radius={t.radii.pill}
-                    style={[styles.bar, { borderColor: withAlpha(t.colors.primaryAlt, 0.28) }]}
+                    // Frost + clear: real blur (frost) under a LOW-alpha tint so the
+                    // backdrop still reads through the bar (clear), with edgeLight
+                    // adding the lit top edge and the vertical falloff between the
+                    // two. `strong` is deliberately NOT set — its high-alpha fill
+                    // would make the pane opaque and hide the whole effect.
+                    blur
+                    intensity={t.blurIntensity + 30}
+                    tintColor={withAlpha(t.colors.surfaceAlt, t.isDark ? 0.34 : 0.42)}
+                    edgeLight
+                    style={[styles.bar, { borderColor: withAlpha(t.colors.primaryAlt, 0.34) }]}
                 >
                     <View style={styles.row} onLayout={(e) => setBarWidth(e.nativeEvent.layout.width)}>
                         {itemWidth ? (
