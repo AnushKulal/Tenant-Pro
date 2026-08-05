@@ -38,6 +38,9 @@ jobs:
         working-directory: mobile
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          # MUST match the build profiles' API URL. Without this the OTA bundle
+          # would fall back to a LAN IP and the app couldn't reach the backend.
+          EXPO_PUBLIC_API_URL: https://tenantpro-backend.onrender.com
         run: |
           MSG="${{ github.event.inputs.message }}"
           if [ -z "$MSG" ]; then MSG="${{ github.event.head_commit.message }}"; fi

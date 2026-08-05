@@ -18,14 +18,18 @@ import axios from 'axios';
 // If the variable is not set, we fall back to the LAN IP below so nothing breaks.
 // -----------------------------------------------------------------------------
 
-// Fallback used only when EXPO_PUBLIC_API_URL is not defined. Replace with your IPv4.
-const FALLBACK_IP = '10.92.188.3';
+// Fallback used only when EXPO_PUBLIC_API_URL is not defined. This MUST be the
+// hosted backend (not a LAN IP): OTA updates don't always carry build-time env
+// vars, and if the fallback were a local IP the installed app would point at a
+// dead address and fail with "unable to connect". Defaulting to production is
+// the safe choice — real devices can always reach it.
+const FALLBACK_URL = 'https://tenantpro-backend.onrender.com';
 
 export const SERVER_URL =
-    process.env.EXPO_PUBLIC_API_URL || `http://${FALLBACK_IP}:5000`;
+    process.env.EXPO_PUBLIC_API_URL || FALLBACK_URL;
 
 // Kept for backwards compatibility (some screens import IP_ADDRESS).
-export const IP_ADDRESS = FALLBACK_IP;
+export const IP_ADDRESS = '10.92.188.3';
 
 // Resolve an image/file URL coming from the backend.
 //   • Absolute URLs (Cloudinary: "https://...") are returned as-is.
