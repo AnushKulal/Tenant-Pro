@@ -92,6 +92,13 @@ export default function Avatar({ name, uri, size = 44, radius, borderWidth = 0, 
     );
 }
 
+const styles = StyleSheet.create({
+    center: { alignItems: 'center', justifyContent: 'center' },
+    // Size and colour are applied inline (they depend on props/theme); only the
+    // weight and tracking are static.
+    initials: { fontWeight: '800', letterSpacing: 0.5 }
+});
+
 // Warm the cache ahead of time (safe to call with null/undefined).
 Avatar.prefetch = async (uri) => {
     if (!uri) return false;
