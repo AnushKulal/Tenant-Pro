@@ -2,17 +2,21 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
     View, Text, StyleSheet, ScrollView, TouchableOpacity,
-    Image, Animated, Easing, Modal, ActivityIndicator, Dimensions, TextInput, Platform, Alert
+    Animated, Easing, Modal, ActivityIndicator, Dimensions, TextInput, Platform, Alert
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import client, { SERVER_URL, mediaUrl } from '../api/client';
 import EditTenantModal from './EditTenantModal';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { useTheme, withAlpha } from '../theme';
+import { GlassView, Avatar } from '../ui';
 
 const { width, height } = Dimensions.get('window');
 
 export default function TenantProfileTab({ isDark, tenant, goBack }) {
+    const t = useTheme();
+
     if (!tenant) return null;
 
     // --- STATUS HELPERS ---
@@ -170,9 +174,9 @@ export default function TenantProfileTab({ isDark, tenant, goBack }) {
     });
 
     const getStatusColor = () => {
-        if (isPast) return '#94A3B8';
-        if (isUnassigned) return '#F59E0B';
-        return '#10B981';
+        if (isPast) return t.colors.textMuted;
+        if (isUnassigned) return t.colors.warning;
+        return t.colors.success;
     };
     const statusColor = getStatusColor();
 
@@ -185,12 +189,12 @@ export default function TenantProfileTab({ isDark, tenant, goBack }) {
 
     const InfoRow = ({ icon, label, value, valueColor }) => (
         <View style={styles.infoRow}>
-            <View style={[styles.iconBg, isDark ? styles.darkIconBg : styles.lightIconBg]}>
-                <Ionicons name={icon} size={18} color={isDark ? '#94A3B8' : '#64748B'} />
+            <View style={[styles.iconBg, { backgroundColor: t.colors.surfaceAlt }]}>
+                <Ionicons name={icon} size={18} color={t.colors.textMuted} />
             </View>
             <View style={styles.infoTextContainer}>
-                <Text style={[styles.infoLabel, isDark ? styles.darkSubText : styles.lightSubText]}>{label}</Text>
-                <Text style={[styles.infoValue, isDark ? styles.darkText : styles.lightText, valueColor && { color: valueColor }]}>
+                <Text style={[styles.infoLabel, { color: t.colors.textMuted }]}>{label}</Text>
+                <Text style={[styles.infoValue, { color: t.colors.text }, valueColor && { color: valueColor }]}>
                     {value || 'Not provided'}
                 </Text>
             </View>
@@ -202,16 +206,16 @@ export default function TenantProfileTab({ isDark, tenant, goBack }) {
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
 
                 {/* --- PROFILE CARD WITH INLINE BUTTONS --- */}
-                <View style={[styles.profileCard, isDark ? styles.darkCard : styles.lightCard]}>
+                <GlassView radius={24} style={[styles.profileCard, t.shadows.sm]}>
                     <View style={styles.cardActionBar}>
-                        <TouchableOpacity onPress={goBack} style={[styles.actionBtn, isDark ? styles.darkActionBtn : styles.lightActionBtn]}>
-                            <Ionicons name="arrow-back" size={20} color={isDark ? '#FFFFFF' : '#0F172A'} />
+                        <TouchableOpacity onPress={goBack} style={[styles.actionBtn, { backgroundColor: t.colors.surfaceAlt }]}>
+                            <Ionicons name="arrow-back" size={20} color={t.colors.text} />
                         </TouchableOpacity>
                         <TouchableOpacity
                             onPress={() => setEditModalVisible(true)}
-                            style={[styles.actionBtn, isDark ? styles.darkActionBtn : styles.lightActionBtn]}
+                            style={[styles.actionBtn, { backgroundColor: t.colors.surfaceAlt }]}
                         >
-                            <Ionicons name="create-outline" size={20} color={isDark ? '#94A3B8' : '#64748B'} />
+                            <Ionicons name="create-outline" size={20} color={t.colors.textMuted} />
                         </TouchableOpacity>
                     </View>
 
@@ -225,78 +229,78 @@ export default function TenantProfileTab({ isDark, tenant, goBack }) {
                             }
                         ]} />
 
-                        {tenant.image_url ? (
-                            <Image source={{ uri: mediaUrl(tenant.image_url) }} style={styles.avatar} />
-                        ) : (
-                            <View style={styles.placeholderAvatar}>
-                                <Text style={styles.avatarInitials}>{tenant.name.substring(0, 2).toUpperCase()}</Text>
-                            </View>
-                        )}
-                        <View style={[styles.statusBadge, { backgroundColor: statusColor }, { borderColor: isDark ? '#151A25' : '#FFFFFF' }]}>
-                            <Text style={styles.statusBadgeText}>
+                        <Avatar name={tenant.name} uri={tenant.image_url} size={80} style={styles.avatar} />
+                        <View style={[styles.statusBadge, { backgroundColor: statusColor }, { borderColor: t.colors.surface }]}>
+                            <Text style={[styles.statusBadgeText, { color: t.colors.onPrimary }]}>
                                 {isPast ? 'MOVED OUT' : (isUnassigned ? 'UNASSIGNED' : 'ACTIVE')}
                             </Text>
                         </View>
                     </View>
 
-                    <Text style={[styles.tenantName, isDark ? styles.darkText : styles.lightText]}>{tenant.name}</Text>
-                    <Text style={[styles.tenantPhone, isDark ? styles.darkSubText : styles.lightSubText]}>+91 {tenant.phone}</Text>
+                    <Text style={[styles.tenantName, { color: t.colors.text }]}>{tenant.name}</Text>
+                    <Text style={[styles.tenantPhone, { color: t.colors.textMuted }]}>+91 {tenant.phone}</Text>
 
-                    <View style={styles.quickStatsRow}>
+                    <View style={[styles.quickStatsRow, { borderTopColor: t.colors.border }]}>
                         <View style={styles.statBox}>
-                            <Text style={[styles.statValue, isDark ? styles.darkText : styles.lightText]}>₹{tenant.rent_share}</Text>
-                            <Text style={[styles.statLabel, isDark ? styles.darkSubText : styles.lightSubText]}>Rent/Mo</Text>
+                            <Text style={[styles.statValue, { color: t.colors.text }]}>₹{tenant.rent_share}</Text>
+                            <Text style={[styles.statLabel, { color: t.colors.textMuted }]}>Rent/Mo</Text>
                         </View>
-                        <View style={styles.statDivider} />
+                        <View style={[styles.statDivider, { backgroundColor: t.colors.border }]} />
                         <View style={styles.statBox}>
-                            <Text style={[styles.statValue, isDark ? styles.darkText : styles.lightText]}>₹{tenant.deposit}</Text>
-                            <Text style={[styles.statLabel, isDark ? styles.darkSubText : styles.lightSubText]}>Deposit</Text>
+                            <Text style={[styles.statValue, { color: t.colors.text }]}>₹{tenant.deposit}</Text>
+                            <Text style={[styles.statLabel, { color: t.colors.textMuted }]}>Deposit</Text>
                         </View>
-                        <View style={styles.statDivider} />
+                        <View style={[styles.statDivider, { backgroundColor: t.colors.border }]} />
                         <View style={styles.statBox}>
-                            <Text style={[styles.statValue, { color: '#10B981' }]}>{tenant.credit_score || 100}</Text>
-                            <Text style={[styles.statLabel, isDark ? styles.darkSubText : styles.lightSubText]}>Trust Score</Text>
+                            <Text style={[styles.statValue, { color: t.colors.success }]}>{tenant.credit_score || 100}</Text>
+                            <Text style={[styles.statLabel, { color: t.colors.textMuted }]}>Trust Score</Text>
                         </View>
                     </View>
-                </View>
+                </GlassView>
 
                 {/* --- DYNAMIC ACTION BANNER --- */}
                 {isUnassigned ? (
-                    <View style={[styles.actionBanner, isDark ? styles.darkActionBannerWarning : styles.lightActionBannerWarning]}>
+                    <View style={[styles.actionBanner, {
+                        backgroundColor: withAlpha(t.colors.warning, 0.12),
+                        borderColor: withAlpha(t.colors.warning, 0.28)
+                    }]}>
                         <View style={styles.actionBannerLeft}>
-                            <View style={[styles.bannerIconBg, { backgroundColor: 'rgba(245, 158, 11, 0.15)' }]}>
-                                <Ionicons name="home-outline" size={22} color="#F59E0B" />
+                            <View style={[styles.bannerIconBg, { backgroundColor: withAlpha(t.colors.warning, 0.15) }]}>
+                                <Ionicons name="home-outline" size={22} color={t.colors.warning} />
                             </View>
                             <View style={{ marginLeft: 12 }}>
-                                <Text style={[styles.actionBannerTitle, isDark ? styles.darkText : styles.lightText]}>Needs a Room</Text>
-                                <Text style={[styles.actionBannerSub, isDark ? styles.darkSubText : styles.lightSubText]}>This tenant is currently unassigned.</Text>
+                                <Text style={[styles.actionBannerTitle, { color: t.colors.text }]}>Needs a Room</Text>
+                                <Text style={[styles.actionBannerSub, { color: t.colors.textMuted }]}>This tenant is currently unassigned.</Text>
                             </View>
                         </View>
                         <TouchableOpacity
-                            style={styles.assignBtn}
+                            style={[styles.assignBtn, { backgroundColor: t.colors.warning }]}
                             onPress={() => {
                                 fetchAvailableUnits();
                                 setAssignModalVisible(true);
                             }}
                         >
-                            <Text style={styles.assignBtnText}>Assign Unit</Text>
+                            <Text style={[styles.assignBtnText, { color: t.colors.onPrimary }]}>Assign Unit</Text>
                         </TouchableOpacity>
                     </View>
                 ) : (
-                    <View style={[styles.actionBanner, isDark ? styles.darkActionBannerInfo : styles.lightActionBannerInfo]}>
+                    <View style={[styles.actionBanner, {
+                        backgroundColor: withAlpha(t.colors.primary, 0.10),
+                        borderColor: withAlpha(t.colors.primary, 0.22)
+                    }]}>
                         <View style={styles.actionBannerLeft}>
-                            <View style={[styles.bannerIconBg, { backgroundColor: isDark ? 'rgba(99, 102, 241, 0.2)' : '#E0E7FF' }]}>
+                            <View style={[styles.bannerIconBg, { backgroundColor: withAlpha(t.colors.primary, 0.18) }]}>
                                 <Ionicons
                                     name={isPast ? "exit-outline" : "checkmark-circle-outline"}
                                     size={22}
-                                    color={isDark ? '#818CF8' : '#4F46E5'}
+                                    color={t.colors.primary}
                                 />
                             </View>
                             <View style={{ marginLeft: 12 }}>
-                                <Text style={[styles.actionBannerTitle, isDark ? styles.darkText : styles.lightText]}>
+                                <Text style={[styles.actionBannerTitle, { color: t.colors.text }]}>
                                     {isPast ? 'Moved Out' : 'Residency Status'}
                                 </Text>
-                                <Text style={[styles.actionBannerSub, isDark ? styles.darkSubText : styles.lightSubText]}>
+                                <Text style={[styles.actionBannerSub, { color: t.colors.textMuted }]}>
                                     {isPast
                                         ? `Left the unit ${getDaysDifference(tenant.created_at)} days ago.`
                                         : `Staying for the last ${getDaysDifference(tenant.created_at)} days.`}
@@ -309,26 +313,26 @@ export default function TenantProfileTab({ isDark, tenant, goBack }) {
                 {/* Section blocks... */}
                 {!isUnassigned && !isPast && (
                     <>
-                        <Text style={[styles.sectionTitle, isDark ? styles.darkText : styles.lightText]}>Current Lease</Text>
-                        <View style={[styles.detailsBlock, isDark ? styles.darkCard : styles.lightCard]}>
+                        <Text style={[styles.sectionTitle, { color: t.colors.text }]}>Current Lease</Text>
+                        <GlassView radius={t.radii.xl} style={styles.detailsBlock}>
                             <InfoRow icon="business-outline" label="Property Name" value={tenant.property_name} />
-                            <InfoRow icon="bed-outline" label="Unit / Room No" value={`Unit ${tenant.unit_number}`} valueColor="#6366F1" />
+                            <InfoRow icon="bed-outline" label="Unit / Room No" value={`Unit ${tenant.unit_number}`} valueColor={t.colors.primary} />
                             <InfoRow icon="calendar-outline" label="Moved In On" value={new Date(tenant.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })} />
-                        </View>
+                        </GlassView>
                     </>
                 )}
 
-                <Text style={[styles.sectionTitle, isDark ? styles.darkText : styles.lightText]}>Personal Details</Text>
-                <View style={[styles.detailsBlock, isDark ? styles.darkCard : styles.lightCard]}>
+                <Text style={[styles.sectionTitle, { color: t.colors.text }]}>Personal Details</Text>
+                <GlassView radius={t.radii.xl} style={styles.detailsBlock}>
                     <InfoRow icon="mail-outline" label="Email Address" value={tenant.email} />
                     <InfoRow icon="card-outline" label="Aadhar Number" value={tenant.aadhar} />
-                </View>
+                </GlassView>
 
-                <Text style={[styles.sectionTitle, isDark ? styles.darkText : styles.lightText]}>Work & Emergency</Text>
-                <View style={[styles.detailsBlock, isDark ? styles.darkCard : styles.lightCard]}>
+                <Text style={[styles.sectionTitle, { color: t.colors.text }]}>Work & Emergency</Text>
+                <GlassView radius={t.radii.xl} style={styles.detailsBlock}>
                     <InfoRow icon="briefcase-outline" label="Company / College" value={tenant.company} />
-                    <InfoRow icon="call-outline" label="Emergency Contact" value={tenant.emergency_phone} valueColor="#EF4444" />
-                </View>
+                    <InfoRow icon="call-outline" label="Emergency Contact" value={tenant.emergency_phone} valueColor={t.colors.danger} />
+                </GlassView>
 
                 <View style={{ height: 100 }} />
             </ScrollView>
@@ -341,33 +345,35 @@ export default function TenantProfileTab({ isDark, tenant, goBack }) {
                 onRequestClose={handleCloseModal}
             >
                 <TouchableOpacity
-                    style={styles.modalOverlay}
+                    style={[styles.modalOverlay, { backgroundColor: t.colors.scrim }]}
                     activeOpacity={1}
                     onPress={handleCloseModal}
                 >
+                    {/* Stays a TouchableOpacity: it swallows taps so the overlay above
+                        doesn't close the sheet. A GlassView here would not block them. */}
                     <TouchableOpacity
                         activeOpacity={1}
-                        style={[styles.sheetContent, isDark ? styles.darkCard : styles.lightCard]}
+                        style={[styles.sheetContent, { backgroundColor: t.colors.surface }]}
                     >
                         <View style={styles.sheetHeader}>
-                            <View style={styles.sheetHandle} />
+                            <View style={[styles.sheetHandle, { backgroundColor: t.colors.borderStrong }]} />
                             <View style={styles.sheetTitleRow}>
-                                <Text style={[styles.sheetTitle, isDark ? styles.darkText : styles.lightText]}>Assign Room</Text>
+                                <Text style={[styles.sheetTitle, { color: t.colors.text }]}>Assign Room</Text>
                                 <TouchableOpacity onPress={handleCloseModal} style={styles.sheetCloseBtn}>
-                                    <Ionicons name="close-circle" size={24} color={isDark ? '#475569' : '#CBD5E1'} />
+                                    <Ionicons name="close-circle" size={24} color={t.colors.textFaint} />
                                 </TouchableOpacity>
                             </View>
                         </View>
 
                         <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: height * 0.6 }}>
-                            <Text style={[styles.inputLabel, isDark ? styles.darkSubText : styles.lightSubText]}>Select Available Unit</Text>
+                            <Text style={[styles.inputLabel, { color: t.colors.textMuted }]}>Select Available Unit</Text>
 
                             {isLoadingUnits ? (
-                                <ActivityIndicator color="#6366F1" style={{ marginVertical: 30 }} />
+                                <ActivityIndicator color={t.colors.primary} style={{ marginVertical: 30 }} />
                             ) : availableUnits.length === 0 ? (
                                 <View style={styles.emptyUnitsBox}>
-                                    <Ionicons name="alert-circle-outline" size={32} color="#94A3B8" />
-                                    <Text style={styles.emptyUnitsText}>No available beds found.</Text>
+                                    <Ionicons name="alert-circle-outline" size={32} color={t.colors.textMuted} />
+                                    <Text style={[styles.emptyUnitsText, { color: t.colors.textMuted }]}>No available beds found.</Text>
                                 </View>
                             ) : (
                                 availableUnits.map(unit => (
@@ -375,14 +381,17 @@ export default function TenantProfileTab({ isDark, tenant, goBack }) {
                                         key={unit.id}
                                         style={[
                                             styles.unitSelectItem,
-                                            selectedUnit?.id === unit.id && styles.selectedUnitItem,
-                                            isDark ? styles.darkIconBg : styles.lightIconBg
+                                            { backgroundColor: t.colors.surfaceAlt },
+                                            selectedUnit?.id === unit.id && {
+                                                borderColor: t.colors.primary,
+                                                backgroundColor: withAlpha(t.colors.primary, 0.10)
+                                            }
                                         ]}
                                         onPress={() => setSelectedUnit(unit)}
                                     >
                                         <View style={{ flex: 1 }}>
-                                            <Text style={[styles.unitSelectNumber, isDark ? styles.darkText : styles.lightText]}>Unit {unit.unit_number}</Text>
-                                            <Text style={[styles.unitSelectProp, isDark ? styles.darkSubText : styles.lightSubText]}>{unit.property_name}</Text>
+                                            <Text style={[styles.unitSelectNumber, { color: t.colors.text }]}>Unit {unit.unit_number}</Text>
+                                            <Text style={[styles.unitSelectProp, { color: t.colors.textMuted }]}>{unit.property_name}</Text>
                                         </View>
 
                                         <View style={styles.unitRightInfo}>
@@ -390,17 +399,17 @@ export default function TenantProfileTab({ isDark, tenant, goBack }) {
                                                 <Ionicons
                                                     name={unit.rent_split_type === 'Equal' ? 'people-outline' : 'person-outline'}
                                                     size={12}
-                                                    color={isDark ? '#94A3B8' : '#64748B'}
+                                                    color={t.colors.textMuted}
                                                 />
-                                                <Text style={[styles.splitText, isDark ? styles.darkSubText : styles.lightSubText]}>
+                                                <Text style={[styles.splitText, { color: t.colors.textMuted }]}>
                                                     {unit.rent_split_type || 'Custom'} Split
                                                 </Text>
                                             </View>
 
-                                            <Text style={[styles.unitRentSplit, isDark ? styles.darkText : styles.lightText]}>₹{unit.base_rent}/mo</Text>
+                                            <Text style={[styles.unitRentSplit, { color: t.colors.text }]}>₹{unit.base_rent}/mo</Text>
 
-                                            <View style={[styles.unitSelectBadge, { backgroundColor: isDark ? 'rgba(52, 211, 153, 0.1)' : '#D1FAE5' }]}>
-                                                <Text style={[styles.unitSelectBadgeText, { color: isDark ? '#34D399' : '#059669' }]}>
+                                            <View style={[styles.unitSelectBadge, { backgroundColor: withAlpha(t.colors.success, 0.15) }]}>
+                                                <Text style={[styles.unitSelectBadgeText, { color: t.colors.success }]}>
                                                     {unit.capacity - unit.current_occupancy} Bed Left
                                                 </Text>
                                             </View>
@@ -413,15 +422,18 @@ export default function TenantProfileTab({ isDark, tenant, goBack }) {
                                 <Animated.View style={{ marginTop: 20 }}>
 
                                     {/* 1. DATE & BILLING CYCLE SECTION */}
-                                    <View style={styles.billingSection}>
-                                        <Text style={[styles.inputLabel, isDark ? styles.darkSubText : styles.lightSubText]}>Move-In Date</Text>
+                                    <View style={[styles.billingSection, {
+                                        backgroundColor: withAlpha(t.colors.primary, 0.06),
+                                        borderColor: withAlpha(t.colors.primary, 0.14)
+                                    }]}>
+                                        <Text style={[styles.inputLabel, { color: t.colors.textMuted }]}>Move-In Date</Text>
                                         <TouchableOpacity
-                                            style={[styles.datePickerBtn, isDark ? styles.darkInput : styles.lightInput]}
+                                            style={[styles.datePickerBtn, { backgroundColor: t.colors.surfaceAlt }]}
                                             activeOpacity={0.8}
                                             onPress={() => setShowDatePicker(true)}
                                         >
-                                            <Ionicons name="calendar-outline" size={20} color={isDark ? '#94A3B8' : '#64748B'} />
-                                            <Text style={[styles.datePickerText, isDark ? styles.darkText : styles.lightText]}>
+                                            <Ionicons name="calendar-outline" size={20} color={t.colors.textMuted} />
+                                            <Text style={[styles.datePickerText, { color: t.colors.text }]}>
                                                 {moveInDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                                             </Text>
                                         </TouchableOpacity>
@@ -439,22 +451,22 @@ export default function TenantProfileTab({ isDark, tenant, goBack }) {
                                             />
                                         )}
 
-                                        <Text style={[styles.inputLabel, isDark ? styles.darkSubText : styles.lightSubText, { marginTop: 15 }]}>Billing Cycle</Text>
+                                        <Text style={[styles.inputLabel, { color: t.colors.textMuted }, { marginTop: 15 }]}>Billing Cycle</Text>
                                         <View style={styles.cycleToggleContainer}>
                                             <TouchableOpacity
-                                                style={[styles.cycleBtn, billingCycle === 'Anniversary' ? styles.cycleBtnActive : (isDark ? styles.darkInput : styles.lightInput)]}
+                                                style={[styles.cycleBtn, billingCycle === 'Anniversary' ? { backgroundColor: t.colors.primary } : { backgroundColor: t.colors.surfaceAlt }]}
                                                 onPress={() => setBillingCycle('Anniversary')}
                                             >
-                                                <Text style={[styles.cycleBtnText, billingCycle === 'Anniversary' ? { color: '#FFF' } : (isDark ? styles.darkSubText : styles.lightSubText)]}>
+                                                <Text style={[styles.cycleBtnText, billingCycle === 'Anniversary' ? { color: t.colors.onPrimary } : { color: t.colors.textMuted }]}>
                                                     Monthly from Move-In
                                                 </Text>
                                             </TouchableOpacity>
 
                                             <TouchableOpacity
-                                                style={[styles.cycleBtn, billingCycle === '1st_of_month' ? styles.cycleBtnActive : (isDark ? styles.darkInput : styles.lightInput)]}
+                                                style={[styles.cycleBtn, billingCycle === '1st_of_month' ? { backgroundColor: t.colors.primary } : { backgroundColor: t.colors.surfaceAlt }]}
                                                 onPress={() => setBillingCycle('1st_of_month')}
                                             >
-                                                <Text style={[styles.cycleBtnText, billingCycle === '1st_of_month' ? { color: '#FFF' } : (isDark ? styles.darkSubText : styles.lightSubText)]}>
+                                                <Text style={[styles.cycleBtnText, billingCycle === '1st_of_month' ? { color: t.colors.onPrimary } : { color: t.colors.textMuted }]}>
                                                     1st of the Month
                                                 </Text>
                                             </TouchableOpacity>
@@ -464,38 +476,40 @@ export default function TenantProfileTab({ isDark, tenant, goBack }) {
                                     {/* 2. DEPOSIT & RENT INPUTS */}
                                     <View style={[styles.rowInputs, { marginTop: 15 }]}>
                                         <View style={{ flex: 1, marginRight: 10 }}>
-                                            <Text style={[styles.inputLabel, isDark ? styles.darkSubText : styles.lightSubText]}>New Deposit (₹)</Text>
+                                            <Text style={[styles.inputLabel, { color: t.colors.textMuted }]}>New Deposit (₹)</Text>
                                             <TextInput
-                                                style={[styles.sheetInput, isDark ? styles.darkInput : styles.lightInput, isDark ? styles.darkText : styles.lightText]}
+                                                style={[styles.sheetInput, { backgroundColor: t.colors.surfaceAlt, borderColor: t.colors.border, color: t.colors.text }]}
                                                 keyboardType="numeric"
                                                 value={assignDeposit}
                                                 onChangeText={setAssignDeposit}
                                                 placeholder="0"
-                                                placeholderTextColor="#94A3B8"
+                                                placeholderTextColor={t.colors.textFaint}
                                             />
                                         </View>
                                         <View style={{ flex: 1 }}>
-                                            <Text style={[styles.inputLabel, isDark ? styles.darkSubText : styles.lightSubText]}>
+                                            <Text style={[styles.inputLabel, { color: t.colors.textMuted }]}>
                                                 Monthly Rent (₹)
                                             </Text>
                                             <TextInput
-                                                style={[styles.sheetInput, isDark ? styles.darkInput : styles.lightInput, isDark ? styles.darkText : styles.lightText, billingCycle === '1st_of_month' && { borderColor: '#10B981', borderWidth: 1 }]}
+                                                style={[styles.sheetInput, { backgroundColor: t.colors.surfaceAlt, borderColor: t.colors.border, color: t.colors.text }, billingCycle === '1st_of_month' && { borderColor: t.colors.success, borderWidth: 1 }]}
                                                 keyboardType="numeric"
                                                 value={assignRent}
                                                 onChangeText={setAssignRent}
-                                                placeholderTextColor="#94A3B8"
+                                                placeholderTextColor={t.colors.textFaint}
                                             />
                                         </View>
                                     </View>
 
                                     {/* ✨ MOVED OUTSIDE: Spans full width! */}
                                     <View style={[styles.helperContainer, { marginTop: 10, marginBottom: 15 }]}>
+                                        {/* Prorated maths reads as a money outcome (success); the split
+                                            hints are purely informational, so they take the brand hue. */}
                                         <Ionicons
                                             name={billingCycle === '1st_of_month' ? "calculator" : (selectedUnit.rent_split_type === 'Equal' ? "checkmark-circle" : "create")}
                                             size={14}
-                                            color={billingCycle === '1st_of_month' ? '#10B981' : '#36f058'}
+                                            color={billingCycle === '1st_of_month' ? t.colors.success : t.colors.primary}
                                         />
-                                        <Text style={[styles.helperMsg, { color: billingCycle === '1st_of_month' ? '#10B981' : '#36f058' }]}>
+                                        <Text style={[styles.helperMsg, { color: billingCycle === '1st_of_month' ? t.colors.success : t.colors.primary }]}>
                                             {billingCycle === '1st_of_month' && proratedDisplayAmount
                                                 ? ` Prorated for this month: Collect ₹${proratedDisplayAmount} today.`
                                                 : (selectedUnit.rent_split_type === 'Equal'
@@ -509,11 +523,11 @@ export default function TenantProfileTab({ isDark, tenant, goBack }) {
                         </ScrollView>
 
                         <TouchableOpacity
-                            style={[styles.confirmAssignBtn, (!selectedUnit || isAssigning) && { opacity: 0.5 }]}
+                            style={[styles.confirmAssignBtn, { backgroundColor: t.colors.primary }, t.shadows.glow, (!selectedUnit || isAssigning) && { opacity: 0.5 }]}
                             disabled={!selectedUnit || isAssigning}
                             onPress={handleFinalAssign}
                         >
-                            {isAssigning ? <ActivityIndicator color="#FFF" /> : <Text style={styles.confirmAssignText}>Confirm Move-In</Text>}
+                            {isAssigning ? <ActivityIndicator color={t.colors.onPrimary} /> : <Text style={[styles.confirmAssignText, { color: t.colors.onPrimary }]}>Confirm Move-In</Text>}
                         </TouchableOpacity>
                     </TouchableOpacity>
                 </TouchableOpacity>
@@ -523,27 +537,27 @@ export default function TenantProfileTab({ isDark, tenant, goBack }) {
                     <View style={styles.iosInlineOverlay}>
                         {/* The dark background that you can click to close */}
                         <TouchableOpacity
-                            style={styles.iosPickerBackground}
+                            style={[styles.iosPickerBackground, { backgroundColor: t.colors.scrim }]}
                             activeOpacity={1}
                             onPress={() => setShowDatePicker(false)}
                         />
 
-                        {/* The actual white/dark sheet */}
-                        <View style={[styles.iosPickerContainer, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF' }]}>
-                            <View style={[styles.iosPickerHeader, isDark ? styles.darkDivider : styles.lightDivider]}>
+                        {/* The actual themed sheet */}
+                        <View style={[styles.iosPickerContainer, { backgroundColor: t.colors.surface }]}>
+                            <View style={[styles.iosPickerHeader, { borderColor: t.colors.border }]}>
                                 <TouchableOpacity onPress={() => setShowDatePicker(false)}>
-                                    <Text style={styles.iosDoneText}>Done</Text>
+                                    <Text style={[styles.iosDoneText, { color: t.colors.primary }]}>Done</Text>
                                 </TouchableOpacity>
                             </View>
                             <DateTimePicker
                                 value={moveInDate}
                                 mode="date"
                                 display="spinner"
-                                textColor={isDark ? '#FFFFFF' : '#000000'}
+                                textColor={t.colors.text}
                                 onChange={(event, selectedDate) => {
                                     if (selectedDate) setMoveInDate(selectedDate);
                                 }}
-                                style={{ height: 200, backgroundColor: isDark ? '#1E293B' : '#FFFFFF' }}
+                                style={{ height: 200, backgroundColor: t.colors.surface }}
                             />
                         </View>
                     </View>
@@ -572,59 +586,44 @@ const styles = StyleSheet.create({
     editBtn: { padding: 5, marginRight: -5 },
     scrollContent: { paddingHorizontal: 20 },
     profileCard: { borderRadius: 24, padding: 20, alignItems: 'center', marginBottom: 20, marginTop: 5, position: 'relative', overflow: 'hidden' },
-    lightCard: { backgroundColor: '#FFFFFF', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 10, elevation: 3 },
-    darkCard: { backgroundColor: '#151A25' },
     cardActionBar: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', position: 'absolute', top: 15, left: 15, right: 15, zIndex: 10, paddingHorizontal: 5 },
     actionBtn: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
-    lightActionBtn: { backgroundColor: '#F1F5F9' },
-    darkActionBtn: { backgroundColor: '#1E293B' },
     avatarContainer: { position: 'relative', marginBottom: 15, alignItems: 'center', justifyContent: 'center', width: 90, height: 90 },
     ripple: { position: 'absolute', width: 80, height: 80, borderRadius: 40, borderWidth: 1.5, backgroundColor: 'transparent' },
     avatar: { width: 80, height: 80, borderRadius: 40, zIndex: 10 },
-    placeholderAvatar: { width: 80, height: 80, borderRadius: 40, backgroundColor: 'rgba(99, 102, 241, 0.15)', justifyContent: 'center', alignItems: 'center', zIndex: 10 },
-    avatarInitials: { color: '#6366F1', fontSize: 28, fontWeight: '800' },
     statusBadge: { position: 'absolute', bottom: -5, alignSelf: 'center', paddingHorizontal: 5, paddingVertical: 4, borderRadius: 10, borderWidth: 2, zIndex: 20 },
-    statusBadgeText: { color: '#FFFFFF', fontSize: 9, fontWeight: '800', letterSpacing: 0.5 },
+    statusBadgeText: { fontSize: 9, fontWeight: '800', letterSpacing: 0.5 },
     tenantName: { fontSize: 20, fontWeight: '800', marginBottom: 4 },
     tenantPhone: { fontSize: 13, fontWeight: '600', marginBottom: 20 },
-    quickStatsRow: { flexDirection: 'row', width: '100%', justifyContent: 'space-around', alignItems: 'center', paddingTop: 20, borderTopWidth: 1, borderTopColor: 'rgba(148, 163, 184, 0.2)' },
+    quickStatsRow: { flexDirection: 'row', width: '100%', justifyContent: 'space-around', alignItems: 'center', paddingTop: 20, borderTopWidth: 1 },
     statBox: { alignItems: 'center' },
     statValue: { fontSize: 16, fontWeight: '800', marginBottom: 2 },
     statLabel: { fontSize: 11, fontWeight: '600', textTransform: 'uppercase' },
-    statDivider: { width: 1, height: 30, backgroundColor: 'rgba(148, 163, 184, 0.3)' },
+    statDivider: { width: 1, height: 30 },
     actionBanner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderRadius: 16, marginBottom: 20, borderWidth: 1 },
-    lightActionBannerWarning: { backgroundColor: '#FFFBEB', borderColor: '#FDE68A' },
-    darkActionBannerWarning: { backgroundColor: 'rgba(245, 158, 11, 0.1)', borderColor: 'rgba(245, 158, 11, 0.2)' },
-    lightActionBannerInfo: { backgroundColor: '#F0F4FF', borderColor: '#C7D2FE' },
-    darkActionBannerInfo: { backgroundColor: 'rgba(99, 102, 241, 0.1)', borderColor: 'rgba(99, 102, 241, 0.2)' },
     actionBannerLeft: { flexDirection: 'row', alignItems: 'center', flex: 1 },
     bannerIconBg: { width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
     actionBannerTitle: { fontSize: 14, fontWeight: '800', marginBottom: 2 },
     actionBannerSub: { fontSize: 12, fontWeight: '500' },
-    assignBtn: { backgroundColor: '#F59E0B', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10 },
-    assignBtnText: { color: '#FFFFFF', fontSize: 12, fontWeight: '800' },
+    assignBtn: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10 },
+    assignBtnText: { fontSize: 12, fontWeight: '800' },
     sectionTitle: { fontSize: 14, fontWeight: '800', marginBottom: 12, marginLeft: 4 },
     detailsBlock: { borderRadius: 20, padding: 16, marginBottom: 20 },
     infoRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10 },
     iconBg: { width: 36, height: 36, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginRight: 14 },
-    lightIconBg: { backgroundColor: '#F1F5F9' },
-    darkIconBg: { backgroundColor: '#1E293B' },
     infoTextContainer: { flex: 1 },
     infoLabel: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', marginBottom: 4 },
     infoValue: { fontSize: 14, fontWeight: '600' },
-    lightText: { color: '#0F172A' }, darkText: { color: '#FFFFFF' },
-    lightSubText: { color: '#64748B' }, darkSubText: { color: '#94A3B8' },
-    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
+    modalOverlay: { flex: 1, justifyContent: 'flex-end' },
     sheetContent: { width: '100%', borderTopLeftRadius: 32, borderTopRightRadius: 32, padding: 24, paddingBottom: Platform.OS === 'ios' ? 40 : 30 },
     sheetHeader: { alignItems: 'center', marginBottom: 15 },
-    sheetHandle: { width: 40, height: 4, backgroundColor: '#CBD5E1', borderRadius: 10, marginBottom: 15 },
+    sheetHandle: { width: 40, height: 4, borderRadius: 10, marginBottom: 15 },
     sheetTitleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '100%' },
     sheetTitle: { fontSize: 20, fontWeight: '800' },
     sheetCloseBtn: { padding: 4 },
     emptyUnitsBox: { alignItems: 'center', padding: 30 },
-    emptyUnitsText: { color: '#94A3B8', marginTop: 10, fontWeight: '600' },
+    emptyUnitsText: { marginTop: 10, fontWeight: '600' },
     unitSelectItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderRadius: 16, marginBottom: 10, borderWidth: 2, borderColor: 'transparent' },
-    selectedUnitItem: { borderColor: '#6366F1', backgroundColor: 'rgba(99, 102, 241, 0.08)' },
     unitSelectNumber: { fontSize: 16, fontWeight: '700' },
     unitSelectProp: { fontSize: 12, fontWeight: '600' },
     unitRightInfo: { alignItems: 'flex-end', justifyContent: 'center' },
@@ -636,19 +635,17 @@ const styles = StyleSheet.create({
     unitSelectBadgeText: { fontSize: 10, fontWeight: '800' },
     rowInputs: { flexDirection: 'row', justifyContent: 'space-between' },
     inputLabel: { fontSize: 12, fontWeight: '700', marginBottom: 8, textTransform: 'uppercase' },
-    sheetInput: { height: 55, borderRadius: 12, paddingHorizontal: 15, borderWidth: 1, borderColor: 'rgba(148, 163, 184, 0.2)' },
-    darkInput: { backgroundColor: '#0B0F19' }, lightInput: { backgroundColor: '#F8FAFC' },
-    confirmAssignBtn: { backgroundColor: '#6366F1', height: 55, borderRadius: 16, justifyContent: 'center', alignItems: 'center', marginTop: 20, elevation: 4, shadowColor: '#6366F1', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 5 },
-    confirmAssignText: { color: '#FFF', fontSize: 16, fontWeight: '800' },
+    sheetInput: { height: 55, borderRadius: 12, paddingHorizontal: 15, borderWidth: 1 },
+    confirmAssignBtn: { height: 55, borderRadius: 16, justifyContent: 'center', alignItems: 'center', marginTop: 20 },
+    confirmAssignText: { fontSize: 16, fontWeight: '800' },
     helperMsg: { fontSize: 12, fontWeight: '600', marginLeft: 2, fontStyle: 'italic' },
 
     // --- NEW SMART BILLING STYLES ---
-    billingSection: { backgroundColor: 'rgba(99, 102, 241, 0.05)', padding: 15, borderRadius: 16, marginBottom: 10, borderWidth: 1, borderColor: 'rgba(99, 102, 241, 0.1)' },
+    billingSection: { padding: 15, borderRadius: 16, marginBottom: 10, borderWidth: 1 },
     datePickerBtn: { flexDirection: 'row', alignItems: 'center', height: 50, borderRadius: 12, paddingHorizontal: 15 },
     datePickerText: { fontSize: 15, fontWeight: '600', marginLeft: 10 },
     cycleToggleContainer: { flexDirection: 'row', gap: 10 },
     cycleBtn: { flex: 1, height: 45, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
-    cycleBtnActive: { backgroundColor: '#6366F1' },
     cycleBtnText: { fontSize: 11, fontWeight: '700', paddingHorizontal: 10 },
 
     // --- IOS BOTTOM SHEET DATE PICKER STYLES ---
@@ -660,11 +657,8 @@ const styles = StyleSheet.create({
     },
     iosPickerBackground: {
         ...StyleSheet.absoluteFillObject,
-        backgroundColor: 'rgba(0,0,0,0.5)',
     },
     iosPickerContainer: { width: '100%', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingBottom: 30 },
     iosPickerHeader: { flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: 20, paddingVertical: 15, borderBottomWidth: 1 },
-    iosDoneText: { color: '#6366F1', fontWeight: '800', fontSize: 16 },
-    lightDivider: { borderColor: '#E2E8F0' }, 
-    darkDivider: { borderColor: '#334155' },
+    iosDoneText: { fontWeight: '800', fontSize: 16 },
 });

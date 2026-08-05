@@ -4,8 +4,11 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import client from '../api/client';
+import { useTheme, withAlpha } from '../theme';
+import { GlassView } from '../ui';
 
 export default function TransactionsTab({ isDark, selectedProperty }) {
+    const t = useTheme();
     const [transactions, setTransactions] = useState([]);
     const [searchQuery, setSearchQuery] = useState('');
     const [isLoading, setIsLoading] = useState(true);
@@ -76,77 +79,77 @@ export default function TransactionsTab({ isDark, selectedProperty }) {
         <View style={styles.container}>
             {/* Search Bar */}
             <View style={{ paddingHorizontal: 20, paddingBottom: 15 }}>
-                <View style={[styles.searchBar, isDark ? styles.darkCard : styles.lightCard]}>
-                    <Ionicons name="search" size={20} color={isDark ? '#64748B' : '#94A3B8'} style={{ marginRight: 10 }} />
+                <GlassView radius={t.radii.lg} style={[styles.searchBar, t.shadows.sm]}>
+                    <Ionicons name="search" size={20} color={t.colors.textMuted} style={{ marginRight: 10 }} />
                     <TextInput
-                        style={[styles.searchInput, isDark ? styles.darkText : styles.lightText]}
+                        style={[styles.searchInput, { color: t.colors.text }]}
                         placeholder="Search tenant, unit, or UTR..."
-                        placeholderTextColor={isDark ? '#64748B' : '#94A3B8'}
+                        placeholderTextColor={t.colors.textFaint}
                         value={searchQuery}
                         onChangeText={setSearchQuery}
                     />
                     {searchQuery.length > 0 && (
                         <TouchableOpacity onPress={() => setSearchQuery('')}>
-                            <Ionicons name="close-circle" size={20} color={isDark ? '#64748B' : '#94A3B8'} />
+                            <Ionicons name="close-circle" size={20} color={t.colors.textMuted} />
                         </TouchableOpacity>
                     )}
-                </View>
+                </GlassView>
             </View>
 
             {isLoading && !refreshing ? (
                 <View style={styles.centerContainer}>
-                    <ActivityIndicator size="large" color="#6366F1" />
+                    <ActivityIndicator size="large" color={t.colors.primary} />
                 </View>
             ) : (
                 <ScrollView
                     showsVerticalScrollIndicator={false}
                     contentContainerStyle={styles.scrollContent}
-                    refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6366F1" />}
+                    refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={t.colors.primary} />}
                 >
                     {groupedTransactions.length > 0 ? (
                         groupedTransactions.map((group) => (
                             <View key={group.title} style={styles.monthGroup}>
                                 {/* Month/Year Header */}
-                                <Text style={[styles.monthTitle, isDark ? styles.darkText : styles.lightText]}>
+                                <Text style={[styles.monthTitle, { color: t.colors.text }]}>
                                     {group.title}
                                 </Text>
 
                                 {/* List of Transactions for this Month */}
-                                <View style={[styles.listContainer, isDark ? styles.darkCard : styles.lightCard]}>
+                                <GlassView radius={t.radii.xl} style={[styles.listContainer, t.shadows.sm]}>
                                     {group.data.map((payment, index) => (
-                                        <View key={payment.id} style={[styles.paymentItem, index !== group.data.length - 1 && (isDark ? styles.darkBorder : styles.lightBorder)]}>
+                                        <View key={payment.id} style={[styles.paymentItem, index !== group.data.length - 1 && [styles.itemDivider, { borderBottomColor: t.colors.border }]]}>
 
-                                            <View style={[styles.paymentIconBox, { backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#D1FAE5' }]}>
-                                                <Ionicons name="arrow-down" size={16} color="#10B981" />
+                                            <View style={[styles.paymentIconBox, { backgroundColor: withAlpha(t.colors.success, 0.15) }]}>
+                                                <Ionicons name="arrow-down" size={16} color={t.colors.success} />
                                             </View>
 
                                             <View style={styles.paymentInfo}>
-                                                <Text style={[styles.paymentName, isDark ? styles.darkText : styles.lightText]} numberOfLines={1}>
+                                                <Text style={[styles.paymentName, { color: t.colors.text }]} numberOfLines={1}>
                                                     {payment.tenant_name}
                                                 </Text>
-                                                <Text style={[styles.paymentSub, isDark ? styles.darkSubText : styles.lightSubText]} numberOfLines={1}>
+                                                <Text style={[styles.paymentSub, { color: t.colors.textMuted }]} numberOfLines={1}>
                                                     Unit {payment.unit_number || 'N/A'} • {payment.payment_method}
                                                     {payment.reference_id ? ` • ${payment.reference_id}` : ''}
                                                 </Text>
                                             </View>
 
                                             <View style={styles.paymentAmountBox}>
-                                                <Text style={styles.paymentAmount}>+{formatCurrency(payment.amount_paid)}</Text>
-                                                <Text style={[styles.paymentDate, isDark ? styles.darkSubText : styles.lightSubText]}>
+                                                <Text style={[styles.paymentAmount, { color: t.colors.success }]}>+{formatCurrency(payment.amount_paid)}</Text>
+                                                <Text style={[styles.paymentDate, { color: t.colors.textMuted }]}>
                                                     {new Date(payment.payment_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
                                                 </Text>
                                             </View>
 
                                         </View>
                                     ))}
-                                </View>
+                                </GlassView>
                             </View>
                         ))
                     ) : (
                         <View style={styles.emptyStateBox}>
-                            <Ionicons name="receipt-outline" size={40} color={isDark ? '#475569' : '#CBD5E1'} style={{ marginBottom: 12 }} />
-                            <Text style={[styles.emptyStateTitle, isDark ? styles.darkText : styles.lightText]}>No transactions found</Text>
-                            <Text style={[styles.emptyStateSub, isDark ? styles.darkSubText : styles.lightSubText]}>Payments will appear here once recorded.</Text>
+                            <Ionicons name="receipt-outline" size={40} color={t.colors.textFaint} style={{ marginBottom: 12 }} />
+                            <Text style={[styles.emptyStateTitle, { color: t.colors.text }]}>No transactions found</Text>
+                            <Text style={[styles.emptyStateSub, { color: t.colors.textMuted }]}>Payments will appear here once recorded.</Text>
                         </View>
                     )}
 
@@ -154,7 +157,7 @@ export default function TransactionsTab({ isDark, selectedProperty }) {
                 </ScrollView>
             )}
         </View>
-    );  
+    );
 }
 
 const styles = StyleSheet.create({
@@ -162,22 +165,16 @@ const styles = StyleSheet.create({
     centerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
     scrollContent: { paddingHorizontal: 20, paddingTop: 5, paddingBottom: 40 },
 
-    lightText: { color: '#0F172A' }, darkText: { color: '#FFFFFF' },
-    lightSubText: { color: '#64748B' }, darkSubText: { color: '#94A3B8' },
-    lightCard: { backgroundColor: '#FFFFFF', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 3 },
-    darkCard: { backgroundColor: '#151A25' },
-
-    searchBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 15, height: 50, borderRadius: 16 },
+    searchBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 15, height: 50 },
     searchInput: { flex: 1, fontSize: 15, fontWeight: '500' },
 
     // ✨ Month Group Styles
     monthGroup: { marginBottom: 25 },
     monthTitle: { fontSize: 16, fontWeight: '800', marginBottom: 12, paddingLeft: 4, letterSpacing: 0.5 },
 
-    listContainer: { borderRadius: 20, overflow: 'hidden', paddingHorizontal: 16, paddingVertical: 8 },
+    listContainer: { paddingHorizontal: 16, paddingVertical: 8 },
     paymentItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 16 },
-    lightBorder: { borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
-    darkBorder: { borderBottomWidth: 1, borderBottomColor: '#1E293B' },
+    itemDivider: { borderBottomWidth: 1 },
 
     paymentIconBox: { width: 44, height: 44, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginRight: 14 },
     paymentInfo: { flex: 1, justifyContent: 'center', paddingRight: 10 },
@@ -185,7 +182,7 @@ const styles = StyleSheet.create({
     paymentSub: { fontSize: 12, fontWeight: '500' },
 
     paymentAmountBox: { alignItems: 'flex-end', justifyContent: 'center' },
-    paymentAmount: { fontSize: 16, fontWeight: '800', color: '#10B981', marginBottom: 4 },
+    paymentAmount: { fontSize: 16, fontWeight: '800', marginBottom: 4 },
     paymentDate: { fontSize: 11, fontWeight: '500' },
 
     emptyStateBox: { paddingVertical: 60, alignItems: 'center', justifyContent: 'center' },
