@@ -21,6 +21,9 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          # Need history so the changelog script can read commit subjects.
+          fetch-depth: 0
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -33,6 +36,21 @@ jobs:
       - name: Install dependencies
         working-directory: mobile
         run: npm install
+
+      # Turn this patch's real commit subjects into the "What's new" notes that
+      # the in-app update sheet displays. Writes app.json → extra.releaseNotes,
+      # which travels inside the update manifest.
+      - name: Generate changelog from this patch
+        working-directory: mobile
+        run: |
+          BEFORE="${{ github.event.before }}"
+          if [ -n "$BEFORE" ] && git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            node scripts/set-changelog.js "$BEFORE..HEAD"
+          else
+            node scripts/set-changelog.js
+          fi
+          echo "--- app.json extra ---"
+          node -e "console.log(JSON.stringify(require('./app.json').expo.extra, null, 2))"
 
       - name: Publish OTA update
         working-directory: mobile

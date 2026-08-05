@@ -78,7 +78,9 @@ export default function GlassInput({
                     }
                 ]}
             >
-                <GlassView radius={t.radii.lg - 1} bordered={false} style={styles.glass}>
+                {/* blur={false}: inputs live inside an already-blurred GlassCard, so a
+                    second blur pass would cost GPU for no visible difference. */}
+                <GlassView radius={t.radii.lg - 1} bordered={false} blur={false} style={styles.glass}>
                     <View style={[styles.row, multiline && styles.rowMultiline]}>
                         {icon ? (
                             <Ionicons

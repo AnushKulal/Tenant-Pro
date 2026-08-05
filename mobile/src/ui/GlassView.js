@@ -27,6 +27,10 @@ export default function GlassView({
     sheen = true,           // top highlight gradient
     bordered = true,
     tintColor,              // override the fill colour
+    // Skip the BlurView layer. Set this when the pane sits INSIDE another glass
+    // surface: blurring an already-blurred backdrop costs real GPU time on
+    // Android and adds nothing visually. The tint + sheen still read as glass.
+    blur = true,
     ...rest
 }) {
     const t = useTheme();
@@ -42,13 +46,15 @@ export default function GlassView({
             ]}
             {...rest}
         >
-            <BlurView
-                intensity={intensity ?? (strong ? t.blurIntensity + 22 : t.blurIntensity)}
-                tint={t.blurTint}
-                // Required for the blur to actually render on Android.
-                experimentalBlurMethod={Platform.OS === 'android' ? 'dimezisBlurView' : undefined}
-                style={StyleSheet.absoluteFill}
-            />
+            {blur ? (
+                <BlurView
+                    intensity={intensity ?? (strong ? t.blurIntensity + 22 : t.blurIntensity)}
+                    tint={t.blurTint}
+                    // Required for the blur to actually render on Android.
+                    experimentalBlurMethod={Platform.OS === 'android' ? 'dimezisBlurView' : undefined}
+                    style={StyleSheet.absoluteFill}
+                />
+            ) : null}
 
             {/* Themed tint keeps contrast predictable regardless of what's behind. */}
             <View style={[StyleSheet.absoluteFill, { backgroundColor: fill }]} pointerEvents="none" />

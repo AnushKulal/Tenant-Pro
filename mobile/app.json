@@ -41,7 +41,16 @@
       "eas": {
         "projectId": "3b258101-bef2-412f-8be0-53af8b224dfb"
       },
-      "whatsNew": "Fixed login text not showing in dark mode\nNew: Tenant portal — sign in as a tenant\nChoose Landlord or Tenant when you open the app"
+      "whatsNew": "Add glass design system: theme tokens, UI kit, navigation flow helpers\nFix OTA pointing app at dead LAN IP — use hosted backend\nFail fast when DB is down + add back button to role login screens\nFix login instability and add guest login + auto-OTA\nShow a 'What's new' changelog in the in-app update popup\nTenant portal Phase 1: role selection + tenant accounts",
+      "releaseNotes": [
+        "Add glass design system: theme tokens, UI kit, navigation flow helpers",
+        "Fix OTA pointing app at dead LAN IP — use hosted backend",
+        "Fail fast when DB is down + add back button to role login screens",
+        "Fix login instability and add guest login + auto-OTA",
+        "Show a 'What's new' changelog in the in-app update popup",
+        "Tenant portal Phase 1: role selection + tenant accounts"
+      ],
+      "releaseVersion": "1.0.0"
     }
   }
 }
