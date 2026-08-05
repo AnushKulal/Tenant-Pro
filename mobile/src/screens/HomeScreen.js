@@ -15,6 +15,7 @@ import { confirmSignOut } from '../navigation/flow';
 
 // Your Components
 import Header from '../components/Header';
+import HeaderMenu from '../components/HeaderMenu';
 import BottomNav from '../components/BottomNav';
 import Sidebar from '../components/Sidebar';
 import HomeTab from '../components/HomeTab';
@@ -46,6 +47,14 @@ export default function HomeScreen({ navigation }) {
     const [activeTab, setActiveTab] = useState(ROOT_TAB);
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
+    // "More options" menu. It lives here rather than inside Header for two
+    // reasons: it has to paint above the tab bar, and it is anchored to the
+    // header's LAYOUT box — measured by onLayout below, in this view's own
+    // coordinate space. See the positioning note in HeaderMenu for why measuring
+    // window coordinates instead is wrong on Android.
+    const [isMenuOpen, setIsMenuOpen] = useState(false);
+    const [headerBottom, setHeaderBottom] = useState(null);
+
     const [selectedProfileData, setSelectedProfileData] = useState(null);
     const [previousTab, setPreviousTab] = useState('Tenants');
 
@@ -54,6 +63,11 @@ export default function HomeScreen({ navigation }) {
     // Breadcrumb of visited tabs so hardware back can retrace steps inside the
     // layout instead of jumping straight out of the app.
     const tabHistory = useRef([ROOT_TAB]);
+
+    // Stable callbacks: HeaderMenu memoises its row list on these, so fresh
+    // closures each render would rebuild it every time.
+    const openDrawer = useCallback(() => setIsSidebarOpen(true), []);
+    const requestSignOut = useCallback(() => confirmSignOut(navigation), [navigation]);
 
     const goToTab = useCallback((tab) => {
         setActiveTab((current) => {
@@ -104,6 +118,13 @@ export default function HomeScreen({ navigation }) {
                 return true;
             }
 
+            // The menu is an in-window overlay, not a Modal, so nothing else
+            // intercepts back for it — dismiss it here before anything navigates.
+            if (isMenuOpen) {
+                setIsMenuOpen(false);
+                return true;
+            }
+
             if (activeTab === 'TenantProfile') {
                 setActiveTab(previousTab);
                 return true;
@@ -135,7 +156,7 @@ export default function HomeScreen({ navigation }) {
 
         const sub = BackHandler.addEventListener('hardwareBackPress', onBack);
         return () => sub.remove();
-    }, [isSidebarOpen, activeTab, previousTab]);
+    }, [isSidebarOpen, isMenuOpen, activeTab, previousTab]);
 
     // --- Tab caching ------------------------------------------------------------
     // Tabs used to be rendered through a bare `switch (activeTab)`, so switching
@@ -279,24 +300,40 @@ export default function HomeScreen({ navigation }) {
     return (
         <SafeAreaView style={[styles.container, { backgroundColor: t.colors.bg }]} edges={['top']}>
 
-            <Header
-                userName={userName}
-                profilePic={profilePic}
-                isDark={isDark}
-                // The avatar goes to the profile; the ⋯ button owns the menu.
-                onProfilePress={() => goToTab('Profile')}
-                onNavigate={goToTab}
-                onOpenDrawer={() => setIsSidebarOpen(true)}
-                onSignOut={() => confirmSignOut(navigation)}
-                fadeAnim={fadeAnimHeader}
-                currentRoute={activeTab}
-                selectedProperty={selectedProperty}
-                setSelectedProperty={setSelectedProperty}
-            />
+            {/* onLayout gives the header's height in THIS view's coordinates,
+                which is exactly what the anchored menu needs. */}
+            <View onLayout={(e) => setHeaderBottom(e.nativeEvent.layout.y + e.nativeEvent.layout.height)}>
+                <Header
+                    userName={userName}
+                    profilePic={profilePic}
+                    isDark={isDark}
+                    // The avatar goes to the profile; the ⋯ button owns the menu.
+                    onProfilePress={() => goToTab('Profile')}
+                    onMorePress={() => setIsMenuOpen(true)}
+                    isMenuOpen={isMenuOpen}
+                    fadeAnim={fadeAnimHeader}
+                    currentRoute={activeTab}
+                    selectedProperty={selectedProperty}
+                    setSelectedProperty={setSelectedProperty}
+                />
+            </View>
 
             {renderTabs()}
 
             <BottomNav activeTab={activeTab} setActiveTab={goToTab} />
+
+            <HeaderMenu
+                visible={isMenuOpen}
+                onClose={() => setIsMenuOpen(false)}
+                // Slightly overlaps the gap under the header card so the panel
+                // reads as hanging off it. Falls back to a sane offset if layout
+                // has not reported yet (it always has by the first press).
+                top={(headerBottom ?? 96) - 2}
+                currentRoute={activeTab}
+                onNavigate={goToTab}
+                onOpenDrawer={openDrawer}
+                onSignOut={requestSignOut}
+            />
 
             <Sidebar
                 isOpen={isSidebarOpen}

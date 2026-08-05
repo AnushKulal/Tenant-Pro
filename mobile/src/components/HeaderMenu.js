@@ -9,26 +9,33 @@
 // says what it does, and the things people actually reach for live one tap away
 // instead of behind a full-screen drawer.
 //
-// It is anchored, not centred: the panel's top-right corner is pinned just under
-// the button that opened it, so the menu visibly belongs to that control. The
-// caller measures the button and passes the rect in — see Header.
+// POSITIONING — read before changing:
+// This is an in-window overlay, NOT a Modal, and `top` is a LAYOUT value the
+// caller reads off the header's own onLayout. That is deliberate. The first
+// version measured the button with measureInWindow and positioned inside a
+// statusBarTranslucent Modal, which is wrong on Android: measureInWindow is
+// visible-window relative (both architectures subtract
+// getWindowVisibleDisplayFrame().top), while the Modal's dialog window starts at
+// screen y 0. The panel would have opened about a status bar's height too high —
+// on top of the button that opened it — and no browser render can show that,
+// because the web has neither a status bar nor that subtraction. Compensating
+// with StatusBar.currentHeight only trades one guess for another under
+// edge-to-edge, so the fix is to stay in ONE coordinate space: the overlay and
+// the header are siblings, so the header's onLayout box is already expressed in
+// the overlay's own coordinates. No cross-window arithmetic, nothing to get wrong
+// per platform.
 //
 // Motion: ONE Animated.Value drives everything. The panel scales/fades in, and
 // each row reads a different slice of the same 0→1 progress, which produces a
 // stagger without N animations, N listeners, or a single JS-driver frame.
 import React, { useEffect, useMemo, useRef } from 'react';
-import {
-    View, Text, StyleSheet, Modal, Animated, Pressable, Dimensions, Platform
-} from 'react-native';
+import { View, Text, StyleSheet, Animated, Pressable, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { GlassView } from '../ui';
 import { useTheme, withAlpha } from '../theme';
 
 const PANEL_WIDTH = 244;
-const GAP = 10;          // breathing room between the button and the panel
-const EDGE = 12;         // never let the panel touch the screen edge
 
 // Each row starts 6% of the progress after the previous one and takes 45% to
 // land, so the last row is still finishing as the animation completes.
@@ -38,14 +45,14 @@ const ROW_SPAN = 0.45;
 export default function HeaderMenu({
     visible,
     onClose,
-    anchor,            // { x, y, width, height } in window coords, from measureInWindow
+    top,               // layout y of the panel's top edge, in the overlay's space
+    right = 16,        // aligns the panel with the header card's right edge
     currentRoute,
     onNavigate,        // (tabName) => void
     onOpenDrawer,      // open the full drawer
     onSignOut
 }) {
     const t = useTheme();
-    const insets = useSafeAreaInsets();
     const anim = useRef(new Animated.Value(0)).current;
 
     useEffect(() => {
@@ -83,16 +90,6 @@ export default function HeaderMenu({
 
     if (!visible) return null;
 
-    // Pin the panel under the anchor, right edges aligned, clamped to the screen.
-    // The fallbacks matter: if a measure ever comes back empty the menu must
-    // still land somewhere sane rather than off-screen at 0,0.
-    const win = Dimensions.get('window');
-    const anchorBottom = (anchor?.y ?? insets.top) + (anchor?.height ?? 0);
-    const top = Math.max(insets.top + GAP, anchorBottom + GAP);
-    const rightOffset = anchor
-        ? Math.max(EDGE, win.width - (anchor.x + anchor.width))
-        : EDGE + 4;
-
     const panelStyle = {
         opacity: anim,
         transform: [
@@ -106,16 +103,11 @@ export default function HeaderMenu({
     let rowIndex = -1;
 
     return (
-        <Modal
-            visible
-            transparent
-            animationType="none"        // the panel animates itself
-            onRequestClose={onClose}    // Android back closes the menu
-            statusBarTranslucent
-        >
+        <View style={styles.overlay}>
             {/* Backdrop is only just visible — this is a menu, not a dialog, and
                 dimming the whole app for it would feel far heavier than the
-                interaction deserves. */}
+                interaction deserves. It still covers the full screen so a tap
+                anywhere (including the tab bar) dismisses rather than acting. */}
             <Pressable
                 style={styles.fill}
                 onPress={onClose}
@@ -130,7 +122,7 @@ export default function HeaderMenu({
                 />
             </Pressable>
 
-            <Animated.View style={[styles.anchored, { top, right: rightOffset }, panelStyle]}>
+            <Animated.View style={[styles.anchored, { top, right }, panelStyle]}>
                 <View style={[{ borderRadius: t.radii.lg }, t.shadows.lg]}>
                     <GlassView
                         strong
@@ -224,11 +216,14 @@ export default function HeaderMenu({
                     </GlassView>
                 </View>
             </Animated.View>
-        </Modal>
+        </View>
     );
 }
 
 const styles = StyleSheet.create({
+    // zIndex sits above the tab bar (50) and below the drawer (100), so opening
+    // the drawer from this menu layers correctly.
+    overlay: { ...StyleSheet.absoluteFillObject, zIndex: 90 },
     fill: { ...StyleSheet.absoluteFillObject },
     anchored: { position: 'absolute', width: PANEL_WIDTH },
     panel: { paddingVertical: 8, paddingHorizontal: 8 },

@@ -7,7 +7,6 @@ import client, { SERVER_URL, mediaUrl } from '../api/client';
 import Avatar from '../ui/Avatar';
 import { GlassView } from '../ui';
 import { useTheme, withAlpha } from '../theme';
-import HeaderMenu from './HeaderMenu';
 
 // Reusable Smart Image for the Bottom Sheet List
 const PropertyListImage = ({ imageUrl }) => {
@@ -34,9 +33,9 @@ export default function Header({
     // profile. It used to open the drawer, which is why the drawer was
     // undiscoverable — see HeaderMenu for the full reasoning.
     onProfilePress,
-    onNavigate,
-    onOpenDrawer,
-    onSignOut,
+    // Opens the "more options" menu, which the screen owns.
+    onMorePress,
+    isMenuOpen = false,
     fadeAnim,
     currentRoute,
     selectedProperty,
@@ -53,27 +52,11 @@ export default function Header({
     const [isLoadingProps, setIsLoadingProps] = useState(false);
 
     // --- "More options" menu ---
-    // The menu is anchored to this button, so its on-screen rect is measured at
-    // press time (layout can shift with the property pill's width, the notch, or
-    // rotation — a hardcoded offset would drift).
-    const [isMenuOpen, setIsMenuOpen] = useState(false);
-    const [menuAnchor, setMenuAnchor] = useState(null);
-    const menuBtnRef = useRef(null);
+    // The menu itself lives in the screen, not in here: it has to sit above the
+    // tab bar and share a coordinate space with this header's layout box. See the
+    // positioning note at the top of HeaderMenu. This component only reports the
+    // press and reflects the open state.
     const menuPress = useRef(new Animated.Value(0)).current;
-
-    const openMenu = () => {
-        const node = menuBtnRef.current;
-        if (!node?.measureInWindow) {
-            setIsMenuOpen(true);
-            return;
-        }
-        node.measureInWindow((x, y, width, height) => {
-            // A zero-sized measure means the node isn't laid out yet; opening with
-            // no anchor falls back to the top-right corner rather than 0,0.
-            setMenuAnchor(width && height ? { x, y, width, height } : null);
-            setIsMenuOpen(true);
-        });
-    };
 
     useEffect(() => {
         Animated.loop(
@@ -174,7 +157,13 @@ export default function Header({
                                 <Ionicons name="chevron-down" size={12} color={t.colors.primary} style={{ marginLeft: 4, marginTop: 1 }} />
                             </TouchableOpacity>
 
-                            <Text style={[t.typography.subheading, styles.userName, { color: t.colors.text }]}>
+                            {/* Also single-line: "Hello, <name>" wraps at 360dp for
+                                a longer first name, and a wrapped title grows the
+                                bar just as a wrapped caption does. */}
+                            <Text
+                                style={[t.typography.subheading, styles.userName, { color: t.colors.text }]}
+                                numberOfLines={1}
+                            >
                                 {getPageTitle()}
                             </Text>
 
@@ -218,7 +207,7 @@ export default function Header({
                             {/* The overflow control. Rightmost, because that is where
                                 every platform puts "more" — and labelled as such, so
                                 nobody has to guess that a portrait hides the menu. */}
-                            <View ref={menuBtnRef} collapsable={false}>
+                            <View>
                                 <Animated.View
                                     style={{
                                         transform: [{
@@ -230,7 +219,7 @@ export default function Header({
                                     }}
                                 >
                                     <TouchableOpacity
-                                        onPress={openMenu}
+                                        onPress={() => onMorePress?.()}
                                         onPressIn={() => Animated.spring(menuPress, {
                                             toValue: 1, useNativeDriver: true, ...t.motion.spring
                                         }).start()}
@@ -264,16 +253,6 @@ export default function Header({
                     </View>
                 </GlassView>
             </Animated.View>
-
-            <HeaderMenu
-                visible={isMenuOpen}
-                onClose={() => setIsMenuOpen(false)}
-                anchor={menuAnchor}
-                currentRoute={currentRoute}
-                onNavigate={(tab) => onNavigate?.(tab)}
-                onOpenDrawer={() => onOpenDrawer?.()}
-                onSignOut={() => onSignOut?.()}
-            />
 
             {/* --- NEW: BOTTOM SHEET MODAL --- */}
             <Modal animationType="slide" transparent={true} visible={isSheetOpen} onRequestClose={() => setIsSheetOpen(false)}>
