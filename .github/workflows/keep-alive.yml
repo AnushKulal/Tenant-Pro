@@ -1,0 +1,37 @@
+name: Keep Backend Awake
+
+# Pings the backend so Render's free instance never spins down (it sleeps after
+# ~15 min idle). Hitting /healthz also warms the DB connection, so logins after
+# quiet periods don't fail. Public repos get unlimited Actions minutes, so this
+# is free. Note: GitHub cron isn't perfectly punctual — pair with UptimeRobot
+# for belt-and-suspenders reliability.
+on:
+  schedule:
+    - cron: '*/5 * * * *'   # every 5 minutes (GitHub's minimum)
+  workflow_dispatch:          # allow a manual ping from the Actions tab
+
+# If a previous ping is still running, don't stack another.
+concurrency:
+  group: keep-alive
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping backend health endpoint
+        run: |
+          URL="https://tenantpro-backend.onrender.com/healthz"
+          echo "Pinging $URL"
+          # Retry a few times: the first hit after sleep can take ~50s to wake.
+          for i in 1 2 3 4 5; do
+            code=$(curl -s -o /tmp/body.txt -w "%{http_code}" --max-time 90 "$URL" || echo "000")
+            echo "Attempt $i -> HTTP $code"
+            cat /tmp/body.txt || true
+            echo ""
+            if [ "$code" = "200" ]; then echo "Backend is awake."; exit 0; fi
+            sleep 15
+          done
+          echo "Backend did not return 200 after retries (may still be waking)."
+          # Don't fail the workflow — a missed ping shouldn't spam failure emails.
+          exit 0

@@ -74,6 +74,19 @@ app.get('/', (req, res) => {
     res.send('TenantPro Backend is running!');
 });
 
+// --- Keep-alive / deep health check ---
+// Pinged on a schedule (GitHub Actions cron) so the free host never sleeps.
+// It also runs a trivial DB query, which keeps the pooled MySQL connection
+// warm — preventing the "dead socket after wake" login errors entirely.
+app.get('/healthz', async (req, res) => {
+    try {
+        await db.query('SELECT 1');
+        res.status(200).json({ status: 'ok', db: 'up', time: new Date().toISOString() });
+    } catch (e) {
+        res.status(500).json({ status: 'degraded', db: 'down' });
+    }
+});
+
 // --- 🚨 TEST ROUTE (development only — disabled when NODE_ENV=production) ---
 if (process.env.NODE_ENV !== 'production') {
     app.get('/api/test-cron', async (req, res) => {
