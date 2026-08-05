@@ -17,7 +17,6 @@ import { confirmSignOut } from '../navigation/flow';
 import Header from '../components/Header';
 import HeaderMenu from '../components/HeaderMenu';
 import BottomNav from '../components/BottomNav';
-import Sidebar from '../components/Sidebar';
 import HomeTab from '../components/HomeTab';
 import ProfileTab from '../components/ProfileTab';
 import SettingsTab from '../components/SettingsTab';
@@ -38,14 +37,17 @@ export default function HomeScreen({ navigation }) {
     const t = useTheme();
     const isDark = t.isDark;
 
+    // userName is the greeting's first name; fullName/email feed the menu's account
+    // block, which took over from the drawer's header.
     const [userName, setUserName] = useState('Admin');
+    const [fullName, setFullName] = useState('');
+    const [email, setEmail] = useState('');
     const [profilePic, setProfilePic] = useState(null);
 
     // --- Global Property Context ---
     const [selectedProperty, setSelectedProperty] = useState({ id: 'all', name: 'All Properties' });
 
     const [activeTab, setActiveTab] = useState(ROOT_TAB);
-    const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
     // "More options" menu. It lives here rather than inside Header for two
     // reasons: it has to paint above the tab bar, and it is anchored to the
@@ -64,9 +66,8 @@ export default function HomeScreen({ navigation }) {
     // layout instead of jumping straight out of the app.
     const tabHistory = useRef([ROOT_TAB]);
 
-    // Stable callbacks: HeaderMenu memoises its row list on these, so fresh
-    // closures each render would rebuild it every time.
-    const openDrawer = useCallback(() => setIsSidebarOpen(true), []);
+    // Stable callback: HeaderMenu memoises its row list on this, so a fresh
+    // closure each render would rebuild it every time.
     const requestSignOut = useCallback(() => confirmSignOut(navigation), [navigation]);
 
     const goToTab = useCallback((tab) => {
@@ -83,6 +84,8 @@ export default function HomeScreen({ navigation }) {
             if (ownerData) {
                 const parsedData = JSON.parse(ownerData);
                 setUserName(parsedData.name ? parsedData.name.split(' ')[0] : 'Admin');
+                setFullName(parsedData.name || '');
+                setEmail(parsedData.email || '');
                 setProfilePic(parsedData.profile_pic || null);
                 // Warm the cache so a later re-render never re-downloads it.
                 Avatar.prefetch(parsedData.profile_pic);
@@ -113,11 +116,6 @@ export default function HomeScreen({ navigation }) {
     const backPressedOnce = useRef(false);
     useEffect(() => {
         const onBack = () => {
-            if (isSidebarOpen) {
-                setIsSidebarOpen(false);
-                return true;
-            }
-
             // The menu is an in-window overlay, not a Modal, so nothing else
             // intercepts back for it — dismiss it here before anything navigates.
             if (isMenuOpen) {
@@ -156,7 +154,7 @@ export default function HomeScreen({ navigation }) {
 
         const sub = BackHandler.addEventListener('hardwareBackPress', onBack);
         return () => sub.remove();
-    }, [isSidebarOpen, isMenuOpen, activeTab, previousTab]);
+    }, [isMenuOpen, activeTab, previousTab]);
 
     // --- Tab caching ------------------------------------------------------------
     // Tabs used to be rendered through a bare `switch (activeTab)`, so switching
@@ -331,16 +329,10 @@ export default function HomeScreen({ navigation }) {
                 top={(headerBottom ?? 96) - 2}
                 currentRoute={activeTab}
                 onNavigate={goToTab}
-                onOpenDrawer={openDrawer}
                 onSignOut={requestSignOut}
-            />
-
-            <Sidebar
-                isOpen={isSidebarOpen}
-                onClose={() => setIsSidebarOpen(false)}
-                navigation={navigation}
-                currentRoute={activeTab}
-                setActiveTab={goToTab}
+                fullName={fullName || userName}
+                email={email}
+                profilePic={profilePic}
             />
         </SafeAreaView>
     );

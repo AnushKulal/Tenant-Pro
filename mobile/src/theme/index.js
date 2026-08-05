@@ -17,8 +17,8 @@
 // Legacy screens still call useColorScheme() directly; that keeps working.
 // ThemeProvider is additive, not a breaking migration.
 // -----------------------------------------------------------------------------
-import React, { createContext, useContext, useMemo, useState, useEffect, useCallback } from 'react';
-import { useColorScheme } from 'react-native';
+import React, { createContext, useContext, useMemo, useState, useEffect, useCallback, useRef } from 'react';
+import { useColorScheme, Animated, StyleSheet, View, Easing } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // --- Helper: apply alpha to a #RRGGBB hex ------------------------------------
@@ -184,6 +184,30 @@ const THEME_KEY = 'themePreference'; // 'system' | 'dark' | 'light'
 
 const ThemeContext = createContext(null);
 
+// --- Theme cross-dissolve ----------------------------------------------------
+// Switching theme means every colour in the tree changes at once, and there is no
+// way to tween that: colours live in plain style objects, and animating hundreds
+// of them would need the JS driver and would still not be atomic.
+//
+// So the swap itself stays instant and is simply hidden. A full-screen pane in the
+// INCOMING background colour fades in, the theme flips underneath it, and the pane
+// fades back out to reveal the new one. What you see is one surface dissolving
+// into the other, which is what "smooth" means here — and it costs exactly one
+// animated opacity on the native driver, regardless of how many screens are
+// mounted.
+//
+// The hold matters: re-styling the whole tree takes more than a frame, so the
+// cover stays fully opaque briefly after the swap. Without it the tail of the
+// re-render is visible as a flash.
+//
+// Caveat worth knowing if a toggle is ever added inside a Modal: this pane lives
+// at the app root, and a Modal renders in its own Android window, so it would
+// paint over the dissolve. Every current toggle site (the header menu, Settings)
+// is in-window.
+const COVER_IN = 200;
+const COVER_HOLD = 90;
+const COVER_OUT = 320;
+
 // `initialPreference` pins the theme instead of following the OS. The app leaves
 // it alone ('system' → restore whatever the user last chose); it exists so a
 // screen can be rendered in a known theme for inspection or tests.
@@ -205,16 +229,66 @@ export function ThemeProvider({ children, initialPreference = 'system' }) {
         })();
     }, [initialPreference]);
 
-    const setMode = useCallback(async (mode) => {
-        setPreference(mode);
-        try {
-            await AsyncStorage.setItem(THEME_KEY, mode);
-        } catch (e) {
-            // Preference is cosmetic — ignore write failures.
-        }
-    }, []);
+    // Cross-dissolve state. `cover` is the pane's opacity; `coverColor` both holds
+    // the incoming background and acts as the "a transition is mounted" flag.
+    const cover = useRef(new Animated.Value(0)).current;
+    const [coverColor, setCoverColor] = useState(null);
+    const dissolving = useRef(false);
 
     const isDark = preference === 'system' ? systemScheme === 'dark' : preference === 'dark';
+
+    const setMode = useCallback((mode) => {
+        // Ignore a second tap mid-dissolve rather than stacking animations that
+        // would fight over the same pane.
+        if (dissolving.current) return;
+
+        const persist = () => {
+            AsyncStorage.setItem(THEME_KEY, mode).catch(() => {
+                // Preference is cosmetic — ignore write failures.
+            });
+        };
+
+        const nextIsDark = mode === 'system' ? systemScheme === 'dark' : mode === 'dark';
+
+        // Nothing visual changes (e.g. picking "System" while it already matches),
+        // so a dissolve would just be a pointless flash.
+        if (nextIsDark === isDark) {
+            setPreference(mode);
+            persist();
+            return;
+        }
+
+        dissolving.current = true;
+        setCoverColor((nextIsDark ? darkColors : lightColors).bg);
+        cover.setValue(0);
+
+        Animated.timing(cover, {
+            toValue: 1,
+            duration: COVER_IN,
+            easing: Easing.in(Easing.quad),
+            useNativeDriver: true
+        }).start(({ finished }) => {
+            if (!finished) {
+                dissolving.current = false;
+                return;
+            }
+
+            setPreference(mode);
+            persist();
+
+            setTimeout(() => {
+                Animated.timing(cover, {
+                    toValue: 0,
+                    duration: COVER_OUT,
+                    easing: Easing.out(Easing.quad),
+                    useNativeDriver: true
+                }).start(({ finished: revealed }) => {
+                    dissolving.current = false;
+                    if (revealed) setCoverColor(null);
+                });
+            }, COVER_HOLD);
+        });
+    }, [systemScheme, isDark, cover]);
 
     const value = useMemo(() => {
         const colors = isDark ? darkColors : lightColors;
@@ -236,8 +310,30 @@ export function ThemeProvider({ children, initialPreference = 'system' }) {
         };
     }, [isDark, preference, setMode]);
 
-    return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
+    return (
+        <ThemeContext.Provider value={value}>
+            <View style={styles.root}>
+                {children}
+                {coverColor ? (
+                    <Animated.View
+                        // Last child, so it paints over everything in-window;
+                        // elevation makes that hold on Android too. Touch is
+                        // blocked for the ~600ms it exists, which also stops a
+                        // second toggle landing mid-dissolve.
+                        style={[
+                            StyleSheet.absoluteFill,
+                            { backgroundColor: coverColor, opacity: cover, zIndex: 9999, elevation: 24 }
+                        ]}
+                    />
+                ) : null}
+            </View>
+        </ThemeContext.Provider>
+    );
 }
+
+const styles = StyleSheet.create({
+    root: { flex: 1 }
+});
 
 // Safe to call outside a provider: falls back to the system scheme so a screen
 // rendered in isolation (or a legacy tree) never crashes.

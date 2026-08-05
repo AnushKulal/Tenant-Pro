@@ -1,13 +1,17 @@
 // File: mobile/src/components/HeaderMenu.js
 // "More options" — an anchored glass menu that drops out of the ⋯ button in the
-// header.
+// header. This is the app's ONLY menu: the slide-in drawer it replaced is gone.
 //
-// Why this exists: the only way into the app's secondary destinations used to be
-// the drawer, and the only way into the drawer was tapping the profile photo. A
-// portrait signals "my account", not "app menu", so the drawer was effectively
-// undiscoverable and the avatar did the wrong thing when found. Now the ⋯ button
-// says what it does, and the things people actually reach for live one tap away
-// instead of behind a full-screen drawer.
+// Why: the drawer's only entry point was the profile photo. A portrait signals
+// "my account", not "app menu", so the drawer was undiscoverable and the avatar
+// did the wrong thing when found. Then, once this menu existed, the drawer was
+// a second navigation surface listing mostly the same destinations — a full-screen
+// panel is a lot of ceremony for six rows, and on a phone it also fights the
+// system's own back-edge gesture. So the menu absorbed everything it had,
+// including the account block and the version line, and the drawer was deleted.
+//
+// Nothing became unreachable: Home / Rooms / Properties / Tenants are the bottom
+// nav, Terms and Help sit behind Settings, and everything else is a row here.
 //
 // POSITIONING — read before changing:
 // This is an in-window overlay, NOT a Modal, and `top` is a LAYOUT value the
@@ -28,14 +32,16 @@
 // Motion: ONE Animated.Value drives everything. The panel scales/fades in, and
 // each row reads a different slice of the same 0→1 progress, which produces a
 // stagger without N animations, N listeners, or a single JS-driver frame.
-import React, { useEffect, useMemo, useRef } from 'react';
-import { View, Text, StyleSheet, Animated, Pressable, Platform } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { View, Text, StyleSheet, Animated, Pressable, Platform, Easing } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-import { GlassView } from '../ui';
+import { GlassView, Avatar } from '../ui';
 import { useTheme, withAlpha } from '../theme';
 
-const PANEL_WIDTH = 244;
+// Wider than a plain row list needs: the account block at the top carries a name
+// and an email, and those should not be truncating on a normal-length address.
+const PANEL_WIDTH = 268;
 
 // Each row starts 6% of the progress after the previous one and takes 45% to
 // land, so the last row is still finishing as the animation completes.
@@ -49,24 +55,54 @@ export default function HeaderMenu({
     right = 16,        // aligns the panel with the header card's right edge
     currentRoute,
     onNavigate,        // (tabName) => void
-    onOpenDrawer,      // open the full drawer
-    onSignOut
+    onSignOut,
+    // Account block — inherited from the drawer's header.
+    fullName,
+    email,
+    profilePic,
+    version = 'TenantPro v1.0'
 }) {
     const t = useTheme();
     const anim = useRef(new Animated.Value(0)).current;
 
+    // Stays mounted through the exit so the panel can animate OUT as well as in —
+    // unmounting on `visible === false` is what made it vanish instantly before.
+    // `mounted` is cleared by the close animation's own completion callback, so we
+    // never have to inspect Animated internals to know when it is safe to drop.
+    const [mounted, setMounted] = useState(visible);
+
     useEffect(() => {
-        if (!visible) return;
-        anim.setValue(0);
+        if (visible) {
+            setMounted(true);
+            Animated.timing(anim, {
+                toValue: 1,
+                duration: t.motion.normal,
+                easing: Easing.out(Easing.cubic),
+                useNativeDriver: true
+            }).start();
+            return;
+        }
+
+        // Exits run shorter than entrances: an arrival wants to be noticed, a
+        // dismissal wants to be out of the way. The row stagger reverses for free
+        // here — each row reads the same progress, so the bottom row (whose slice
+        // starts latest) is the first to leave.
         Animated.timing(anim, {
-            toValue: 1,
-            duration: t.motion.normal,
+            toValue: 0,
+            duration: t.motion.fast,
+            easing: Easing.in(Easing.cubic),
             useNativeDriver: true
-        }).start();
-    }, [visible, anim, t.motion.normal]);
+        }).start(({ finished }) => {
+            if (finished) setMounted(false);
+        });
+    }, [visible, anim, t.motion.normal, t.motion.fast]);
 
     const items = useMemo(() => [
-        { key: 'Profile', icon: 'person-outline', label: 'My Profile', tab: 'Profile' },
+        // The account block replaces a separate "My Profile" row: it says whose
+        // account this is AND is the way into it, which is what the drawer's
+        // header did.
+        { key: 'account', account: true, tab: 'Profile' },
+        { key: 'divider-0', divider: true },
         { key: 'Transactions', icon: 'wallet-outline', label: 'Transactions', tab: 'Transactions' },
         { key: 'PaymentSettings', icon: 'qr-code-outline', label: 'Payment Setup', tab: 'PaymentSettings' },
         { key: 'Settings', icon: 'settings-outline', label: 'Settings', tab: 'Settings' },
@@ -81,14 +117,12 @@ export default function HeaderMenu({
             action: () => t.toggle(),
             keepOpen: true
         },
-        // A hamburger, not albums-outline: at 19px that glyph was near-identical
-        // to the wallet two rows up, so two unrelated rows read the same.
-        { key: 'drawer', icon: 'menu-outline', label: 'Full menu', action: onOpenDrawer },
         { key: 'divider-2', divider: true },
-        { key: 'logout', icon: 'log-out-outline', label: 'Log Out', action: onSignOut, danger: true }
-    ], [t, onOpenDrawer, onSignOut]);
+        { key: 'logout', icon: 'log-out-outline', label: 'Log Out', action: onSignOut, danger: true },
+        { key: 'version', version: true }
+    ], [t, onSignOut]);
 
-    if (!visible) return null;
+    if (!mounted) return null;
 
     const panelStyle = {
         opacity: anim,
@@ -103,7 +137,9 @@ export default function HeaderMenu({
     let rowIndex = -1;
 
     return (
-        <View style={styles.overlay}>
+        // Dead to touch while leaving: the panel is still on screen during the
+        // exit, and a tap landing on a row that is halfway gone would fire it.
+        <View style={styles.overlay} pointerEvents={visible ? 'auto' : 'none'}>
             {/* Backdrop is only just visible — this is a menu, not a dialog, and
                 dimming the whole app for it would feel far heavier than the
                 interaction deserves. It still covers the full screen so a tap
@@ -153,19 +189,88 @@ export default function HeaderMenu({
                                 ? t.colors.danger
                                 : isActive ? t.colors.primary : t.colors.text;
 
+                            const rowMotion = {
+                                opacity: rowAnim,
+                                transform: [{
+                                    translateX: rowAnim.interpolate({
+                                        inputRange: [0, 1],
+                                        outputRange: [10, 0]
+                                    })
+                                }]
+                            };
+
+                            // Version line: the drawer's footer, kept so the build
+                            // is still visible somewhere after the drawer's removal.
+                            if (item.version) {
+                                return (
+                                    <Animated.View key={item.key} style={rowMotion}>
+                                        <Text
+                                            style={[
+                                                t.typography.micro,
+                                                styles.version,
+                                                { color: t.colors.textFaint }
+                                            ]}
+                                        >
+                                            {version}
+                                        </Text>
+                                    </Animated.View>
+                                );
+                            }
+
+                            if (item.account) {
+                                return (
+                                    <Animated.View key={item.key} style={rowMotion}>
+                                        <Pressable
+                                            onPress={() => {
+                                                onClose();
+                                                onNavigate(item.tab);
+                                            }}
+                                            style={({ pressed }) => [
+                                                styles.account,
+                                                { borderRadius: t.radii.md },
+                                                isActive && {
+                                                    backgroundColor: withAlpha(t.colors.primary, t.isDark ? 0.18 : 0.1)
+                                                },
+                                                pressed && {
+                                                    backgroundColor: withAlpha(t.colors.primary, t.isDark ? 0.26 : 0.14)
+                                                }
+                                            ]}
+                                            accessibilityRole="button"
+                                            accessibilityLabel={`Open profile for ${fullName || 'your account'}`}
+                                            accessibilityState={{ selected: isActive }}
+                                        >
+                                            <Avatar name={fullName} uri={profilePic} size={40} radius={20} />
+                                            <View style={styles.accountText}>
+                                                <Text
+                                                    style={[
+                                                        t.typography.bodyStrong,
+                                                        { color: isActive ? t.colors.primary : t.colors.text }
+                                                    ]}
+                                                    numberOfLines={1}
+                                                >
+                                                    {fullName || 'My Profile'}
+                                                </Text>
+                                                {email ? (
+                                                    <Text
+                                                        style={[t.typography.caption, { color: t.colors.textMuted }]}
+                                                        numberOfLines={1}
+                                                    >
+                                                        {email}
+                                                    </Text>
+                                                ) : null}
+                                            </View>
+                                            <Ionicons
+                                                name="chevron-forward"
+                                                size={16}
+                                                color={t.colors.textFaint}
+                                            />
+                                        </Pressable>
+                                    </Animated.View>
+                                );
+                            }
+
                             return (
-                                <Animated.View
-                                    key={item.key}
-                                    style={{
-                                        opacity: rowAnim,
-                                        transform: [{
-                                            translateX: rowAnim.interpolate({
-                                                inputRange: [0, 1],
-                                                outputRange: [10, 0]
-                                            })
-                                        }]
-                                    }}
-                                >
+                                <Animated.View key={item.key} style={rowMotion}>
                                     <Pressable
                                         onPress={() => {
                                             if (!item.keepOpen) onClose();
@@ -229,6 +334,9 @@ const styles = StyleSheet.create({
     panel: { paddingVertical: 8, paddingHorizontal: 8 },
 
     row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 11, paddingHorizontal: 10 },
+    account: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 10 },
+    accountText: { flex: 1, marginLeft: 12, marginRight: 6 },
+    version: { textAlign: 'center', paddingTop: 8, paddingBottom: 2 },
     rowIcon: { width: 26 },
     rowLabel: { flex: 1, marginLeft: 6 },
     rowLabelActive: { fontWeight: '700' },
