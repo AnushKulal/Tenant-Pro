@@ -136,8 +136,28 @@ export default function HomeScreen({ navigation }) {
         return () => sub.remove();
     }, [isSidebarOpen, activeTab, previousTab]);
 
-    const renderActiveTab = () => {
-        switch (activeTab) {
+    // --- Tab caching ------------------------------------------------------------
+    // Tabs used to be rendered through a bare `switch (activeTab)`, so switching
+    // UNMOUNTED the previous tab: its state and everything it had fetched were
+    // destroyed, and coming back re-ran every request from scratch. That is why
+    // each tab "loaded individually every time".
+    //
+    // Now a tab stays mounted once visited, and inactive ones are hidden with
+    // display:'none' — React keeps the component alive (so no refetch, scroll
+    // position and filters survive) while Yoga skips it entirely during layout,
+    // so hidden tabs cost nothing to render. This is the same strategy
+    // react-navigation's tab navigator uses.
+    //
+    // TenantProfile is deliberately NOT cached: it is a drill-in parameterised by
+    // whichever tenant was tapped, so a stale mounted copy would be wrong.
+    const [visited, setVisited] = useState([ROOT_TAB]);
+    useEffect(() => {
+        if (activeTab === 'TenantProfile') return;
+        setVisited((prev) => (prev.includes(activeTab) ? prev : [...prev, activeTab]));
+    }, [activeTab]);
+
+    const renderTab = (name) => {
+        switch (name) {
             case 'Home':
                 return <HomeTab isDark={isDark} selectedProperty={selectedProperty} />;
             case 'Rooms':
@@ -184,12 +204,40 @@ export default function HomeScreen({ navigation }) {
                 return (
                     <View style={styles.placeholderContainer}>
                         <Text style={[styles.placeholderText, { color: t.colors.text }]}>
-                            {activeTab} Screen Coming Soon
+                            {name} Screen Coming Soon
                         </Text>
                     </View>
                 );
         }
     };
+
+    // Every visited tab stays mounted; only the active one is laid out.
+    const renderTabs = () => (
+        <View style={styles.tabHost}>
+            {visited.map((name) => {
+                const isActive = name === activeTab;
+                return (
+                    <View
+                        key={name}
+                        // display:'none' keeps the subtree mounted (state + data
+                        // preserved) while removing it from layout entirely.
+                        style={isActive ? styles.tabLayer : styles.tabHidden}
+                        pointerEvents={isActive ? 'auto' : 'none'}
+                        // Hidden tabs must be invisible to screen readers too.
+                        accessibilityElementsHidden={!isActive}
+                        importantForAccessibility={isActive ? 'auto' : 'no-hide-descendants'}
+                    >
+                        {renderTab(name)}
+                    </View>
+                );
+            })}
+
+            {/* Drill-in view is rendered fresh, on top, and never cached. */}
+            {activeTab === 'TenantProfile' ? (
+                <View style={styles.tabLayer}>{renderTab('TenantProfile')}</View>
+            ) : null}
+        </View>
+    );
 
     return (
         <SafeAreaView style={[styles.container, { backgroundColor: t.colors.bg }]} edges={['top']}>
@@ -205,7 +253,7 @@ export default function HomeScreen({ navigation }) {
                 setSelectedProperty={setSelectedProperty}
             />
 
-            {renderActiveTab()}
+            {renderTabs()}
 
             <BottomNav activeTab={activeTab} setActiveTab={goToTab} />
 
@@ -222,6 +270,11 @@ export default function HomeScreen({ navigation }) {
 
 const styles = StyleSheet.create({
     container: { flex: 1 },
+    // Host fills the gap between header and bottom nav; each cached tab is a
+    // full-size layer inside it.
+    tabHost: { flex: 1 },
+    tabLayer: { flex: 1 },
+    tabHidden: { display: 'none' },
     placeholderContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
     placeholderText: { fontSize: 18, fontWeight: '700' }
 });

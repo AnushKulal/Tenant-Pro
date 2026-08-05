@@ -209,8 +209,16 @@ export default function Sidebar({ isOpen, onClose, navigation, currentRoute = 'D
                     // Live blur only where it is cheap. See the file header: an
                     // animated BlurView is the Android jank. The opaque tint keeps
                     // the drawer reading as a solid frosted panel there.
-                    blur={Platform.OS === 'ios'}
-                    tintColor={Platform.OS === 'android' ? withAlpha(t.colors.surface, 0.97) : undefined}
+                    // A navigation drawer has to be legible above all else. Any
+                    // translucency lets the list behind ghost through the menu
+                    // labels — visible on device and reproduced in a browser
+                    // render. So the panel is FULLY opaque on every platform
+                    // (t.colors.surface is a solid hex) and skips blur entirely,
+                    // which also removes the per-frame Android re-blur that made
+                    // the slide stutter. Frostiness lives on cards, not here.
+                    blur={false}
+                    sheen={false}
+                    tintColor={t.colors.surface}
                     // Only the inner edge is rounded/ruled — the drawer is flush
                     // with the screen edge on the left.
                     style={[
