@@ -120,8 +120,15 @@ export default function BottomNav({ activeTab, setActiveTab }) {
                         so there is no hard line anywhere. */}
                     <LinearGradient
                         colors={[
-                            withAlpha(t.colors.onPrimary, t.isDark ? 0.13 : 0.5),
-                            withAlpha(t.colors.onPrimary, t.isDark ? 0.03 : 0.12),
+                            // primaryAlt, not onPrimary: pure white over a black
+                            // backdrop composites to GREY, which left the bar reading as
+                            // neutral chrome inside an otherwise purple app. Tinting the
+                            // grazing light with the brand hue keeps it subtle while
+                            // making the glass belong to this product. Alpha runs a
+                            // little higher than white did, since a mid-tone hue carries
+                            // less apparent luminance than white at the same opacity.
+                            withAlpha(t.colors.primaryAlt, t.isDark ? 0.20 : 0.5),
+                            withAlpha(t.colors.primaryAlt, t.isDark ? 0.05 : 0.12),
                             'rgba(255,255,255,0)'
                         ]}
                         locations={[0, 0.35, 1]}
@@ -148,8 +155,8 @@ export default function BottomNav({ activeTab, setActiveTab }) {
                                     from looking like a drawn box. */}
                                 <LinearGradient
                                     colors={[
-                                        withAlpha(t.colors.onPrimary, t.isDark ? 0.16 : 0.5),
-                                        withAlpha(t.colors.onPrimary, t.isDark ? 0.07 : 0.26)
+                                        withAlpha(t.colors.primaryAlt, t.isDark ? 0.26 : 0.42),
+                                        withAlpha(t.colors.primaryAlt, t.isDark ? 0.10 : 0.20)
                                     ]}
                                     start={{ x: 0.5, y: 0 }}
                                     end={{ x: 0.5, y: 1 }}
@@ -175,9 +182,11 @@ export default function BottomNav({ activeTab, setActiveTab }) {
                                         name={isActive ? tab.icon : `${tab.icon}-outline`}
                                         size={ICON_SIZE}
                                         color={
-                                            isActive
-                                                ? t.colors.onPrimary
-                                                : withAlpha(t.colors.onPrimary, t.isDark ? 0.62 : 0.55)
+                                            // Active stays near-white for maximum pop
+                                            // against the tinted highlight; inactive uses
+                                            // the themed muted tone, which is already
+                                            // hue-tinted rather than flat grey.
+                                            isActive ? t.colors.onPrimary : t.colors.textMuted
                                         }
                                     />
                                 </Pressable>
