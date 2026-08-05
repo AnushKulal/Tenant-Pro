@@ -1,6 +1,6 @@
 // File: mobile/src/screens/LoginScreen.js
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Animated, useColorScheme, KeyboardAvoidingView, Platform, Image, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Animated, useColorScheme, KeyboardAvoidingView, Platform, Image, ActivityIndicator, Alert } from 'react-native';
 import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import client from '../api/client';
@@ -17,6 +17,7 @@ export default function LoginScreen({ navigation }) {
     const [passwordError, setPasswordError] = useState('');
     const [generalError, setGeneralError] = useState(''); // Handles backend errors (e.g., wrong password)
     const [isLoading, setIsLoading] = useState(false); // Controls the "Signing in..." state
+    const [isGuestLoading, setIsGuestLoading] = useState(false); // Controls the "Exploring..." guest state
 
     const theme = useColorScheme();
     const isDark = theme === 'dark';
@@ -104,6 +105,45 @@ export default function LoginScreen({ navigation }) {
             setIsLoading(false);
         }
     };
+
+    // --- Guest Login: drop straight into the fully-loaded demo account ---
+    const handleGuestLogin = async () => {
+        setGeneralError('');
+        setIsGuestLoading(true);
+        try {
+            // Sign in to the shared demo landlord account (pre-filled with sample data).
+            const response = await client.post('/auth/login', {
+                email: 'demo@gmail.com',
+                password: 'Kajal@2004',
+            });
+            const { token, owner } = response.data;
+
+            // Tag a friendly guest id so the session is recognisable as a guest visit.
+            const guestId = 'GUEST-' + Math.random().toString(36).slice(2, 7).toUpperCase();
+            await AsyncStorage.setItem('userToken', token);
+            await AsyncStorage.setItem('ownerData', JSON.stringify({ ...owner, isGuest: true, guestId }));
+            await AsyncStorage.setItem('guestId', guestId);
+
+            navigation.replace('Home');
+        } catch (error) {
+            const backendError = error.response?.data?.message ||
+                'Guest demo is warming up (the server may be waking up). Please try again in a moment.';
+            setGeneralError(backendError);
+        } finally {
+            setIsGuestLoading(false);
+        }
+    };
+
+    // --- Social login: not wired to real providers yet ---
+    const handleSocialLogin = (provider) => {
+        Alert.alert(
+            `${provider} sign-in`,
+            `Signing in with ${provider} is coming soon. For now, use your email and password, or tap "Explore as Guest" to try the app instantly.`,
+            [{ text: 'Got it' }]
+        );
+    };
+
+    const anyLoading = isLoading || isGuestLoading;
 
     return (
         <SafeAreaView style={[styles.container, isDark ? styles.darkContainer : styles.lightContainer]}>
@@ -196,11 +236,11 @@ export default function LoginScreen({ navigation }) {
                         </TouchableOpacity>
 
                         {/* --- UPDATED BUTTON WITH LOADING STATE --- */}
-                        <TouchableOpacity 
-                            style={[styles.button, isLoading && styles.buttonDisabled]} 
-                            activeOpacity={0.8} 
+                        <TouchableOpacity
+                            style={[styles.button, anyLoading && styles.buttonDisabled]}
+                            activeOpacity={0.8}
                             onPress={handleLogin}
-                            disabled={isLoading} // Prevent double-taps
+                            disabled={anyLoading} // Prevent double-taps
                         >
                             {isLoading ? (
                                 <View style={styles.loadingContainer}>
@@ -212,6 +252,29 @@ export default function LoginScreen({ navigation }) {
                             )}
                         </TouchableOpacity>
 
+                        {/* --- EXPLORE AS GUEST --- */}
+                        <TouchableOpacity
+                            style={[styles.guestButton, isDark ? styles.darkGuest : styles.lightGuest, anyLoading && styles.buttonDisabled]}
+                            activeOpacity={0.8}
+                            onPress={handleGuestLogin}
+                            disabled={anyLoading}
+                        >
+                            {isGuestLoading ? (
+                                <View style={styles.loadingContainer}>
+                                    <ActivityIndicator size="small" color="#2563EB" />
+                                    <Text style={styles.guestButtonTextLoading}>Loading demo…</Text>
+                                </View>
+                            ) : (
+                                <View style={styles.loadingContainer}>
+                                    <Ionicons name="rocket-outline" size={18} color="#2563EB" style={{ marginRight: 8 }} />
+                                    <Text style={styles.guestButtonText}>Explore as Guest</Text>
+                                </View>
+                            )}
+                        </TouchableOpacity>
+                        <Text style={[styles.guestHint, isDark ? styles.darkSubText : styles.lightSubText]}>
+                            Jump into a fully-loaded demo — no account needed.
+                        </Text>
+
                         <View style={styles.dividerContainer}>
                             <View style={[styles.dividerLine, isDark ? styles.darkDivider : styles.lightDivider]} />
                             <Text style={[styles.dividerText, isDark ? styles.darkSubText : styles.lightSubText]}>Or continue with</Text>
@@ -219,13 +282,13 @@ export default function LoginScreen({ navigation }) {
                         </View>
 
                         <View style={styles.socialRow}>
-                            <TouchableOpacity style={[styles.socialButton, isDark ? styles.darkSocial : styles.lightSocial]} disabled={isLoading}>
+                            <TouchableOpacity style={[styles.socialButton, isDark ? styles.darkSocial : styles.lightSocial]} disabled={anyLoading} onPress={() => handleSocialLogin('Google')}>
                                 <FontAwesome5 name="google" size={20} color={isDark ? '#FFFFFF' : '#DB4437'} />
                             </TouchableOpacity>
-                            <TouchableOpacity style={[styles.socialButton, isDark ? styles.darkSocial : styles.lightSocial]} disabled={isLoading}>
+                            <TouchableOpacity style={[styles.socialButton, isDark ? styles.darkSocial : styles.lightSocial]} disabled={anyLoading} onPress={() => handleSocialLogin('Facebook')}>
                                 <FontAwesome5 name="facebook" size={20} color={isDark ? '#FFFFFF' : '#4267B2'} />
                             </TouchableOpacity>
-                            <TouchableOpacity style={[styles.socialButton, isDark ? styles.darkSocial : styles.lightSocial]} disabled={isLoading}>
+                            <TouchableOpacity style={[styles.socialButton, isDark ? styles.darkSocial : styles.lightSocial]} disabled={anyLoading} onPress={() => handleSocialLogin('Twitter')}>
                                 <FontAwesome5 name="twitter" size={20} color={isDark ? '#FFFFFF' : '#1DA1F2'} />
                             </TouchableOpacity>
                         </View>
@@ -299,6 +362,14 @@ const styles = StyleSheet.create({
     buttonText: { color: '#FFFFFF', fontSize: 18, fontWeight: '700', letterSpacing: 0.5 },
     buttonTextLoading: { color: '#FFFFFF', fontSize: 18, fontWeight: '700', letterSpacing: 0.5, marginLeft: 10 },
     
+    // Guest button (secondary / outlined style)
+    guestButton: { marginTop: 14, paddingVertical: 15, borderRadius: 14, alignItems: 'center', borderWidth: 1.5, borderColor: '#2563EB' },
+    lightGuest: { backgroundColor: 'rgba(37, 99, 235, 0.06)' },
+    darkGuest: { backgroundColor: 'rgba(37, 99, 235, 0.12)' },
+    guestButtonText: { color: '#2563EB', fontSize: 16, fontWeight: '700', letterSpacing: 0.3 },
+    guestButtonTextLoading: { color: '#2563EB', fontSize: 16, fontWeight: '700', letterSpacing: 0.3, marginLeft: 10 },
+    guestHint: { textAlign: 'center', fontSize: 13, marginTop: 8, fontWeight: '500' },
+
     dividerContainer: { flexDirection: 'row', alignItems: 'center', marginVertical: 25 },
     dividerLine: { flex: 1, height: 1 },
     lightDivider: { backgroundColor: '#E2E8F0' },

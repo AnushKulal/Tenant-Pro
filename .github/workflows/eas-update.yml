@@ -1,0 +1,44 @@
+name: Publish OTA Update
+
+# Pushes an over-the-air (EAS Update) build whenever the mobile app changes.
+# Installed apps pick it up via the in-app "Update available" popup — no rebuild,
+# no Play Store, no waiting. Needs one repo secret: EXPO_TOKEN.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'mobile/**'
+  workflow_dispatch:
+    inputs:
+      message:
+        description: 'Update message shown in the app'
+        required: false
+        default: 'Latest fixes and improvements'
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install EAS CLI
+        run: npm install -g eas-cli
+
+      - name: Install dependencies
+        working-directory: mobile
+        run: npm install
+
+      - name: Publish OTA update
+        working-directory: mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          MSG="${{ github.event.inputs.message }}"
+          if [ -z "$MSG" ]; then MSG="${{ github.event.head_commit.message }}"; fi
+          eas update --branch production --message "$MSG" --non-interactive
