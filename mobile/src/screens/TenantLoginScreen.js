@@ -432,9 +432,32 @@ export default function TenantLoginScreen({ navigation, route }) {
                             />
                         </Collapsible>
 
+                        {/* Password recovery only makes sense while signing in — and
+                            it goes to the shared reset screen with role: 'tenant', so
+                            the emailed code resets the tenant account rather than a
+                            landlord account that happens to use the same address. */}
+                        <Collapsible expanded={!isSignup}>
+                            <Animated.View
+                                style={loginFade}
+                                pointerEvents={isSignup ? 'none' : 'auto'}
+                                accessibilityElementsHidden={isSignup}
+                                importantForAccessibility={isSignup ? 'no-hide-descendants' : 'auto'}
+                            >
+                                <GlassButton
+                                    label="Forgot Password?"
+                                    variant="ghost"
+                                    size="sm"
+                                    fullWidth={false}
+                                    disabled={loading}
+                                    onPress={() => navigation.navigate('ForgotPassword', { role: 'tenant' })}
+                                    style={styles.forgot}
+                                />
+                            </Animated.View>
+                        </Collapsible>
+
                         {/* Two stacked buttons cross-fade so the label never pops
                             and a filled button stays visible throughout. */}
-                        <View style={{ marginTop: t.spacing.xl }}>
+                        <View style={{ marginTop: t.spacing.lg }}>
                             <Animated.View style={loginFade} pointerEvents={isSignup ? 'none' : 'auto'}>
                                 <GlassButton
                                     label="Sign In"
@@ -513,6 +536,7 @@ export default function TenantLoginScreen({ navigation, route }) {
 }
 
 const styles = StyleSheet.create({
+    forgot: { alignSelf: 'flex-end', marginVertical: 4 },
     flex: { flex: 1 },
     // Centres the stack vertically on tall phones but still scrolls when the
     // keyboard (or the taller sign-up form) shrinks the viewport.

@@ -96,26 +96,46 @@ const loginOwner = async (req, res) => {
     }
 };
 
+// Password recovery serves both account types. Owners and tenants live in
+// different tables, so the role picks the target — and it is resolved through this
+// fixed map rather than interpolated from the request, so a table name can never
+// come from user input. Anything other than 'tenant' falls back to owner, which
+// keeps older clients that send no role working unchanged.
+const RESET_TARGETS = {
+    owner: { table: 'owners', noun: 'account' },
+    tenant: { table: 'tenant_users', noun: 'tenant account' }
+};
+const resolveTarget = (role) => (role === 'tenant'
+    ? { role: 'tenant', ...RESET_TARGETS.tenant }
+    : { role: 'owner', ...RESET_TARGETS.owner });
+
 // --- Forgot Password: email a 6-digit reset code ---
 const forgotPassword = async (req, res) => {
     try {
-        const { email } = req.body;
+        const { email, role } = req.body;
         if (!email) {
             return res.status(400).json({ message: 'Please provide your email.' });
         }
 
-        const [owners] = await db.query('SELECT id, name FROM owners WHERE email = ?', [email]);
+        const target = resolveTarget(role);
+        const [owners] = await db.query(
+            `SELECT id, name FROM \`${target.table}\` WHERE email = ?`,
+            [email]
+        );
 
         // Only send a code if the account exists — but always return the same
         // response so we never reveal whether an email is registered.
         if (owners.length > 0) {
             const code = String(Math.floor(100000 + Math.random() * 900000)); // 6 digits
 
-            // Replace any previous codes for this email, then store the new one (15 min TTL).
-            await db.query('DELETE FROM password_resets WHERE email = ?', [email]);
+            // Replace any previous codes for this email AND role, then store the new
+            // one (15 min TTL). Scoped by role so requesting an owner code does not
+            // invalidate a tenant code for the same address.
+            await db.query('DELETE FROM password_resets WHERE email = ? AND role = ?', [email, target.role]);
             await db.query(
-                'INSERT INTO password_resets (email, code, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 15 MINUTE))',
-                [email, code]
+                `INSERT INTO password_resets (email, role, code, expires_at)
+                 VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL 15 MINUTE))`,
+                [email, target.role, code]
             );
 
             if (isMailConfigured) {
@@ -127,7 +147,7 @@ const forgotPassword = async (req, res) => {
                         html: `
                             <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
                                 <h2>Password Reset</h2>
-                                <p>Hello ${owners[0].name || ''}, use this code to reset your password:</p>
+                                <p>Hello ${owners[0].name || ''}, use this code to reset the password on your TenantPro ${target.noun}:</p>
                                 <p style="font-size: 28px; font-weight: bold; letter-spacing: 4px; color: #3b82f6;">${code}</p>
                                 <p>This code expires in 15 minutes. If you didn't request this, you can ignore this email.</p>
                             </div>
@@ -152,7 +172,7 @@ const forgotPassword = async (req, res) => {
 // --- Reset Password: verify the code and set a new password ---
 const resetPassword = async (req, res) => {
     try {
-        const { email, code, newPassword } = req.body;
+        const { email, code, newPassword, role } = req.body;
         if (!email || !code || !newPassword) {
             return res.status(400).json({ message: 'Email, code, and new password are required.' });
         }
@@ -160,11 +180,15 @@ const resetPassword = async (req, res) => {
             return res.status(400).json({ message: 'Password must be at least 6 characters.' });
         }
 
+        const target = resolveTarget(role);
+
+        // The role is part of the match, so a code issued for one account type can
+        // never reset the other.
         const [rows] = await db.query(
             `SELECT id FROM password_resets
-             WHERE email = ? AND code = ? AND expires_at > NOW()
+             WHERE email = ? AND role = ? AND code = ? AND expires_at > NOW()
              ORDER BY created_at DESC LIMIT 1`,
-            [email, code]
+            [email, target.role, code]
         );
 
         if (rows.length === 0) {
@@ -172,10 +196,13 @@ const resetPassword = async (req, res) => {
         }
 
         const hashedPassword = await bcrypt.hash(newPassword, 10);
-        await db.query('UPDATE owners SET password_hash = ? WHERE email = ?', [hashedPassword, email]);
+        await db.query(
+            `UPDATE \`${target.table}\` SET password_hash = ? WHERE email = ?`,
+            [hashedPassword, email]
+        );
 
-        // Invalidate all codes for this email now that it's used.
-        await db.query('DELETE FROM password_resets WHERE email = ?', [email]);
+        // Invalidate this account type's codes now that one has been used.
+        await db.query('DELETE FROM password_resets WHERE email = ? AND role = ?', [email, target.role]);
 
         res.status(200).json({ message: 'Password reset successful. You can now sign in.' });
     } catch (error) {
