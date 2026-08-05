@@ -194,8 +194,14 @@ export default function Sidebar({ isOpen, onClose, navigation, currentRoute = 'D
                 // Rasterize the moving layer: the panel is drawn to a texture once
                 // and the GPU just translates it, instead of Android re-drawing the
                 // whole subtree every frame of the slide.
-                renderToHardwareTextureAndroid={true}
-                shouldRasterizeIOS={true}
+                // Deliberately NOT rasterized. renderToHardwareTextureAndroid was
+                // added here as a slide optimisation, but this panel contains a
+                // ScrollView, and on Android a ScrollView's own layer can fail to
+                // composite into the parent's hardware texture — the gradient
+                // header painted while every menu item stayed invisible (reported
+                // on device, and not reproducible in a browser render, which is
+                // what pointed at a platform-specific compositing cause).
+                // The panel no longer blurs, so the slide is cheap without it.
                 style={[
                     styles.sidebar,
                     t.shadows.lg,

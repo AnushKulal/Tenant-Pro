@@ -156,6 +156,29 @@ export default function HomeScreen({ navigation }) {
         setVisited((prev) => (prev.includes(activeTab) ? prev : [...prev, activeTab]));
     }, [activeTab]);
 
+    // Caching removed the transition as a side effect: once a tab was mounted,
+    // switching to it just flipped display and appeared instantly, with no motion
+    // at all. So the incoming tab gets its own entrance — reset to 0 and animate
+    // to 1 on every change. Only the active layer is visible, so this animates
+    // exactly one subtree, and opacity+translateY run on the native driver.
+    const tabEnter = useRef(new Animated.Value(1)).current;
+    useEffect(() => {
+        tabEnter.setValue(0);
+        Animated.timing(tabEnter, {
+            toValue: 1,
+            duration: t.motion.normal,
+            useNativeDriver: true
+        }).start();
+    }, [activeTab, tabEnter, t.motion.normal]);
+
+    const tabEnterStyle = {
+        opacity: tabEnter,
+        transform: [
+            { translateY: tabEnter.interpolate({ inputRange: [0, 1], outputRange: [12, 0] }) },
+            { scale: tabEnter.interpolate({ inputRange: [0, 1], outputRange: [0.985, 1] }) }
+        ]
+    };
+
     const renderTab = (name) => {
         switch (name) {
             case 'Home':
@@ -217,24 +240,27 @@ export default function HomeScreen({ navigation }) {
             {visited.map((name) => {
                 const isActive = name === activeTab;
                 return (
-                    <View
+                    <Animated.View
                         key={name}
                         // display:'none' keeps the subtree mounted (state + data
-                        // preserved) while removing it from layout entirely.
-                        style={isActive ? styles.tabLayer : styles.tabHidden}
+                        // preserved) while removing it from layout entirely. The
+                        // active layer additionally carries the entrance animation.
+                        style={isActive ? [styles.tabLayer, tabEnterStyle] : styles.tabHidden}
                         pointerEvents={isActive ? 'auto' : 'none'}
                         // Hidden tabs must be invisible to screen readers too.
                         accessibilityElementsHidden={!isActive}
                         importantForAccessibility={isActive ? 'auto' : 'no-hide-descendants'}
                     >
                         {renderTab(name)}
-                    </View>
+                    </Animated.View>
                 );
             })}
 
             {/* Drill-in view is rendered fresh, on top, and never cached. */}
             {activeTab === 'TenantProfile' ? (
-                <View style={styles.tabLayer}>{renderTab('TenantProfile')}</View>
+                <Animated.View style={[styles.tabLayer, tabEnterStyle]}>
+                    {renderTab('TenantProfile')}
+                </Animated.View>
             ) : null}
         </View>
     );
