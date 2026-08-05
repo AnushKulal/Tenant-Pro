@@ -108,26 +108,28 @@ if (process.env.NODE_ENV !== 'production') {
 // --- Boot Server ---
 const PORT = process.env.PORT || 5000;
 
+// Start listening IMMEDIATELY so the server accepts requests the moment it
+// wakes. Render's free tier cold-starts on every idle period, and previously
+// we ran DB-heavy schema + seed BEFORE listening — against a flaky, distant
+// database that could take many seconds, during which every request failed
+// with "unable to connect". The tables already exist from prior boots, so
+// requests don't need to wait for init; we run it in the background instead.
+app.listen(PORT, () => {
+    console.log(`✅ Server is running on port ${PORT}`);
+});
+
+// Background init (non-blocking): create tables if missing, seed demo once,
+// then start the reminder engine. Failures here never block serving traffic.
 (async () => {
-    // 1. Create database tables automatically on first run (safe to run every boot).
     try {
         await initDb();
     } catch (err) {
         console.error('❌ Database schema init failed:', err.message);
     }
-
-    // 1b. Seed the demo account with sample data (only if it doesn't exist yet).
     try {
         await seedDemo();
     } catch (err) {
         console.error('❌ Demo seed failed:', err.message);
     }
-
-    // 2. Start the reminder automation engine.
     initCronJobs();
-
-    // 3. Start listening.
-    app.listen(PORT, () => {
-        console.log(`✅ Server is running on port ${PORT}`);
-    });
 })();
