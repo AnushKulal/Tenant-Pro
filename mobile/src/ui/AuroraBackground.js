@@ -23,21 +23,42 @@ import { StyleSheet, Animated, Easing, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme, withAlpha } from '../theme';
 
-// Fake-gaussian falloff. Concentric circles, each smaller and brighter, each
-// individually ramping to fully transparent — the overlap approximates a radial
-// blur, and no single ring has a visible edge because the outermost is faint.
-// Ordered outer → inner so `layers` can trim the bright core off dim blobs.
-const HALO = [
-    { scale: 1, alpha: 0.2 },
-    { scale: 0.7, alpha: 0.3 },
-    { scale: 0.44, alpha: 0.44 }
-];
+// Fake radial falloff, built from many concentric UNIFORM-alpha circles.
+//
+// The obvious approach — a LinearGradient inside a circular clip — does not work
+// and was visibly wrong on device: a linear gradient ramps alpha along ONE axis,
+// so perpendicular to that axis the fill is still near-full opacity when it
+// reaches the circular clip, leaving a hard arc. Screenshots showed exactly that,
+// a set of stacked crescents instead of a glow.
+//
+// Uniform alpha per ring has no direction, so the only edge is the circle itself.
+// Keep each step small (a few percent) and the compositing 1-(1-a)^k curve reads
+// as a smooth radial gradient with no perceptible banding. All static: no blur
+// pass, nothing per-frame.
+const RING_COUNT = 12;
+const OUTER_SCALE = 1;
+const INNER_SCALE = 0.16;
+
+// Precomputed once: ring geometry never depends on theme or props.
+const RINGS = Array.from({ length: RING_COUNT }, (_, i) => {
+    const p = i / (RING_COUNT - 1);              // 0 = outermost, 1 = core
+    return {
+        scale: OUTER_SCALE + (INNER_SCALE - OUTER_SCALE) * p,
+        // Slightly denser toward the core so the centre reads as a light source
+        // rather than a flat disc.
+        weight: 0.55 + 0.45 * p,
+        mix: p                                    // hue blend, outer c0 → inner c1
+    };
+});
 
 function SoftBlob({ size, colors, layers }) {
-    const t = useTheme();
     const [c0, c1] = colors;
+    // `layers` previously trimmed the bright core off dim blobs; preserve that
+    // meaning by scaling the per-ring alpha instead of dropping rings, which
+    // would reintroduce a visible outer edge.
+    const density = layers >= 3 ? 1 : 0.62;
 
-    return HALO.slice(0, layers).map(({ scale, alpha }, i) => {
+    return RINGS.map(({ scale, weight, mix }, i) => {
         const d = size * scale;
         const inset = (size - d) / 2; // centre each ring inside the blob box
         return (
@@ -50,19 +71,10 @@ function SoftBlob({ size, colors, layers }) {
                     height: d,
                     left: inset,
                     top: inset,
-                    borderRadius: t.radii.pill,
-                    overflow: 'hidden'
+                    borderRadius: d / 2,
+                    backgroundColor: withAlpha(mix < 0.5 ? c0 : c1, 0.032 * weight * density)
                 }}
-            >
-                <LinearGradient
-                    // Ramp to alpha 0 so the circular clip never shows as a hard rim.
-                    colors={[withAlpha(c0, alpha), withAlpha(c1, alpha * 0.6), withAlpha(c1, 0)]}
-                    locations={[0, 0.5, 1]}
-                    start={{ x: 0.15, y: 0 }}
-                    end={{ x: 0.85, y: 1 }}
-                    style={styles.fill}
-                />
-            </View>
+            />
         );
     });
 }
