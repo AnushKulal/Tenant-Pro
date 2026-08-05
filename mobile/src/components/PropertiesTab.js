@@ -5,8 +5,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
-import { useNavigation } from '@react-navigation/native';
 import client, { SERVER_URL, mediaUrl } from '../api/client';
+import { useTheme, withAlpha } from '../theme';
+import { GlassView } from '../ui';
 
 const { width, height } = Dimensions.get('window');
 
@@ -25,24 +26,28 @@ const PropertyImage = ({ imageUrl }) => {
     );
 };
 
-const FormInput = ({ label, placeholder, value, onChangeText, keyboardType = 'default', isDark }) => (
-    <View style={styles.inputContainer}>
-        <Text style={[styles.inputLabel, isDark ? styles.darkSubText : styles.lightSubText]}>{label}</Text>
-        <View style={[styles.inputWrapper, isDark ? styles.darkInput : styles.lightInput]}>
-            <TextInput
-                style={[styles.input, isDark ? styles.darkText : styles.lightText]}
-                placeholder={placeholder}
-                placeholderTextColor={isDark ? '#475569' : '#94A3B8'}
-                value={value}
-                onChangeText={onChangeText}
-                keyboardType={keyboardType}
-            />
+const FormInput = ({ label, placeholder, value, onChangeText, keyboardType = 'default', isDark }) => {
+    const t = useTheme();
+
+    return (
+        <View style={styles.inputContainer}>
+            <Text style={[styles.inputLabel, { color: t.colors.textMuted }]}>{label}</Text>
+            <View style={[styles.inputWrapper, { backgroundColor: t.colors.surfaceAlt, borderColor: t.colors.border }]}>
+                <TextInput
+                    style={[styles.input, { color: t.colors.text }]}
+                    placeholder={placeholder}
+                    placeholderTextColor={t.colors.textFaint}
+                    value={value}
+                    onChangeText={onChangeText}
+                    keyboardType={keyboardType}
+                />
+            </View>
         </View>
-    </View>
-);
+    );
+};
 
 export default function PropertiesTab({ isDark }) {
-    const navigation = useNavigation();
+    const t = useTheme();
 
     // --- DATA STATES ---
     const [properties, setProperties] = useState([]);
@@ -175,7 +180,7 @@ export default function PropertiesTab({ isDark }) {
         setCity(prop.city);
         setPincode(prop.pincode);
         setImageUri(prop.image_url ? mediaUrl(prop.image_url) : null);
-        setIsNewImage(false); 
+        setIsNewImage(false);
         setAddModalVisible(true);
     };
 
@@ -209,42 +214,42 @@ export default function PropertiesTab({ isDark }) {
         <View style={styles.container}>
             {isLoading ? (
                 <View style={styles.centerWrapper}>
-                    <ActivityIndicator size="large" color="#6366F1" />
-                    <Text style={[styles.loadingText, isDark ? styles.darkSubText : styles.lightSubText]}>Fetching properties...</Text>
+                    <ActivityIndicator size="large" color={t.colors.primary} />
+                    <Text style={[styles.loadingText, { color: t.colors.textMuted }]}>Fetching properties...</Text>
                 </View>
             ) : (
-                <ScrollView 
-                    showsVerticalScrollIndicator={false} 
+                <ScrollView
+                    showsVerticalScrollIndicator={false}
                     keyboardShouldPersistTaps="handled" // ✨ CRITICAL FIX: Allows tapping the popover instantly
                     contentContainerStyle={properties.length === 0 ? styles.centerWrapper : styles.scrollContent}
                 >
                     {properties.length === 0 ? (
                         <View style={styles.emptyState}>
-                            <View style={[styles.emptyIconBox, isDark ? styles.darkIconBox : styles.lightIconBox]}>
-                                <Ionicons name="business-outline" size={40} color="#6366F1" />
+                            <View style={[styles.emptyIconBox, { backgroundColor: t.colors.surfaceAlt }]}>
+                                <Ionicons name="business-outline" size={40} color={t.colors.primary} />
                             </View>
-                            <Text style={[styles.emptyTitle, isDark ? styles.darkText : styles.lightText]}>No Properties Yet</Text>
-                            <Text style={[styles.emptySubtitle, isDark ? styles.darkSubText : styles.lightSubText]}>Add your first PG or Apartment building to start managing tenants and rent.</Text>
+                            <Text style={[styles.emptyTitle, { color: t.colors.text }]}>No Properties Yet</Text>
+                            <Text style={[styles.emptySubtitle, { color: t.colors.textMuted }]}>Add your first PG or Apartment building to start managing tenants and rent.</Text>
 
-                            <TouchableOpacity style={styles.emptyAddBtn} onPress={() => { resetForm(); setAddModalVisible(true); }}>
-                                <Text style={styles.emptyAddBtnText}>+ Add Property</Text>
+                            <TouchableOpacity style={[styles.emptyAddBtn, { backgroundColor: withAlpha(t.colors.primary, 0.1) }]} onPress={() => { resetForm(); setAddModalVisible(true); }}>
+                                <Text style={[styles.emptyAddBtnText, { color: t.colors.primary }]}>+ Add Property</Text>
                             </TouchableOpacity>
                         </View>
                     ) : (
                         <>
                             <View style={styles.actionBar}>
                                 <View style={styles.statsHeader}>
-                                    <Text style={[styles.statsCount, isDark ? styles.darkText : styles.lightText]}>
+                                    <Text style={[styles.statsCount, { color: t.colors.text }]}>
                                         {properties.length}
                                     </Text>
-                                    <Text style={[styles.statsLabel, isDark ? styles.darkSubText : styles.lightSubText]}>
+                                    <Text style={[styles.statsLabel, { color: t.colors.textMuted }]}>
                                         {properties.length === 1 ? 'Property' : 'Properties'}
                                     </Text>
                                 </View>
                                 <TouchableOpacity activeOpacity={0.8} onPress={() => { resetForm(); setAddModalVisible(true); }}>
-                                    <LinearGradient colors={['#3B82F6', '#4F46E5']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.addButton}>
-                                        <Ionicons name="add" size={18} color="#FFFFFF" />
-                                        <Text style={styles.addButtonText}>Add</Text>
+                                    <LinearGradient colors={t.colors.primaryGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.addButton, { shadowColor: t.colors.primary }]}>
+                                        <Ionicons name="add" size={18} color={t.colors.onPrimary} />
+                                        <Text style={[styles.addButtonText, { color: t.colors.onPrimary }]}>Add</Text>
                                     </LinearGradient>
                                 </TouchableOpacity>
                             </View>
@@ -252,75 +257,80 @@ export default function PropertiesTab({ isDark }) {
                             {/* Property Cards */}
                             {properties.map((prop) => (
                                 <View key={prop.id} style={{ position: 'relative', zIndex: activeMenuId === prop.id ? 100 : 1, ...(Platform.OS === 'android' && activeMenuId === prop.id ? { elevation: 10 } : {}) }}>
-                                    
+
                                     {/* Invisible overlay to close menu when tapping outside */}
                                     {activeMenuId === prop.id && (
                                         <TouchableOpacity style={styles.localOverlay} activeOpacity={1} onPress={() => setActiveMenuId(null)} />
                                     )}
 
                                     {/* MAIN CARD: Has overflow: hidden, so popover must be OUTSIDE of this view */}
-                                    <View style={[styles.propertyCard, isDark ? styles.darkCard : styles.lightCard]}>
-                                        <TouchableOpacity
-                                            activeOpacity={0.9}
-                                            onPress={() => navigation.navigate('PropertyDetails', { property: prop })}
-                                        >
+                                    <GlassView radius={t.radii.xl} style={[styles.propertyCard, t.shadows.md]}>
+                                        {/* Card body is not tappable: it used to call
+                                            navigation.navigate('PropertyDetails'), but this
+                                            component never receives a `navigation` prop and no
+                                            PropertyDetails route exists, so any tap threw
+                                            "Cannot read property 'navigate' of undefined".
+                                            Per-property actions live in the ⋯ popover above. */}
+                                        <TouchableOpacity activeOpacity={1} disabled>
                                             <View style={styles.cardTopHalf}>
                                                 <PropertyImage imageUrl={prop.image_url} />
-                                                <View style={styles.typeBadge}>
-                                                    <Text style={styles.typeBadgeText}>{prop.property_type}</Text>
+                                                {/* Badge sits on the photo, so it uses the brand fill —
+                                                    a text-coloured chip would go white-on-white in dark mode. */}
+                                                <View style={[styles.typeBadge, { backgroundColor: t.colors.primary }]}>
+                                                    <Text style={[styles.typeBadgeText, { color: t.colors.onPrimary }]}>{prop.property_type}</Text>
                                                 </View>
                                             </View>
 
                                             <View style={styles.cardBottomHalf}>
-                                                <Text style={[styles.propName, isDark ? styles.darkText : styles.lightText]} numberOfLines={1}>{prop.name}</Text>
+                                                <Text style={[styles.propName, { color: t.colors.text }]} numberOfLines={1}>{prop.name}</Text>
                                                 <View style={styles.locationRow}>
-                                                    <Ionicons name="location" size={14} color="#6366F1" />
-                                                    <Text style={[styles.propLocality, isDark ? styles.darkSubText : styles.lightSubText]}>{prop.locality}, {prop.city}</Text>
+                                                    <Ionicons name="location" size={14} color={t.colors.primary} />
+                                                    <Text style={[styles.propLocality, { color: t.colors.textMuted }]}>{prop.locality}, {prop.city}</Text>
                                                 </View>
-                                                <View style={styles.statsDivider} />
+                                                <View style={[styles.statsDivider, { backgroundColor: t.colors.border }]} />
                                                 <View style={styles.statsRow}>
-                                                    <View style={styles.statPill}>
-                                                        <Ionicons name="key-outline" size={14} color="#10B981" />
-                                                        <Text style={styles.statPillText}>{prop.units || 0} Units</Text>
+                                                    <View style={[styles.statPill, { backgroundColor: withAlpha(t.colors.success, 0.15) }]}>
+                                                        <Ionicons name="key-outline" size={14} color={t.colors.success} />
+                                                        <Text style={[styles.statPillText, { color: t.colors.success }]}>{prop.units || 0} Units</Text>
                                                     </View>
-                                                    <View style={styles.statPill}>
-                                                        <Ionicons name="people-outline" size={14} color="#F59E0B" />
-                                                        <Text style={[styles.statPillText, { color: '#F59E0B' }]}>{prop.tenant_count || 0} Tenants</Text>
+                                                    <View style={[styles.statPill, { backgroundColor: withAlpha(t.colors.success, 0.15) }]}>
+                                                        <Ionicons name="people-outline" size={14} color={t.colors.warning} />
+                                                        <Text style={[styles.statPillText, { color: t.colors.warning }]}>{prop.tenant_count || 0} Tenants</Text>
                                                     </View>
                                                 </View>
                                             </View>
                                         </TouchableOpacity>
-                                    </View>
+                                    </GlassView>
 
                                     {/* ✨ MOVED OUTSIDE: 3-DOT MENU BUTTON */}
-                                    <TouchableOpacity 
-                                        style={styles.menuIcon} 
+                                    <TouchableOpacity
+                                        style={styles.menuIcon}
                                         onPress={() => setActiveMenuId(activeMenuId === prop.id ? null : prop.id)}
                                     >
-                                        <View style={styles.menuIconBg}>
-                                            <Ionicons name="ellipsis-vertical" size={18} color="#FFFFFF" />
+                                        <View style={[styles.menuIconBg, { backgroundColor: t.colors.scrim }]}>
+                                            <Ionicons name="ellipsis-vertical" size={18} color={t.colors.onPrimary} />
                                         </View>
                                     </TouchableOpacity>
 
                                     {/* ✨ MOVED OUTSIDE: DROPDOWN POPOVER MENU */}
                                     {activeMenuId === prop.id && (
-                                        <View style={[styles.popoverMenu, isDark ? styles.darkPopover : styles.lightPopover]}>
-                                            <TouchableOpacity 
-                                                style={styles.popoverItem} 
+                                        <GlassView strong radius={t.radii.md} style={[styles.popoverMenu, t.shadows.lg]}>
+                                            <TouchableOpacity
+                                                style={styles.popoverItem}
                                                 onPress={() => openEditModal(prop)}
                                             >
-                                                <Ionicons name="create-outline" size={16} color={isDark ? '#94A3B8' : '#64748B'} />
-                                                <Text style={[styles.popoverText, isDark ? styles.darkText : styles.lightText]}>Edit Details</Text>
+                                                <Ionicons name="create-outline" size={16} color={t.colors.textMuted} />
+                                                <Text style={[styles.popoverText, { color: t.colors.text }]}>Edit Details</Text>
                                             </TouchableOpacity>
-                                            <View style={[styles.popoverDivider, isDark ? styles.darkDivider : styles.lightDivider]} />
-                                            <TouchableOpacity 
-                                                style={styles.popoverItem} 
+                                            <View style={[styles.popoverDivider, { backgroundColor: t.colors.border }]} />
+                                            <TouchableOpacity
+                                                style={styles.popoverItem}
                                                 onPress={() => confirmDelete(prop)}
                                             >
-                                                <Ionicons name="trash-outline" size={16} color="#EF4444" />
-                                                <Text style={[styles.popoverText, { color: '#EF4444' }]}>Delete Property</Text>
+                                                <Ionicons name="trash-outline" size={16} color={t.colors.danger} />
+                                                <Text style={[styles.popoverText, { color: t.colors.danger }]}>Delete Property</Text>
                                             </TouchableOpacity>
-                                        </View>
+                                        </GlassView>
                                     )}
 
                                 </View>
@@ -333,15 +343,17 @@ export default function PropertiesTab({ isDark }) {
 
             {/* --- ADD / EDIT PROPERTY MODAL --- */}
             <Modal animationType="slide" transparent={true} visible={isAddModalVisible} onRequestClose={() => { setAddModalVisible(false); resetForm(); }}>
-                <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalOverlay}>
-                    <View style={[styles.modalContent, isDark ? styles.darkModal : styles.lightModal]}>
+                <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={[styles.modalOverlay, { backgroundColor: t.colors.scrim }]}>
+                    {/* radius={0} so the sheet keeps its square bottom corners; the
+                        top corners come from styles.modalContent. */}
+                    <GlassView strong radius={0} style={styles.modalContent}>
 
                         <View style={styles.modalHeader}>
-                            <Text style={[styles.modalTitle, isDark ? styles.darkText : styles.lightText]}>
+                            <Text style={[styles.modalTitle, { color: t.colors.text }]}>
                                 {editingProperty ? 'Edit Property' : 'Add New Property'}
                             </Text>
                             <TouchableOpacity onPress={() => { setAddModalVisible(false); resetForm(); }} style={styles.closeBtn}>
-                                <Ionicons name="close" size={24} color={isDark ? '#94A3B8' : '#64748B'} />
+                                <Ionicons name="close" size={24} color={t.colors.textMuted} />
                             </TouchableOpacity>
                         </View>
 
@@ -351,26 +363,31 @@ export default function PropertiesTab({ isDark }) {
                                 {imageUri ? (
                                     <Image source={{ uri: imageUri }} style={styles.uploadedImage} />
                                 ) : (
-                                    <View style={[styles.imagePlaceholder, isDark ? styles.darkInput : styles.lightInput]}>
-                                        <Ionicons name="camera-outline" size={32} color={isDark ? '#94A3B8' : '#64748B'} />
-                                        <Text style={[styles.uploadText, isDark ? styles.darkSubText : styles.lightSubText]}>Upload Property Photo</Text>
+                                    <View style={[styles.imagePlaceholder, { backgroundColor: t.colors.surfaceAlt, borderColor: t.colors.border }]}>
+                                        <Ionicons name="camera-outline" size={32} color={t.colors.textMuted} />
+                                        <Text style={[styles.uploadText, { color: t.colors.textMuted }]}>Upload Property Photo</Text>
                                     </View>
                                 )}
                             </TouchableOpacity>
 
                             <FormInput label="Property / Branch Name" placeholder="e.g. Royal PG Koramangala" value={propName} onChangeText={setPropName} isDark={isDark} />
 
-                            <Text style={[styles.inputLabel, isDark ? styles.darkSubText : styles.lightSubText]}>Property Type</Text>
+                            <Text style={[styles.inputLabel, { color: t.colors.textMuted }]}>Property Type</Text>
                             <View style={styles.typeContainer}>
                                 {propertyTypes.map((type) => {
                                     const isActive = propType === type;
                                     return (
                                         <TouchableOpacity
                                             key={type}
-                                            style={[styles.typePill, isActive ? styles.activeTypePill : (isDark ? styles.darkTypePill : styles.lightTypePill)]}
+                                            style={[
+                                                styles.typePill,
+                                                isActive
+                                                    ? { backgroundColor: t.colors.primary, borderColor: t.colors.primary }
+                                                    : { backgroundColor: t.colors.surfaceAlt, borderColor: t.colors.border }
+                                            ]}
                                             onPress={() => setPropType(type)}
                                         >
-                                            <Text style={[styles.typeText, isActive ? styles.activeTypeText : (isDark ? styles.darkSubText : styles.lightSubText)]}>
+                                            <Text style={[styles.typeText, isActive ? [styles.activeTypeText, { color: t.colors.onPrimary }] : { color: t.colors.textMuted }]}>
                                                 {type}
                                             </Text>
                                         </TouchableOpacity>
@@ -391,38 +408,38 @@ export default function PropertiesTab({ isDark }) {
 
                             <FormInput label="City" placeholder="e.g. Bengaluru" value={city} onChangeText={setCity} isDark={isDark} />
 
-                            <TouchableOpacity style={styles.saveBtnWrapper} activeOpacity={0.8} onPress={handleSaveProperty} disabled={isSaving}>
-                                <LinearGradient colors={['#3B82F6', '#4F46E5']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.saveBtn}>
-                                    {isSaving ? <ActivityIndicator color="#FFF" /> : <Text style={styles.saveBtnText}>{editingProperty ? 'Update Property' : 'Save Property'}</Text>}
+                            <TouchableOpacity style={[styles.saveBtnWrapper, { shadowColor: t.colors.primary }]} activeOpacity={0.8} onPress={handleSaveProperty} disabled={isSaving}>
+                                <LinearGradient colors={t.colors.primaryGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.saveBtn}>
+                                    {isSaving ? <ActivityIndicator color={t.colors.onPrimary} /> : <Text style={[styles.saveBtnText, { color: t.colors.onPrimary }]}>{editingProperty ? 'Update Property' : 'Save Property'}</Text>}
                                 </LinearGradient>
                             </TouchableOpacity>
                             <View style={{ height: 40 }} />
                         </ScrollView>
-                    </View>
+                    </GlassView>
                 </KeyboardAvoidingView>
             </Modal>
 
             {/* --- CUSTOM DELETE CONFIRMATION MODAL --- */}
             <Modal animationType="fade" transparent={true} visible={isDeleteModalVisible} onRequestClose={() => setDeleteModalVisible(false)}>
-                <View style={styles.deleteModalOverlay}>
-                    <View style={[styles.confirmDialog, isDark ? styles.darkCard : styles.lightCard]}>
-                        <View style={[styles.warningIconBg, { backgroundColor: 'rgba(239, 68, 68, 0.1)' }]}>
-                            <Ionicons name="trash-bin" size={32} color="#EF4444" />
+                <View style={[styles.deleteModalOverlay, { backgroundColor: t.colors.scrim }]}>
+                    <GlassView strong radius={24} style={[styles.confirmDialog, t.shadows.md]}>
+                        <View style={[styles.warningIconBg, { backgroundColor: withAlpha(t.colors.danger, 0.15) }]}>
+                            <Ionicons name="trash-bin" size={32} color={t.colors.danger} />
                         </View>
-                        <Text style={[styles.confirmTitle, isDark ? styles.darkText : styles.lightText]}>Delete Property?</Text>
-                        <Text style={[styles.confirmSubText, isDark ? styles.darkSubText : styles.lightSubText]}>
+                        <Text style={[styles.confirmTitle, { color: t.colors.text }]}>Delete Property?</Text>
+                        <Text style={[styles.confirmSubText, { color: t.colors.textMuted }]}>
                             Are you sure you want to permanently delete <Text style={{ fontWeight: '800' }}>{propertyToDelete?.name}</Text>? You cannot undo this.
                         </Text>
 
                         <View style={styles.confirmActions}>
-                            <TouchableOpacity style={[styles.confirmBtn, isDark ? styles.darkInput : styles.lightInput]} onPress={() => setDeleteModalVisible(false)} disabled={isDeleting}>
-                                <Text style={[styles.confirmBtnText, isDark ? styles.darkText : styles.lightText]}>Cancel</Text>
+                            <TouchableOpacity style={[styles.confirmBtn, { backgroundColor: t.colors.surfaceAlt, borderColor: t.colors.border }]} onPress={() => setDeleteModalVisible(false)} disabled={isDeleting}>
+                                <Text style={[styles.confirmBtnText, { color: t.colors.text }]}>Cancel</Text>
                             </TouchableOpacity>
-                            <TouchableOpacity style={[styles.confirmBtn, { backgroundColor: '#EF4444', borderWidth: 0 }]} onPress={executeDeleteProperty} disabled={isDeleting}>
-                                {isDeleting ? <ActivityIndicator color="#FFFFFF" size="small" /> : <Text style={[styles.confirmBtnText, { color: '#FFF' }]}>Delete</Text>}
+                            <TouchableOpacity style={[styles.confirmBtn, { backgroundColor: t.colors.danger, borderWidth: 0 }]} onPress={executeDeleteProperty} disabled={isDeleting}>
+                                {isDeleting ? <ActivityIndicator color={t.colors.onPrimary} size="small" /> : <Text style={[styles.confirmBtnText, { color: t.colors.onPrimary }]}>Delete</Text>}
                             </TouchableOpacity>
                         </View>
-                    </View>
+                    </GlassView>
                 </View>
             </Modal>
 
@@ -441,8 +458,8 @@ const styles = StyleSheet.create({
     statsCount: { fontSize: 24, fontWeight: '800', marginRight: 6, letterSpacing: -0.5 },
     statsLabel: { fontSize: 15, fontWeight: '600', paddingBottom: 2 },
 
-    addButton: { flexDirection: 'row', alignItems: 'center', paddingVertical: 5, paddingHorizontal: 10, borderRadius: 10, shadowColor: '#4F46E5', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 5 },
-    addButtonText: { color: '#FFFFFF', fontWeight: '700', marginLeft: 4, fontSize: 13 },
+    addButton: { flexDirection: 'row', alignItems: 'center', paddingVertical: 5, paddingHorizontal: 10, borderRadius: 10, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 5 },
+    addButtonText: { fontWeight: '700', marginLeft: 4, fontSize: 13 },
 
     scrollContent: { paddingHorizontal: 20, paddingTop: 10 },
 
@@ -450,46 +467,39 @@ const styles = StyleSheet.create({
     emptyIconBox: { width: 80, height: 80, borderRadius: 40, justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
     emptyTitle: { fontSize: 20, fontWeight: '700', marginBottom: 10 },
     emptySubtitle: { fontSize: 14, textAlign: 'center', lineHeight: 22, marginBottom: 25 },
-    emptyAddBtn: { paddingVertical: 12, paddingHorizontal: 24, backgroundColor: 'rgba(99, 102, 241, 0.1)', borderRadius: 12 },
-    emptyAddBtnText: { color: '#6366F1', fontWeight: '700', fontSize: 15 },
+    emptyAddBtn: { paddingVertical: 12, paddingHorizontal: 24, borderRadius: 12 },
+    emptyAddBtnText: { fontWeight: '700', fontSize: 15 },
 
     propertyCard: { borderRadius: 20, marginBottom: 20, overflow: 'hidden' },
-    lightCard: { backgroundColor: '#FFFFFF', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 4 },
-    darkCard: { backgroundColor: '#151A25' },
 
     cardTopHalf: { height: 160, position: 'relative' },
     cardImage: { width: '100%', height: '100%', resizeMode: 'cover' },
 
     menuIcon: { position: 'absolute', top: 12, right: 12, zIndex: 10 },
-    menuIconBg: { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center' },
+    menuIconBg: { width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center' },
 
-    typeBadge: { position: 'absolute', bottom: 12, left: 12, backgroundColor: '#0F172A', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10 },
-    typeBadgeText: { color: '#FFFFFF', fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 },
+    typeBadge: { position: 'absolute', bottom: 12, left: 12, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10 },
+    typeBadgeText: { fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 },
 
     cardBottomHalf: { padding: 18 },
     propName: { fontSize: 18, fontWeight: '800', marginBottom: 6, letterSpacing: -0.3 },
     locationRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 15 },
     propLocality: { fontSize: 13, marginLeft: 6, fontWeight: '500' },
 
-    statsDivider: { height: 1, backgroundColor: 'rgba(148, 163, 184, 0.2)', marginBottom: 15 },
+    statsDivider: { height: 1, marginBottom: 15 },
     statsRow: { flexDirection: 'row', gap: 12 },
-    statPill: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(16, 185, 129, 0.1)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
-    statPillText: { fontSize: 12, fontWeight: '700', color: '#10B981', marginLeft: 6 },
+    statPill: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
+    statPillText: { fontSize: 12, fontWeight: '700', marginLeft: 6 },
 
     // --- POPOVER MENU STYLES ---
     localOverlay: { position: 'absolute', top: -height, bottom: -height, left: -width, right: -width, zIndex: 40 },
-    popoverMenu: { position: 'absolute', top: 50, right: 12, borderRadius: 12, width: 160, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 10, elevation: 15, zIndex: 999, padding: 5 },
-    lightPopover: { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#F1F5F9' },
-    darkPopover: { backgroundColor: '#1E293B', borderWidth: 1, borderColor: '#334155' },
+    popoverMenu: { position: 'absolute', top: 50, right: 12, borderRadius: 12, width: 160, zIndex: 999, padding: 5 },
     popoverItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 15 },
     popoverText: { fontSize: 14, fontWeight: '600', marginLeft: 10 },
     popoverDivider: { height: 1 },
-    lightDivider: { backgroundColor: '#F1F5F9' },
-    darkDivider: { backgroundColor: '#334155' },
 
-    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+    modalOverlay: { flex: 1, justifyContent: 'flex-end' },
     modalContent: { borderTopLeftRadius: 30, borderTopRightRadius: 30, paddingHorizontal: 25, paddingTop: 25, maxHeight: '90%' },
-    lightModal: { backgroundColor: '#FFFFFF' }, darkModal: { backgroundColor: '#0B0F19' },
     modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
     modalTitle: { fontSize: 20, fontWeight: '800' },
     closeBtn: { padding: 5 },
@@ -507,25 +517,19 @@ const styles = StyleSheet.create({
 
     typeContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 },
     typePill: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: 12, borderWidth: 1 },
-    lightTypePill: { backgroundColor: '#F8FAFC', borderColor: '#E2E8F0' }, darkTypePill: { backgroundColor: '#1E293B', borderColor: '#334155' },
-    activeTypePill: { backgroundColor: '#6366F1', borderColor: '#6366F1' }, activeTypeText: { color: '#FFFFFF', fontWeight: '700' },
+    activeTypeText: { fontWeight: '700' },
 
-    saveBtnWrapper: { marginTop: 10, shadowColor: '#4F46E5', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.4, shadowRadius: 12, elevation: 8 },
+    saveBtnWrapper: { marginTop: 10, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.4, shadowRadius: 12, elevation: 8 },
     saveBtn: { height: 60, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
-    saveBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
+    saveBtnText: { fontSize: 16, fontWeight: '700' },
 
     // --- DELETE MODAL STYLES ---
-    deleteModalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 20, zIndex: 999 },
+    deleteModalOverlay: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 20, zIndex: 999 },
     confirmDialog: { width: '100%', borderRadius: 24, padding: 24, alignItems: 'center' },
     warningIconBg: { width: 64, height: 64, borderRadius: 32, justifyContent: 'center', alignItems: 'center', marginBottom: 16 },
     confirmTitle: { fontSize: 20, fontWeight: '800', marginBottom: 8 },
     confirmSubText: { fontSize: 14, textAlign: 'center', lineHeight: 22, marginBottom: 24 },
     confirmActions: { flexDirection: 'row', gap: 12, width: '100%' },
     confirmBtn: { flex: 1, paddingVertical: 14, borderRadius: 12, alignItems: 'center', borderWidth: 1, borderColor: 'transparent' },
-    confirmBtnText: { fontSize: 15, fontWeight: '700' },
-
-    lightText: { color: '#0F172A' }, darkText: { color: '#FFFFFF' },
-    lightSubText: { color: '#64748B' }, darkSubText: { color: '#94A3B8' },
-    lightInput: { backgroundColor: '#F8FAFC', borderColor: '#E2E8F0' }, darkInput: { backgroundColor: '#0A0F1C', borderColor: '#1E293B' },
-    lightIconBox: { backgroundColor: '#F1F5F9' }, darkIconBox: { backgroundColor: '#1E293B' }
+    confirmBtnText: { fontSize: 15, fontWeight: '700' }
 });

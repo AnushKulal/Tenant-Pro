@@ -1,35 +1,118 @@
 // File: mobile/src/components/UpdateGate.js
-// Shows an "Update available" prompt when a new over-the-air (EAS Update) build
-// is published, letting the user choose "Update Now" or "Maybe Later".
-// It checks on launch and whenever the app returns to the foreground.
-// Safe in Expo Go / development: it simply does nothing when updates are disabled.
-import React, { useEffect, useState, useCallback } from 'react';
-import {
-    Modal, View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, AppState
-} from 'react-native';
+// -----------------------------------------------------------------------------
+// OTA UPDATE PROMPT
+//
+// A bottom sheet that slides up from the bottom edge when an EAS Update is
+// available, with:
+//   • a live progress bar and phase label while the update installs
+//   • "What's new" notes taken from the ACTUAL published patch (see below)
+//   • ✕ to dismiss, "Update later", and "Update now"
+//
+// Where the notes come from:
+//   The publish workflow runs mobile/scripts/set-changelog.js, which writes the
+//   real commit subjects of the patch being shipped into app.json →
+//   expo.extra.releaseNotes. That config travels inside the update manifest, so
+//   this sheet shows notes for the INCOMING version instead of a hand-written
+//   string that goes stale.
+//
+// Honest note on the progress bar:
+//   expo-updates does not expose byte-level download progress — fetchUpdateAsync
+//   resolves once, with no progress callback. So the bar is driven by real
+//   lifecycle phases (checking → downloading → installing → restarting) and,
+//   during the download, eases toward but never reaches 92%. It snaps to 100%
+//   only once the download has genuinely completed. It never claims to be done
+//   before it is: a truthful activity indicator, not a fabricated byte counter.
+// -----------------------------------------------------------------------------
+import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { View, Text, StyleSheet, AppState, Platform } from 'react-native';
 import * as Updates from 'expo-updates';
+import { Ionicons } from '@expo/vector-icons';
+import { BottomSheet, GlassButton, GlassView, ProgressBar } from '../ui';
+import { useTheme } from '../theme';
+
+const PHASE_LABEL = {
+    idle: '',
+    checking: 'Checking for updates…',
+    downloading: 'Downloading update…',
+    installing: 'Installing…',
+    restarting: 'Restarting TenantPro…',
+    error: 'Update failed'
+};
+
+const DOWNLOAD_CEILING = 0.92; // never pretend the download finished
 
 export default function UpdateGate({ children }) {
+    const t = useTheme();
     const [visible, setVisible] = useState(false);
-    const [downloading, setDownloading] = useState(false);
-    const [whatsNew, setWhatsNew] = useState('');
+    const [notes, setNotes] = useState([]);
+    const [version, setVersion] = useState(null);
+    const [phase, setPhase] = useState('idle');
+    const [progress, setProgress] = useState(0);
+    const [errorText, setErrorText] = useState('');
+
+    const tickRef = useRef(null);
+    const busy = phase === 'downloading' || phase === 'installing' || phase === 'restarting';
+
+    // Keep the latest `busy` readable from the AppState listener without
+    // re-subscribing (which would tear down the listener mid-install).
+    const busyRef = useRef(busy);
+    useEffect(() => { busyRef.current = busy; }, [busy]);
+
+    const clearTick = useCallback(() => {
+        if (tickRef.current) {
+            clearInterval(tickRef.current);
+            tickRef.current = null;
+        }
+    }, []);
+
+    useEffect(() => clearTick, [clearTick]);
+
+    // Pull release notes out of an update manifest. EAS nests the app config
+    // under extra.expoClient for modern manifests; older shapes put it at the
+    // top level, so check both and accept an array or a newline-joined string.
+    const readNotes = (manifest) => {
+        const m = manifest || {};
+        const extra =
+            (m.extra && m.extra.expoClient && m.extra.expoClient.extra) ||
+            m.extra ||
+            {};
+
+        const raw = extra.releaseNotes ?? extra.whatsNew;
+        const list = Array.isArray(raw)
+            ? raw
+            : typeof raw === 'string'
+                ? raw.split('\n')
+                : [];
+
+        const cleaned = list
+            .map((line) => String(line).trim().replace(/^[-•*]\s*/, ''))
+            .filter(Boolean);
+
+        const ver =
+            extra.releaseVersion ||
+            (m.extra && m.extra.expoClient && m.extra.expoClient.version) ||
+            null;
+
+        return { cleaned, ver };
+    };
 
     const checkForUpdate = useCallback(async () => {
-        // Only run in real builds that have updates enabled (not in dev / Expo Go).
+        // Only meaningful in a real build with updates enabled (never in dev).
         if (__DEV__ || !Updates.isEnabled) return;
+        if (busyRef.current) return; // don't interrupt a running install
         try {
             const result = await Updates.checkForUpdateAsync();
             if (result.isAvailable) {
-                // Pull the "what's new" note carried by the incoming update's config.
-                const m = result.manifest || {};
-                const notes =
-                    (m.extra && m.extra.expoClient && m.extra.expoClient.extra && m.extra.expoClient.extra.whatsNew) ||
-                    (m.extra && m.extra.whatsNew) || '';
-                setWhatsNew(typeof notes === 'string' ? notes : '');
+                const { cleaned, ver } = readNotes(result.manifest);
+                setNotes(cleaned);
+                setVersion(ver);
+                setErrorText('');
+                setPhase('idle');
+                setProgress(0);
                 setVisible(true);
             }
         } catch (e) {
-            // Offline or update server unreachable — ignore silently.
+            // Offline or update server unreachable — stay silent.
         }
     }, []);
 
@@ -42,143 +125,142 @@ export default function UpdateGate({ children }) {
     }, [checkForUpdate]);
 
     const handleUpdateNow = async () => {
+        setErrorText('');
+        setPhase('downloading');
+        setProgress(0.06);
+
+        // Ease toward the ceiling while the real download runs. Deliberately
+        // asymptotic: it slows as it climbs and stops short of completion.
+        clearTick();
+        tickRef.current = setInterval(() => {
+            setProgress((p) => (p >= DOWNLOAD_CEILING ? p : p + (DOWNLOAD_CEILING - p) * 0.08));
+        }, 220);
+
         try {
-            setDownloading(true);
-            await Updates.fetchUpdateAsync();
-            await Updates.reloadAsync(); // restarts the app with the new version
+            await Updates.fetchUpdateAsync();   // resolves only when fully downloaded
+            clearTick();
+            setProgress(1);                     // now it is honestly complete
+            setPhase('installing');
+
+            // Brief beat so the completed bar is actually perceivable.
+            await new Promise((r) => setTimeout(r, 450));
+            setPhase('restarting');
+            await Updates.reloadAsync();        // process restarts here
         } catch (e) {
-            setDownloading(false);
-            setVisible(false);
+            clearTick();
+            setPhase('error');
+            setProgress(0);
+            setErrorText(
+                e?.message
+                    ? `Could not install the update: ${e.message}`
+                    : 'Could not install the update. Please check your connection and try again.'
+            );
         }
+    };
+
+    const dismiss = () => {
+        if (busy) return; // can't cancel a restart mid-flight
+        setVisible(false);
+        setPhase('idle');
+        setProgress(0);
+        clearTick();
     };
 
     return (
         <>
             {children}
-            <Modal visible={visible} transparent animationType="fade" onRequestClose={() => setVisible(false)}>
-                <View style={styles.overlay}>
-                    <View style={styles.card}>
-                        <Text style={styles.title}>Update Available</Text>
-                        {whatsNew ? (
-                            <View style={styles.notesBox}>
-                                <Text style={styles.notesHeading}>What's new</Text>
-                                {whatsNew.split('\n').map((line) => line.trim()).filter(Boolean).map((line, i) => (
-                                    <Text key={i} style={styles.notesLine}>{'• ' + line.replace(/^[-•]\s*/, '')}</Text>
-                                ))}
-                            </View>
-                        ) : (
-                            <Text style={styles.message}>
-                                A new version of TenantPro is ready with the latest features and fixes.
-                            </Text>
-                        )}
 
-                        {downloading ? (
-                            <View style={styles.loadingRow}>
-                                <ActivityIndicator color="#3b82f6" />
-                                <Text style={styles.loadingText}>Updating…</Text>
-                            </View>
-                        ) : (
-                            <View style={styles.buttonRow}>
-                                <TouchableOpacity
-                                    style={[styles.button, styles.laterButton]}
-                                    onPress={() => setVisible(false)}
-                                >
-                                    <Text style={styles.laterText}>Maybe Later</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                    style={[styles.button, styles.nowButton]}
-                                    onPress={handleUpdateNow}
-                                >
-                                    <Text style={styles.nowText}>Update Now</Text>
-                                </TouchableOpacity>
-                            </View>
-                        )}
+            <BottomSheet
+                visible={visible}
+                onClose={dismiss}
+                showClose={!busy}
+                dismissOnBackdrop={!busy}
+                swipeToDismiss={!busy}
+            >
+                <View style={styles.headRow}>
+                    <GlassView radius={t.radii.lg} style={styles.iconTile} sheen={false}>
+                        <Ionicons
+                            name={phase === 'error' ? 'alert-circle-outline' : 'cloud-download-outline'}
+                            size={24}
+                            color={phase === 'error' ? t.colors.danger : t.colors.primary}
+                        />
+                    </GlassView>
+
+                    <View style={styles.headText}>
+                        <Text style={[t.typography.heading, { color: t.colors.text }]}>
+                            {phase === 'error' ? 'Update failed' : 'Update available'}
+                        </Text>
+                        <Text style={[t.typography.caption, { color: t.colors.textMuted, marginTop: 2 }]}>
+                            {version ? `Version ${version}` : 'A new version of TenantPro is ready'}
+                        </Text>
                     </View>
                 </View>
-            </Modal>
+
+                {/* What's new — real notes from the incoming patch */}
+                {notes.length > 0 && phase !== 'error' ? (
+                    <GlassView radius={t.radii.lg} style={styles.notesBox}>
+                        <Text style={[t.typography.micro, { color: t.colors.textMuted }]}>WHAT'S NEW</Text>
+                        {notes.slice(0, 6).map((line, i) => (
+                            <View key={i} style={styles.noteRow}>
+                                <Ionicons name="sparkles" size={12} color={t.colors.primary} style={styles.noteIcon} />
+                                <Text style={[t.typography.body, { color: t.colors.text, flex: 1 }]}>{line}</Text>
+                            </View>
+                        ))}
+                    </GlassView>
+                ) : null}
+
+                {errorText ? (
+                    <Text style={[t.typography.body, { color: t.colors.danger, marginBottom: t.spacing.lg }]}>
+                        {errorText}
+                    </Text>
+                ) : null}
+
+                {busy ? (
+                    <View style={styles.progressBlock}>
+                        <View style={styles.progressLabelRow}>
+                            <Text style={[t.typography.bodyStrong, { color: t.colors.text }]}>
+                                {PHASE_LABEL[phase]}
+                            </Text>
+                            <Text style={[t.typography.bodyStrong, { color: t.colors.primary }]}>
+                                {Math.round(progress * 100)}%
+                            </Text>
+                        </View>
+                        <ProgressBar progress={progress} height={9} />
+                        <Text style={[t.typography.caption, { color: t.colors.textFaint, marginTop: t.spacing.sm }]}>
+                            {phase === 'restarting'
+                                ? 'The app will reopen automatically.'
+                                : 'Keep the app open while this finishes.'}
+                        </Text>
+                    </View>
+                ) : (
+                    <View style={styles.actions}>
+                        <GlassButton
+                            label={phase === 'error' ? 'Try again' : 'Update now'}
+                            icon={phase === 'error' ? 'refresh' : 'arrow-down-circle-outline'}
+                            onPress={handleUpdateNow}
+                            variant="primary"
+                        />
+                        <GlassButton
+                            label="Update later"
+                            onPress={dismiss}
+                            variant="ghost"
+                            style={{ marginTop: t.spacing.sm }}
+                        />
+                    </View>
+                )}
+            </BottomSheet>
         </>
     );
 }
 
 const styles = StyleSheet.create({
-    overlay: {
-        flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.5)',
-        justifyContent: 'center',
-        alignItems: 'center',
-        padding: 24
-    },
-    card: {
-        width: '100%',
-        maxWidth: 360,
-        backgroundColor: '#ffffff',
-        borderRadius: 16,
-        padding: 24
-    },
-    title: {
-        fontSize: 20,
-        fontWeight: '700',
-        color: '#111827',
-        marginBottom: 8
-    },
-    message: {
-        fontSize: 15,
-        color: '#4b5563',
-        lineHeight: 21,
-        marginBottom: 20
-    },
-    notesBox: {
-        backgroundColor: '#f3f4f6',
-        borderRadius: 12,
-        padding: 14,
-        marginBottom: 20
-    },
-    notesHeading: {
-        fontSize: 12,
-        fontWeight: '700',
-        letterSpacing: 0.6,
-        textTransform: 'uppercase',
-        color: '#6b7280',
-        marginBottom: 8
-    },
-    notesLine: {
-        fontSize: 14,
-        color: '#374151',
-        lineHeight: 21
-    },
-    buttonRow: {
-        flexDirection: 'row',
-        justifyContent: 'flex-end'
-    },
-    button: {
-        paddingVertical: 10,
-        paddingHorizontal: 18,
-        borderRadius: 10,
-        marginLeft: 10
-    },
-    laterButton: {
-        backgroundColor: '#f3f4f6'
-    },
-    laterText: {
-        color: '#374151',
-        fontWeight: '600'
-    },
-    nowButton: {
-        backgroundColor: '#3b82f6'
-    },
-    nowText: {
-        color: '#ffffff',
-        fontWeight: '700'
-    },
-    loadingRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingVertical: 8
-    },
-    loadingText: {
-        marginLeft: 10,
-        color: '#4b5563',
-        fontWeight: '600'
-    }
+    headRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 18 },
+    iconTile: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
+    headText: { flex: 1, marginLeft: 14 },
+    notesBox: { padding: 15, marginBottom: 18 },
+    noteRow: { flexDirection: 'row', alignItems: 'flex-start', marginTop: 9 },
+    noteIcon: { marginRight: 8, marginTop: 4 },
+    progressBlock: { paddingBottom: Platform.OS === 'ios' ? 6 : 10 },
+    progressLabelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+    actions: { paddingBottom: 4 }
 });
