@@ -66,7 +66,7 @@ export default function TenantLoginScreen({ navigation }) {
                         <Text style={[styles.linkMuted, t.subtext]}>New tenant? </Text>
                         <Text style={styles.link}>Create Account</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity onPress={() => navigation.replace('RoleSelection')} style={styles.back}>
+                    <TouchableOpacity onPress={() => navigation.navigate('RoleSelection')} style={styles.back}>
                         <Text style={[styles.linkMuted, t.subtext]}>← Back</Text>
                     </TouchableOpacity>
                 </ScrollView>

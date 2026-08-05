@@ -151,6 +151,15 @@ export default function LoginScreen({ navigation }) {
             <Animated.View style={[styles.blob, styles.blob1, { transform: [{ translateY: blob1TranslateY }, { scale: blob1Scale }], opacity: isDark ? 0.2 : 0.4 }]} />
             <Animated.View style={[styles.blob, styles.blob2, { transform: [{ translateY: blob2TranslateY }, { scale: blob2Scale }], opacity: isDark ? 0.15 : 0.3 }]} />
 
+            <TouchableOpacity
+                style={styles.backButton}
+                onPress={() => navigation.navigate('RoleSelection')}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            >
+                <Ionicons name="arrow-back" size={24} color={isDark ? '#F8FAFC' : '#0F172A'} />
+                <Text style={[styles.backText, isDark ? styles.darkSubText : styles.lightSubText]}>Back</Text>
+            </TouchableOpacity>
+
             <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.keyboardView}>
 
                 <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
@@ -312,6 +321,8 @@ export default function LoginScreen({ navigation }) {
 const styles = StyleSheet.create({
     container: { flex: 1, justifyContent: 'center', overflow: 'hidden' },
     keyboardView: { flex: 1, justifyContent: 'center', paddingHorizontal: 24, zIndex: 10 },
+    backButton: { position: 'absolute', top: 50, left: 20, flexDirection: 'row', alignItems: 'center', zIndex: 20, padding: 4 },
+    backText: { fontSize: 16, fontWeight: '600', marginLeft: 4 },
     
     lightContainer: { backgroundColor: '#F0F4F8' },
     darkContainer: { backgroundColor: '#0F172A' },

@@ -13,11 +13,13 @@ const pool = mysql.createPool({
     connectionLimit: 10,
     queueLimit: 0,
     // --- Stability on free/sleeping hosts (Render) + cloud DB (Aiven) ---
-    // Keep-alive stops the DB from silently dropping "idle" sockets, and a
-    // sane connect timeout means a cold DB fails fast instead of hanging.
+    // Keep-alive stops the DB from silently dropping "idle" sockets. A short
+    // connect timeout means that if the DB is genuinely down, requests fail
+    // fast with a clear error instead of hanging past the app's 60s timeout
+    // (which shows up as a confusing "unable to connect to server").
     enableKeepAlive: true,
     keepAliveInitialDelay: 10000,
-    connectTimeout: 20000,
+    connectTimeout: 8000,
     ...(sslOption() ? { ssl: sslOption() } : {})
 });
 
@@ -54,15 +56,19 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // Wrap query/execute so a dead-socket error after a cold start retries a couple
 // of times with a short backoff instead of surfacing as "Server error".
 const withRetry = (method) => async (...args) => {
+    // Two attempts total: the retry exists to survive ONE stale socket after
+    // the host wakes (fresh connection succeeds instantly). If the DB is truly
+    // down, we don't want to sit here retrying — fail fast so the user gets a
+    // real error rather than the app timing out.
     let lastErr;
-    for (let attempt = 0; attempt < 3; attempt++) {
+    for (let attempt = 0; attempt < 2; attempt++) {
         try {
             return await promisePool[method](...args);
         } catch (err) {
             lastErr = err;
             if (!isRetryable(err)) throw err;
-            console.warn(`DB ${method} transient error (${err.code}); retry ${attempt + 1}/2`);
-            await sleep(300 * (attempt + 1));
+            console.warn(`DB ${method} transient error (${err.code}); retry ${attempt + 1}/1`);
+            await sleep(250);
         }
     }
     throw lastErr;

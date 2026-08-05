@@ -18,7 +18,7 @@ export default function RoleSelectionScreen({ navigation }) {
                 <TouchableOpacity
                     style={[styles.card, t.card]}
                     activeOpacity={0.85}
-                    onPress={() => navigation.replace('Login')}
+                    onPress={() => navigation.navigate('Login')}
                 >
                     <Text style={styles.emoji}>🏠</Text>
                     <Text style={[styles.cardTitle, t.text]}>I'm a Landlord</Text>
@@ -28,7 +28,7 @@ export default function RoleSelectionScreen({ navigation }) {
                 <TouchableOpacity
                     style={[styles.card, t.card]}
                     activeOpacity={0.85}
-                    onPress={() => navigation.replace('TenantLogin')}
+                    onPress={() => navigation.navigate('TenantLogin')}
                 >
                     <Text style={styles.emoji}>🧑‍💼</Text>
                     <Text style={[styles.cardTitle, t.text]}>I'm a Tenant</Text>
