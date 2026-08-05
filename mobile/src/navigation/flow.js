@@ -70,11 +70,12 @@ export const signOut = async (navigation) => {
     exitToRoleSelection(navigation);
 };
 
-// Sign out is reachable from more than one surface (the drawer and the header's
-// "more options" menu), and both must warn identically — a confirm dialog that
-// only some entry points show is how people lose a session by mis-tapping.
-// `beforeSignOut` lets the caller dismiss its own overlay first.
-export const confirmSignOut = (navigation, beforeSignOut) => {
+// Confirm, then sign out. Kept here rather than in the component that shows it so
+// every entry point warns identically — a confirm dialog that only some paths show
+// is how people lose a session by mis-tapping. Currently the header's "more
+// options" menu is the only owner-side caller; it lived here first because the
+// drawer shared it, and it stays here for the next surface that needs it.
+export const confirmSignOut = (navigation) => {
     Alert.alert(
         'Log out?',
         'You will need to sign in again to manage your properties.',
@@ -83,10 +84,7 @@ export const confirmSignOut = (navigation, beforeSignOut) => {
             {
                 text: 'Log Out',
                 style: 'destructive',
-                onPress: () => {
-                    beforeSignOut?.();
-                    signOut(navigation);
-                }
+                onPress: () => signOut(navigation)
             }
         ]
     );

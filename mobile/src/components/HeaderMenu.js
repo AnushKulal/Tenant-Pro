@@ -33,8 +33,11 @@
 // each row reads a different slice of the same 0→1 progress, which produces a
 // stagger without N animations, N listeners, or a single JS-driver frame.
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, Animated, Pressable, Platform, Easing } from 'react-native';
+import {
+    View, Text, StyleSheet, Animated, Pressable, Platform, Easing, ScrollView, Dimensions
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { GlassView, Avatar } from '../ui';
 import { useTheme, withAlpha } from '../theme';
@@ -47,6 +50,13 @@ const PANEL_WIDTH = 268;
 // land, so the last row is still finishing as the animation completes.
 const ROW_STEP = 0.06;
 const ROW_SPAN = 0.45;
+
+// Vertical space the floating tab bar occupies, measured from the bottom safe
+// area: BottomNav's BAR_HEIGHT (70) plus the spacing.md it floats by (12).
+const TAB_BAR_ZONE = 82;
+const BREATHING_ROOM = 8;
+// Below this a scrolling menu is worse than a cramped one, so stop shrinking.
+const MIN_PANEL_HEIGHT = 240;
 
 export default function HeaderMenu({
     visible,
@@ -63,6 +73,7 @@ export default function HeaderMenu({
     version = 'TenantPro v1.0'
 }) {
     const t = useTheme();
+    const insets = useSafeAreaInsets();
     const anim = useRef(new Animated.Value(0)).current;
 
     // Stays mounted through the exit so the panel can animate OUT as well as in —
@@ -71,8 +82,14 @@ export default function HeaderMenu({
     // never have to inspect Animated internals to know when it is safe to drop.
     const [mounted, setMounted] = useState(visible);
 
+    // Distinguishes "never been opened" from "closing", without putting `mounted`
+    // in the effect's deps — doing that would re-run the effect when setMounted
+    // commits and restart an in-flight entrance from wherever it had reached.
+    const hasOpened = useRef(visible);
+
     useEffect(() => {
         if (visible) {
+            hasOpened.current = true;
             setMounted(true);
             Animated.timing(anim, {
                 toValue: 1,
@@ -82,6 +99,10 @@ export default function HeaderMenu({
             }).start();
             return;
         }
+
+        // Never opened: there is nothing on screen to animate away, and running a
+        // 0→0 exit here would make `anim` native before any view exists.
+        if (!hasOpened.current) return;
 
         // Exits run shorter than entrances: an arrival wants to be noticed, a
         // dismissal wants to be out of the way. The row stagger reverses for free
@@ -122,7 +143,30 @@ export default function HeaderMenu({
         { key: 'version', version: true }
     ], [t, onSignOut]);
 
-    if (!mounted) return null;
+    // Mount on the SAME pass that `visible` flips true, not one commit later.
+    // `setMounted(true)` happens in a passive effect, so gating on `mounted` alone
+    // meant the panel did not exist for the first commit while the native-driver
+    // entrance was already advancing — whatever had elapsed got skipped and the
+    // menu popped in part-way through its fade. Invisible on an idle device and
+    // impossible to see in a browser render, but obvious as soon as the JS thread
+    // is busy (a first tab mount, a profile fetch resolving). The drawer this
+    // replaced guarded the same thing; only its "stay mounted" half was kept.
+    if (!visible && !mounted) return null;
+
+    // The panel is roughly 390dp tall now that it carries the account block. On a
+    // tall phone that is fine; on a 360x592 device it would reach past the floating
+    // tab bar and — being at a higher zIndex — paint the Log Out row on top of it.
+    // Nothing clips an absolutely positioned panel, so it needs its own bound.
+    //
+    // The overlay's origin is the top safe-area edge (its parent SafeAreaView
+    // insets only the top), so the space beneath the panel's top edge is the window
+    // height less that inset, less `top`, less whatever the tab bar and the bottom
+    // inset claim.
+    const win = Dimensions.get('window');
+    const maxHeight = Math.max(
+        MIN_PANEL_HEIGHT,
+        win.height - insets.top - top - insets.bottom - TAB_BAR_ZONE - BREATHING_ROOM
+    );
 
     const panelStyle = {
         opacity: anim,
@@ -158,14 +202,22 @@ export default function HeaderMenu({
                 />
             </Pressable>
 
-            <Animated.View style={[styles.anchored, { top, right }, panelStyle]}>
-                <View style={[{ borderRadius: t.radii.lg }, t.shadows.lg]}>
+            <Animated.View style={[styles.anchored, { top, right, maxHeight }, panelStyle]}>
+                <View style={[{ borderRadius: t.radii.lg, maxHeight }, t.shadows.lg]}>
                     <GlassView
                         strong
                         radius={t.radii.lg}
                         edgeLight
                         style={styles.panel}
                     >
+                        {/* Scrolls only when the bound above actually bites, which
+                            is short screens. bounces is off so a menu that fits
+                            does not rubber-band like a list. */}
+                        <ScrollView
+                            bounces={false}
+                            showsVerticalScrollIndicator={false}
+                            contentContainerStyle={styles.panelContent}
+                        >
                         {items.map((item) => {
                             if (item.divider) {
                                 return (
@@ -318,6 +370,7 @@ export default function HeaderMenu({
                                 </Animated.View>
                             );
                         })}
+                        </ScrollView>
                     </GlassView>
                 </View>
             </Animated.View>
@@ -326,12 +379,14 @@ export default function HeaderMenu({
 }
 
 const styles = StyleSheet.create({
-    // zIndex sits above the tab bar (50) and below the drawer (100), so opening
-    // the drawer from this menu layers correctly.
+    // Above the floating tab bar (zIndex 50) so the backdrop covers it and a tap
+    // there dismisses instead of switching tabs. The only thing that paints over
+    // this is the theme cross-dissolve pane at the app root (zIndex 9999).
     overlay: { ...StyleSheet.absoluteFillObject, zIndex: 90 },
     fill: { ...StyleSheet.absoluteFillObject },
     anchored: { position: 'absolute', width: PANEL_WIDTH },
-    panel: { paddingVertical: 8, paddingHorizontal: 8 },
+    panel: { paddingHorizontal: 8 },
+    panelContent: { paddingVertical: 8 },
 
     row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 11, paddingHorizontal: 10 },
     account: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 10 },

@@ -110,7 +110,7 @@ export default function HomeScreen({ navigation }) {
     }, [fetchUserData, fadeAnimHeader]);
 
     // --- Hardware back ----------------------------------------------------------
-    // Priority: close the sidebar → leave a drill-in view → retrace tab history
+    // Priority: close the menu → leave a drill-in view → retrace tab history
     // → confirm exit. Without this, back fell through to the navigator, which
     // (before the stack reset) walked the user back into the login screen.
     const backPressedOnce = useRef(false);

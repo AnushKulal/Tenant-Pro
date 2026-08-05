@@ -235,29 +235,20 @@ export function ThemeProvider({ children, initialPreference = 'system' }) {
     const [coverColor, setCoverColor] = useState(null);
     const dissolving = useRef(false);
 
-    const isDark = preference === 'system' ? systemScheme === 'dark' : preference === 'dark';
+    // The OS scheme the UI is currently PAINTED with, which is not always the live
+    // one. isDark used to read useColorScheme() directly, so when the OS flipped —
+    // sunset auto-dark, or the quick-settings tile, which is how people actually
+    // switch theme on a phone — the whole tree re-styled in a single frame with no
+    // cover at all. That is the flash this file exists to hide, and it was still
+    // there on the default 'system' preference. Holding the applied value lets an
+    // OS change adopt underneath the dissolve, exactly like an in-app one.
+    const [appliedScheme, setAppliedScheme] = useState(systemScheme);
 
-    const setMode = useCallback((mode) => {
-        // Ignore a second tap mid-dissolve rather than stacking animations that
-        // would fight over the same pane.
-        if (dissolving.current) return;
+    const isDark = preference === 'system' ? appliedScheme === 'dark' : preference === 'dark';
 
-        const persist = () => {
-            AsyncStorage.setItem(THEME_KEY, mode).catch(() => {
-                // Preference is cosmetic — ignore write failures.
-            });
-        };
-
-        const nextIsDark = mode === 'system' ? systemScheme === 'dark' : mode === 'dark';
-
-        // Nothing visual changes (e.g. picking "System" while it already matches),
-        // so a dissolve would just be a pointless flash.
-        if (nextIsDark === isDark) {
-            setPreference(mode);
-            persist();
-            return;
-        }
-
+    // Runs the cover-in → commit → hold → reveal sequence. `commit` is whatever
+    // state change actually flips the theme, so it lands while nothing is visible.
+    const dissolveTo = useCallback((nextIsDark, commit) => {
         dissolving.current = true;
         setCoverColor((nextIsDark ? darkColors : lightColors).bg);
         cover.setValue(0);
@@ -273,8 +264,7 @@ export function ThemeProvider({ children, initialPreference = 'system' }) {
                 return;
             }
 
-            setPreference(mode);
-            persist();
+            commit();
 
             setTimeout(() => {
                 Animated.timing(cover, {
@@ -288,7 +278,49 @@ export function ThemeProvider({ children, initialPreference = 'system' }) {
                 });
             }, COVER_HOLD);
         });
-    }, [systemScheme, isDark, cover]);
+    }, [cover]);
+
+    const setMode = useCallback((mode) => {
+        // Ignore a second tap mid-dissolve rather than stacking animations that
+        // would fight over the same pane.
+        if (dissolving.current) return;
+
+        const persist = () => {
+            AsyncStorage.setItem(THEME_KEY, mode).catch(() => {
+                // Preference is cosmetic — ignore write failures.
+            });
+        };
+
+        const nextIsDark = mode === 'system' ? appliedScheme === 'dark' : mode === 'dark';
+
+        // Nothing visual changes (e.g. picking "System" while it already matches),
+        // so a dissolve would just be a pointless flash.
+        if (nextIsDark === isDark) {
+            setPreference(mode);
+            persist();
+            return;
+        }
+
+        dissolveTo(nextIsDark, () => {
+            setPreference(mode);
+            persist();
+        });
+    }, [appliedScheme, isDark, dissolveTo]);
+
+    // Adopt OS scheme changes.
+    useEffect(() => {
+        if (appliedScheme === systemScheme) return;
+
+        // Invisible while a preference is pinned, and adopting instantly during an
+        // in-flight dissolve keeps the applied value from going permanently stale
+        // (the cover is up, so it is hidden anyway).
+        if (preference !== 'system' || dissolving.current) {
+            setAppliedScheme(systemScheme);
+            return;
+        }
+
+        dissolveTo(systemScheme === 'dark', () => setAppliedScheme(systemScheme));
+    }, [systemScheme, appliedScheme, preference, dissolveTo]);
 
     const value = useMemo(() => {
         const colors = isDark ? darkColors : lightColors;
