@@ -1,125 +1,175 @@
 // File: mobile/src/components/BottomNav.js
-// Floating tab bar, rebuilt to match the reference "orb" navbar: a solid black
-// stadium pill with a thin rail through the middle, one dark circular WELL per
-// tab, and a single glowing, raised ORB (a purple sphere with a white filled
-// glyph) that SLIDES to whichever tab is active.
+// Floating tab bar — the "liquid flow" navbar from the reference video.
 //
 // Prop contract is unchanged ({ activeTab, setActiveTab }) — HomeScreen passes
 // goToTab as setActiveTab, so every press still calls it with the exact tab
 // name it switches on, and the TABS set/order below is the same as before.
 //
-// Why solid, not glass: the reference is not frosted — it is a matte black pill
-// whose whole identity is the black-on-page contrast plus the glowing orb. So
-// the bar stays dark in BOTH themes (a black pill on a light page is exactly
-// the reference); only the orb takes the active theme's brand colour, which is
-// purple in dark (the reference) and blue in light (still on-brand, still a
-// glowing sphere on black).
+// The look, straight off the reference:
+//   • a solid black stadium pill with a thin rail through the middle and one
+//     dark circular WELL per tab;
+//   • the ICONS STAY DARK/MUTED in every state — they never invert to white and
+//     never sit on a glossy sphere. The active tab is not signalled by recolouring
+//     its icon;
+//   • a PURPLE→BLUE LIQUID flows between tabs. At rest it's a soft glowing blob
+//     behind the active icon; in flight it thins and stretches into a flowing
+//     strand that bridges the two wells, exactly like the mid-transition frame of
+//     the reference — then settles back into a blob. It is matte: a gradient and
+//     a glow, with NO specular highlight and NO reflective-bubble sheen (that was
+//     the previous take the design explicitly moved away from).
 //
-// The orb is drawn on a layer that is NOT clipped, so its glow halo can spill
-// past the pill's edges the way it does in the reference. The rail + wells sit
-// on a lower layer. There is no overflow:hidden anywhere — the pill is a solid
-// fill, so its rounded corners need no clip, and clipping would eat the glow.
+// The liquid is purple→blue in BOTH themes, because those are the colours the
+// reference (and the brief) call for — it is not derived from the theme's accent.
 //
-// Liquid feel: a true gooey metaball tail needs Skia/SVG (a native build, so
-// v2.0). Here the orb SQUASHES along its travel — a quick stretch that settles
-// as it lands — which reads as liquid motion using only the Animated API, so it
-// ships over-the-air.
+// How the flow is faked without Skia/SVG: the blob springs to the target while a
+// second, translucent "trail" blob follows on a slower tween. Mid-motion the two
+// overlap and span the gap between wells, reading as one stretched liquid bridge;
+// at rest they coincide into a single blob. A true gooey metaball needs SVG/Skia
+// (a native build → v2.0); this ships over-the-air on the Animated API.
 import React, { useEffect, useRef, useState } from 'react';
 import { View, StyleSheet, Pressable, Animated, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { useTheme, withAlpha } from '../theme';
-
-// Same tab set and order as before — do not reorder or rename. `icon` is the
-// filled glyph shown in the active orb; the outline variant '<icon>-outline'
-// is shown in the resting wells.
+// Same tab set and order as before — do not reorder or rename. Icons are shown
+// OUTLINE in every state; the active tab is marked by the liquid, not the glyph.
 const TABS = [
-    { name: 'Home', icon: 'home' },
-    { name: 'Rooms', icon: 'key' },
-    { name: 'Properties', icon: 'grid' },
-    { name: 'Tenants', icon: 'people' }
+    { name: 'Home', icon: 'home-outline' },
+    { name: 'Rooms', icon: 'key-outline' },
+    { name: 'Properties', icon: 'grid-outline' },
+    { name: 'Tenants', icon: 'people-outline' }
 ];
+
+// The liquid's palette — fixed, purple → blue, both themes.
+const LIQUID = ['#8B5CF6', '#6D6BF0', '#3B82F6'];
+const GLOW_PURPLE = '#8B5CF6';
+const GLOW_BLUE = '#3B82F6';
 
 const BAR_HEIGHT = 66;
 const WELL = 46;          // resting circular well diameter
-const ORB = 54;           // active sphere — larger than a well, so it reads raised
-const HALO = 84;          // soft glow behind the orb; overspills the pill on purpose
+const BLOB = 44;          // resting liquid blob diameter (sits inside the well)
+const GLOW = 74;          // soft glow footprint, overspills the pill on purpose
 const ICON_SIZE = 23;
 
 export default function BottomNav({ activeTab, setActiveTab }) {
-    const t = useTheme();
     const insets = useSafeAreaInsets();
 
     const activeIndex = TABS.findIndex((tab) => tab.name === activeTab);
     // Drill-in tabs (Settings, TenantProfile, Transactions…) are not in the bar.
-    // Fade the orb out for them rather than snapping it back to Home.
+    // Fade the liquid out for them rather than snapping it back to Home.
     const hasActive = activeIndex >= 0;
 
     const [barWidth, setBarWidth] = useState(0);
     const itemWidth = barWidth ? barWidth / TABS.length : 0;
 
-    const orbX = useRef(new Animated.Value(0)).current;
-    const orbOpacity = useRef(new Animated.Value(0)).current;
-    const stretch = useRef(new Animated.Value(0)).current; // 0 = round, 1 = mid-slide squash
-    const placed = useRef(false); // the first position is a jump, not a slide
+    // Two followers: the blob springs, the trail tween lags — their overlap mid
+    // motion is the liquid bridge (see header note).
+    const blobX = useRef(new Animated.Value(0)).current;
+    const trailX = useRef(new Animated.Value(0)).current;
+    const opacity = useRef(new Animated.Value(0)).current;
+    const stretch = useRef(new Animated.Value(0)).current; // 0 = round, 1 = mid-flow
+    const placed = useRef(false); // the first position is a jump, not a flow
 
     useEffect(() => {
         const anims = [];
 
         if (barWidth && hasActive) {
-            // Centre the orb inside the active slot.
-            const x = activeIndex * itemWidth + (itemWidth - ORB) / 2;
+            // Centre the blob in the active slot.
+            const x = activeIndex * itemWidth + (itemWidth - BLOB) / 2;
             if (placed.current) {
-                // Squash on the way, settle round on arrival — the liquid cue.
                 stretch.setValue(0);
                 anims.push(
                     Animated.sequence([
-                        Animated.timing(stretch, { toValue: 1, duration: 120, useNativeDriver: true }),
-                        Animated.timing(stretch, { toValue: 0, duration: 200, useNativeDriver: true })
+                        Animated.timing(stretch, { toValue: 1, duration: 150, useNativeDriver: true }),
+                        Animated.timing(stretch, { toValue: 0, duration: 240, useNativeDriver: true })
                     ])
                 );
-                anims.push(Animated.spring(orbX, { toValue: x, useNativeDriver: true, ...t.motion.spring }));
+                // Blob leads (spring), trail follows (slower tween) → the stretch.
+                anims.push(Animated.spring(blobX, { toValue: x, useNativeDriver: true, friction: 9, tension: 70 }));
+                anims.push(Animated.timing(trailX, { toValue: x, duration: 340, useNativeDriver: true }));
             } else {
-                orbX.setValue(x);
+                blobX.setValue(x);
+                trailX.setValue(x);
                 placed.current = true;
             }
         }
 
         anims.push(
-            Animated.timing(orbOpacity, {
+            Animated.timing(opacity, {
                 toValue: barWidth && hasActive ? 1 : 0,
-                duration: t.motion.fast,
+                duration: 180,
                 useNativeDriver: true
             })
         );
 
         Animated.parallel(anims).start();
-    }, [activeIndex, hasActive, barWidth, itemWidth, orbX, orbOpacity, stretch, t.motion]);
+    }, [activeIndex, hasActive, barWidth, itemWidth, blobX, trailX, opacity, stretch]);
 
-    // Stretch along travel (x) and pinch across it (y) — classic squash-and-stretch.
-    const scaleX = stretch.interpolate({ inputRange: [0, 1], outputRange: [1, 1.18] });
-    const scaleY = stretch.interpolate({ inputRange: [0, 1], outputRange: [1, 0.9] });
+    // Stretch along travel, pinch across it — the liquid squash-and-stretch.
+    const scaleX = stretch.interpolate({ inputRange: [0, 1], outputRange: [1, 1.55] });
+    const scaleY = stretch.interpolate({ inputRange: [0, 1], outputRange: [1, 0.66] });
+    // The trail is only visible while flowing, so at rest there's a single blob.
+    const trailOpacity = stretch.interpolate({ inputRange: [0, 1], outputRange: [0, 0.85] });
+    // The active glyph fades out mid-flight — while the liquid is a stretched
+    // strand there is no icon on it (the wells keep theirs), matching the
+    // reference — then fades back in once the blob settles.
+    const glyphFade = stretch.interpolate({ inputRange: [0, 0.4, 1], outputRange: [1, 0, 0] });
 
-    // Constant dark pill in both themes (see header note).
-    const barColor = t.isDark ? '#0C0C11' : '#141419';
+    // Constant dark pill; the icons are muted in every state.
+    const barColor = '#0C0C11';
     const wellFill = 'rgba(255,255,255,0.03)';
     const wellRing = 'rgba(255,255,255,0.06)';
     const railColor = 'rgba(255,255,255,0.07)';
+    const iconColor = 'rgba(255,255,255,0.62)';
+
+    // A reusable liquid blob (gradient core + glow). `trail` variant is the
+    // lagging translucent follower.
+    const renderBlob = (xValue, isTrail) => (
+        <Animated.View
+            pointerEvents="none"
+            style={[
+                styles.blobLayer,
+                {
+                    width: BLOB,
+                    height: BLOB,
+                    opacity: isTrail ? Animated.multiply(opacity, trailOpacity) : opacity,
+                    transform: [{ translateX: xValue }, { scaleX }, { scaleY }]
+                }
+            ]}
+        >
+            {/* Soft glow — concentric translucent rings give a radial falloff that
+                reads on Android/web too, not just where iOS's coloured shadow works.
+                Purple outside, blue inside, so the glow itself carries the gradient. */}
+            <View
+                style={[
+                    styles.glowOuter,
+                    { backgroundColor: withA(GLOW_PURPLE, 0.16), shadowColor: GLOW_PURPLE }
+                ]}
+            />
+            <View style={[styles.glowMid, { backgroundColor: withA(GLOW_BLUE, 0.20) }]} />
+            {/* The liquid core: a matte purple→blue gradient. No sheen. */}
+            <View style={styles.blob}>
+                <LinearGradient
+                    colors={LIQUID}
+                    locations={[0, 0.5, 1]}
+                    start={{ x: 0.1, y: 0.2 }}
+                    end={{ x: 0.9, y: 0.9 }}
+                    style={StyleSheet.absoluteFill}
+                />
+            </View>
+        </Animated.View>
+    );
 
     return (
         <View
-            style={[
-                styles.container,
-                { left: t.spacing.lg, right: t.spacing.lg, bottom: insets.bottom + t.spacing.md }
-            ]}
+            style={[styles.container, { left: 24, right: 24, bottom: insets.bottom + 16 }]}
             pointerEvents="box-none"
         >
-            <View style={[styles.shadowWrap, { borderRadius: BAR_HEIGHT / 2 }, t.shadows.lg]}>
-                {/* The pill itself: solid matte black, rounded to a stadium. No clip —
-                    the orb's glow needs to breathe past this edge. */}
-                <View style={[styles.bar, { borderRadius: BAR_HEIGHT / 2, backgroundColor: barColor }]}>
+            <View style={[styles.shadowWrap, styles.shadow]}>
+                {/* The pill: solid matte black. No clip — the liquid's glow needs to
+                    breathe past this edge. */}
+                <View style={[styles.bar, { backgroundColor: barColor }]}>
                     {/* Rail: one thin line through the centres of the wells. */}
                     <View
                         pointerEvents="none"
@@ -127,92 +177,76 @@ export default function BottomNav({ activeTab, setActiveTab }) {
                     />
 
                     <View style={styles.row} onLayout={(e) => setBarWidth(e.nativeEvent.layout.width)}>
-                        {TABS.map((tab, i) => {
-                            const isActive = i === activeIndex;
-                            return (
-                                <Pressable
-                                    key={tab.name}
-                                    style={styles.navItem}
-                                    onPress={() => setActiveTab(tab.name)}
-                                    accessibilityRole="tab"
-                                    accessibilityLabel={`${tab.name} tab`}
-                                    accessibilityState={{ selected: isActive }}
-                                >
-                                    {/* Resting well. Stays put; the orb rides over the
-                                        active one, so the well under the orb reads as
-                                        its socket. */}
-                                    <View style={[styles.well, { backgroundColor: wellFill, borderColor: wellRing }]}>
-                                        {/* The well's own (inactive) glyph fades out when
-                                            the orb is over it, so the orb's white glyph
-                                            isn't doubled. */}
-                                        <Ionicons
-                                            name={`${tab.icon}-outline`}
-                                            size={ICON_SIZE}
-                                            color={withAlpha('#FFFFFF', isActive ? 0 : 0.5)}
-                                        />
-                                    </View>
-                                </Pressable>
-                            );
-                        })}
+                        {TABS.map((tab, i) => (
+                            <Pressable
+                                key={tab.name}
+                                style={styles.navItem}
+                                onPress={() => setActiveTab(tab.name)}
+                                accessibilityRole="tab"
+                                accessibilityLabel={`${tab.name} tab`}
+                                accessibilityState={{ selected: i === activeIndex }}
+                            >
+                                <View style={[styles.well, { backgroundColor: wellFill, borderColor: wellRing }]}>
+                                    {/* Icon stays muted in every state; the liquid marks
+                                        which tab is active, not the glyph's colour. */}
+                                    <Ionicons name={tab.icon} size={ICON_SIZE} color={iconColor} />
+                                </View>
+                            </Pressable>
+                        ))}
                     </View>
                 </View>
 
-                {/* Orb layer — sibling of the pill, above it, never clipped. */}
+                {/* Liquid layer — above the pill, never clipped. Trail first so the
+                    solid blob sits over it. Icons live UNDER this only visually via
+                    the well glyphs; because this layer is pointer-transparent and the
+                    blob is translucent-glow + matte core, the dark glyph still reads. */}
                 {itemWidth ? (
-                    <Animated.View
-                        pointerEvents="none"
-                        style={[
-                            styles.orbLayer,
-                            {
-                                width: ORB,
-                                height: ORB,
-                                opacity: orbOpacity,
-                                transform: [{ translateX: orbX }, { scaleX }, { scaleY }]
-                            }
-                        ]}
-                    >
-                        {/* Soft glow halo behind the sphere. A single translucent
-                            disc has a hard edge on Android (no coloured shadow there),
-                            so three concentric rings of decreasing alpha fake a radial
-                            falloff that reads as glow on every platform; the outer ring
-                            also carries iOS's coloured shadow. This is what spills past
-                            the pill edge, exactly like the reference. */}
-                        <View
+                    <>
+                        {renderBlob(trailX, true)}
+                        {renderBlob(blobX, false)}
+                        {/* The active icon, redrawn ON TOP of the settled liquid as a
+                            DARK knockout — the icon does not light up to white; it
+                            stays dark and reads against the bright liquid. It fades out
+                            while the liquid is mid-flow (glyphFade). */}
+                        <Animated.View
+                            pointerEvents="none"
                             style={[
-                                styles.haloOuter,
-                                {
-                                    backgroundColor: withAlpha(t.colors.primary, t.isDark ? 0.12 : 0.10),
-                                    shadowColor: t.colors.primary
-                                }
+                                styles.activeGlyph,
+                                { opacity: Animated.multiply(opacity, glyphFade), transform: [{ translateX: blobX }] }
                             ]}
-                        />
-                        <View style={[styles.haloMid, { backgroundColor: withAlpha(t.colors.primary, t.isDark ? 0.18 : 0.16) }]} />
-                        <View style={[styles.haloInner, { backgroundColor: withAlpha(t.colors.primary, t.isDark ? 0.30 : 0.26) }]} />
-                        {/* The sphere: a diagonal brand gradient (light top-left →
-                            deep bottom-right) reads as a lit ball. */}
-                        <View style={styles.orb}>
-                            <LinearGradient
-                                colors={[t.colors.primaryAlt, t.colors.primary, t.colors.primaryDeep]}
-                                locations={[0, 0.55, 1]}
-                                start={{ x: 0.2, y: 0.1 }}
-                                end={{ x: 0.85, y: 0.95 }}
-                                style={StyleSheet.absoluteFill}
-                            />
-                            {/* Specular: a small bright bloom at the top-left. */}
-                            <View style={styles.orbSheen} />
-                            <Ionicons name={hasActive ? TABS[Math.max(activeIndex, 0)].icon : 'ellipse'} size={ICON_SIZE} color="#FFFFFF" style={styles.orbGlyph} />
-                        </View>
-                    </Animated.View>
+                        >
+                            {hasActive ? (
+                                <Ionicons name={TABS[activeIndex].icon} size={ICON_SIZE} color="#0B0B12" />
+                            ) : null}
+                        </Animated.View>
+                    </>
                 ) : null}
             </View>
         </View>
     );
 }
 
+// Local alpha helper — kept here so the component has no theme dependency (the
+// liquid palette is fixed, not themed).
+function withA(hex, a) {
+    const h = hex.replace('#', '');
+    const r = parseInt(h.slice(0, 2), 16);
+    const g = parseInt(h.slice(2, 4), 16);
+    const b = parseInt(h.slice(4, 6), 16);
+    return `rgba(${r},${g},${b},${a})`;
+}
+
 const styles = StyleSheet.create({
     container: { position: 'absolute', alignItems: 'center', zIndex: 50 },
-    shadowWrap: { width: '100%' },
-    bar: { width: '100%', height: BAR_HEIGHT, justifyContent: 'center' },
+    shadowWrap: { width: '100%', borderRadius: BAR_HEIGHT / 2 },
+    shadow: {
+        ...Platform.select({
+            ios: { shadowColor: '#000', shadowOpacity: 0.35, shadowRadius: 18, shadowOffset: { width: 0, height: 10 } },
+            android: { elevation: 12 },
+            default: { boxShadow: '0 10px 24px rgba(0,0,0,0.35)' }
+        })
+    },
+    bar: { width: '100%', height: BAR_HEIGHT, borderRadius: BAR_HEIGHT / 2, justifyContent: 'center' },
 
     rail: { position: 'absolute', top: BAR_HEIGHT / 2, height: StyleSheet.hairlineWidth * 2 },
 
@@ -227,59 +261,45 @@ const styles = StyleSheet.create({
         justifyContent: 'center'
     },
 
-    // Positioned from the left of the bar; translateX drives it to the active
-    // slot. Vertically centred on the pill, so it rides a touch proud of the
-    // wells (ORB > WELL) — the "raised" read.
-    orbLayer: {
+    // Blobs and the active glyph are positioned from the left of the bar; their
+    // translateX drives them to the active slot. Vertically centred on the pill.
+    blobLayer: {
         position: 'absolute',
         left: 0,
-        top: (BAR_HEIGHT - ORB) / 2,
+        top: (BAR_HEIGHT - BLOB) / 2,
         alignItems: 'center',
         justifyContent: 'center'
     },
-    haloOuter: {
+    glowOuter: {
         position: 'absolute',
-        width: HALO,
-        height: HALO,
-        borderRadius: HALO / 2,
-        // iOS coloured glow; Android/web lean on the ring stack itself.
+        width: GLOW,
+        height: GLOW,
+        borderRadius: GLOW / 2,
         ...Platform.select({
             ios: { shadowOpacity: 0.8, shadowRadius: 12, shadowOffset: { width: 0, height: 0 } },
             default: {}
         })
     },
-    haloMid: {
+    glowMid: {
         position: 'absolute',
-        width: HALO * 0.78,
-        height: HALO * 0.78,
-        borderRadius: (HALO * 0.78) / 2
+        width: GLOW * 0.72,
+        height: GLOW * 0.72,
+        borderRadius: (GLOW * 0.72) / 2
     },
-    haloInner: {
-        position: 'absolute',
-        width: HALO * 0.62,
-        height: HALO * 0.62,
-        borderRadius: (HALO * 0.62) / 2
-    },
-    orb: {
-        width: ORB,
-        height: ORB,
-        borderRadius: ORB / 2,
-        alignItems: 'center',
-        justifyContent: 'center',
+    blob: {
+        width: BLOB,
+        height: BLOB,
+        borderRadius: BLOB / 2,
         overflow: 'hidden',
-        ...Platform.select({ android: { elevation: 6 }, default: {} })
+        ...Platform.select({ android: { elevation: 4 }, default: {} })
     },
-    orbSheen: {
+    activeGlyph: {
         position: 'absolute',
-        top: ORB * 0.12,
-        left: ORB * 0.14,
-        width: ORB * 0.42,
-        height: ORB * 0.42,
-        borderRadius: ORB * 0.21,
-        backgroundColor: 'rgba(255,255,255,0.45)'
-    },
-    orbGlyph: {
-        // Above the shade/sheen washes.
-        zIndex: 1
+        left: 0,
+        top: (BAR_HEIGHT - BLOB) / 2,
+        width: BLOB,
+        height: BLOB,
+        alignItems: 'center',
+        justifyContent: 'center'
     }
 });
