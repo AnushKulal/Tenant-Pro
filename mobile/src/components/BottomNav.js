@@ -18,8 +18,9 @@
 //     a glow, with NO specular highlight and NO reflective-bubble sheen (that was
 //     the previous take the design explicitly moved away from).
 //
-// The liquid is purple→blue in BOTH themes, because those are the colours the
-// reference (and the brief) call for — it is not derived from the theme's accent.
+// Two colourways: DARK is a black pill with a purple→blue liquid (the reference);
+// LIGHT is a white pill with a blue liquid. Same behaviour, different surfaces —
+// the icons stay dark/muted and the active glyph is a dark knockout in both.
 //
 // How the flow is faked without Skia/SVG: the blob springs to the target while a
 // second, translucent "trail" blob follows on a slower tween. Mid-motion the two
@@ -32,6 +33,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useTheme } from '../theme';
+
 // Same tab set and order as before — do not reorder or rename. Icons are shown
 // OUTLINE in every state; the active tab is marked by the liquid, not the glyph.
 const TABS = [
@@ -41,10 +44,34 @@ const TABS = [
     { name: 'Tenants', icon: 'people-outline' }
 ];
 
-// The liquid's palette — fixed, purple → blue, both themes.
-const LIQUID = ['#8B5CF6', '#6D6BF0', '#3B82F6'];
-const GLOW_PURPLE = '#8B5CF6';
-const GLOW_BLUE = '#3B82F6';
+// Two palettes. Dark: a black pill with a purple→blue liquid (the reference).
+// Light: a WHITE pill with a BLUE liquid — same behaviour, its own colours.
+// In both, the icons stay dark/muted and the active glyph is a dark knockout on
+// the liquid; only the surfaces and the liquid's hue change with the theme.
+const PALETTES = {
+    dark: {
+        bar: '#0C0C11',
+        liquid: ['#8B5CF6', '#6D6BF0', '#3B82F6'], // purple → blue
+        glowOuter: '#8B5CF6',                       // purple halo
+        glowInner: '#3B82F6',                       // blue core glow
+        well: 'rgba(255,255,255,0.03)',
+        wellRing: 'rgba(255,255,255,0.06)',
+        rail: 'rgba(255,255,255,0.07)',
+        icon: 'rgba(255,255,255,0.62)',
+        knockout: '#0B0B12'                         // dark icon over the liquid
+    },
+    light: {
+        bar: '#FFFFFF',
+        liquid: ['#60A5FA', '#3B82F6', '#2563EB'],  // light blue → blue
+        glowOuter: '#3B82F6',
+        glowInner: '#60A5FA',
+        well: 'rgba(15,23,42,0.03)',
+        wellRing: 'rgba(15,23,42,0.08)',
+        rail: 'rgba(15,23,42,0.10)',
+        icon: 'rgba(30,41,59,0.55)',                // dark-slate muted icon on white
+        knockout: '#0B1220'                         // dark icon over the blue liquid
+    }
+};
 
 const BAR_HEIGHT = 66;
 const WELL = 46;          // resting circular well diameter
@@ -54,6 +81,8 @@ const ICON_SIZE = 23;
 
 export default function BottomNav({ activeTab, setActiveTab }) {
     const insets = useSafeAreaInsets();
+    const t = useTheme();
+    const p = t.isDark ? PALETTES.dark : PALETTES.light;
 
     const activeIndex = TABS.findIndex((tab) => tab.name === activeTab);
     // Drill-in tabs (Settings, TenantProfile, Transactions…) are not in the bar.
@@ -116,12 +145,12 @@ export default function BottomNav({ activeTab, setActiveTab }) {
     // reference — then fades back in once the blob settles.
     const glyphFade = stretch.interpolate({ inputRange: [0, 0.4, 1], outputRange: [1, 0, 0] });
 
-    // Constant dark pill; the icons are muted in every state.
-    const barColor = '#0C0C11';
-    const wellFill = 'rgba(255,255,255,0.03)';
-    const wellRing = 'rgba(255,255,255,0.06)';
-    const railColor = 'rgba(255,255,255,0.07)';
-    const iconColor = 'rgba(255,255,255,0.62)';
+    // Themed surfaces (see PALETTES). Icons stay muted/dark in every state.
+    const barColor = p.bar;
+    const wellFill = p.well;
+    const wellRing = p.wellRing;
+    const railColor = p.rail;
+    const iconColor = p.icon;
 
     // A reusable liquid blob (gradient core + glow). `trail` variant is the
     // lagging translucent follower.
@@ -140,18 +169,19 @@ export default function BottomNav({ activeTab, setActiveTab }) {
         >
             {/* Soft glow — concentric translucent rings give a radial falloff that
                 reads on Android/web too, not just where iOS's coloured shadow works.
-                Purple outside, blue inside, so the glow itself carries the gradient. */}
+                The rings carry the liquid's own hue (themed). */}
             <View
                 style={[
                     styles.glowOuter,
-                    { backgroundColor: withA(GLOW_PURPLE, 0.16), shadowColor: GLOW_PURPLE }
+                    { backgroundColor: withA(p.glowOuter, 0.16), shadowColor: p.glowOuter }
                 ]}
             />
-            <View style={[styles.glowMid, { backgroundColor: withA(GLOW_BLUE, 0.20) }]} />
-            {/* The liquid core: a matte purple→blue gradient. No sheen. */}
+            <View style={[styles.glowMid, { backgroundColor: withA(p.glowInner, 0.20) }]} />
+            {/* The liquid core: a matte gradient (purple→blue in dark, blue in
+                light). No sheen. */}
             <View style={styles.blob}>
                 <LinearGradient
-                    colors={LIQUID}
+                    colors={p.liquid}
                     locations={[0, 0.5, 1]}
                     start={{ x: 0.1, y: 0.2 }}
                     end={{ x: 0.9, y: 0.9 }}
@@ -216,7 +246,7 @@ export default function BottomNav({ activeTab, setActiveTab }) {
                             ]}
                         >
                             {hasActive ? (
-                                <Ionicons name={TABS[activeIndex].icon} size={ICON_SIZE} color="#0B0B12" />
+                                <Ionicons name={TABS[activeIndex].icon} size={ICON_SIZE} color={p.knockout} />
                             ) : null}
                         </Animated.View>
                     </>
@@ -226,8 +256,7 @@ export default function BottomNav({ activeTab, setActiveTab }) {
     );
 }
 
-// Local alpha helper — kept here so the component has no theme dependency (the
-// liquid palette is fixed, not themed).
+// Local alpha helper for the fixed hex values in PALETTES.
 function withA(hex, a) {
     const h = hex.replace('#', '');
     const r = parseInt(h.slice(0, 2), 16);
