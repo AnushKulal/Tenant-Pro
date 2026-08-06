@@ -1,31 +1,40 @@
 // File: mobile/src/components/BottomNav.js
-// Floating glass tab bar. Props unchanged ({ activeTab, setActiveTab }) —
-// HomeScreen passes goToTab as setActiveTab, so every press must still call it
-// with the exact tab name it switches on.
+// Floating tab bar, rebuilt to match the reference "orb" navbar: a solid black
+// stadium pill with a thin rail through the middle, one dark circular WELL per
+// tab, and a single glowing, raised ORB (a purple sphere with a white filled
+// glyph) that SLIDES to whichever tab is active.
 //
-// Deliberately RESTRAINED. Earlier versions stacked a sheen gradient, a vertical
-// edge wash and a specular hairline on top of the tint, and the sum read as milky
-// plastic rather than glass. Real glass is mostly just transparency: a strong
-// blur, a very low tint, and one thin bright rim. Everything else was removed.
+// Prop contract is unchanged ({ activeTab, setActiveTab }) — HomeScreen passes
+// goToTab as setActiveTab, so every press still calls it with the exact tab
+// name it switches on, and the TABS set/order below is the same as before.
 //
-// Active tab: a darker rounded capsule, not a coloured fill and not a rim-lit
-// lens — the selection reads because it is a quieter, deeper hole in the glass
-// with a filled white glyph, which is what the reference does.
+// Why solid, not glass: the reference is not frosted — it is a matte black pill
+// whose whole identity is the black-on-page contrast plus the glowing orb. So
+// the bar stays dark in BOTH themes (a black pill on a light page is exactly
+// the reference); only the orb takes the active theme's brand colour, which is
+// purple in dark (the reference) and blue in light (still on-brand, still a
+// glowing sphere on black).
 //
-// Geometry rule that keeps the old cropping bug dead: the capsule's radius is
-// exactly half its height (a true stadium), and it is sized to contain its
-// content rather than sit behind part of it.
+// The orb is drawn on a layer that is NOT clipped, so its glow halo can spill
+// past the pill's edges the way it does in the reference. The rail + wells sit
+// on a lower layer. There is no overflow:hidden anywhere — the pill is a solid
+// fill, so its rounded corners need no clip, and clipping would eat the glow.
+//
+// Liquid feel: a true gooey metaball tail needs Skia/SVG (a native build, so
+// v2.0). Here the orb SQUASHES along its travel — a quick stretch that settles
+// as it lands — which reads as liquid motion using only the Animated API, so it
+// ships over-the-air.
 import React, { useEffect, useRef, useState } from 'react';
 import { View, StyleSheet, Pressable, Animated, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useTheme, withAlpha } from '../theme';
 
 // Same tab set and order as before — do not reorder or rename. `icon` is the
-// filled glyph; the outline variant is '<icon>-outline'.
+// filled glyph shown in the active orb; the outline variant '<icon>-outline'
+// is shown in the resting wells.
 const TABS = [
     { name: 'Home', icon: 'home' },
     { name: 'Rooms', icon: 'key' },
@@ -33,14 +42,11 @@ const TABS = [
     { name: 'Tenants', icon: 'people' }
 ];
 
-const ICON_SIZE = 24;
-const BAR_HEIGHT = 70;
-const CAPSULE_H = 44;      // see note below on proportions
-const CAPSULE_INSET = 8;
-
-// t.motion.spring overshoots past 1, which would push interpolations past their
-// intended peak.
-const CLAMP = { extrapolate: 'clamp' };
+const BAR_HEIGHT = 66;
+const WELL = 46;          // resting circular well diameter
+const ORB = 54;           // active sphere — larger than a well, so it reads raised
+const HALO = 84;          // soft glow behind the orb; overspills the pill on purpose
+const ICON_SIZE = 23;
 
 export default function BottomNav({ activeTab, setActiveTab }) {
     const t = useTheme();
@@ -48,38 +54,59 @@ export default function BottomNav({ activeTab, setActiveTab }) {
 
     const activeIndex = TABS.findIndex((tab) => tab.name === activeTab);
     // Drill-in tabs (Settings, TenantProfile, Transactions…) are not in the bar.
-    // Fade the capsule out for them rather than snapping it back to Home.
+    // Fade the orb out for them rather than snapping it back to Home.
     const hasActive = activeIndex >= 0;
 
     const [barWidth, setBarWidth] = useState(0);
     const itemWidth = barWidth ? barWidth / TABS.length : 0;
-    const capsuleW = itemWidth ? Math.max(0, itemWidth - CAPSULE_INSET * 2) : 0;
 
-    const capsuleX = useRef(new Animated.Value(0)).current;
-    const capsuleOpacity = useRef(new Animated.Value(0)).current;
+    const orbX = useRef(new Animated.Value(0)).current;
+    const orbOpacity = useRef(new Animated.Value(0)).current;
+    const stretch = useRef(new Animated.Value(0)).current; // 0 = round, 1 = mid-slide squash
     const placed = useRef(false); // the first position is a jump, not a slide
 
     useEffect(() => {
         const anims = [];
 
         if (barWidth && hasActive) {
-            const x = activeIndex * itemWidth;
+            // Centre the orb inside the active slot.
+            const x = activeIndex * itemWidth + (itemWidth - ORB) / 2;
             if (placed.current) {
-                anims.push(Animated.spring(capsuleX, { toValue: x, useNativeDriver: true, ...t.motion.spring }));
+                // Squash on the way, settle round on arrival — the liquid cue.
+                stretch.setValue(0);
+                anims.push(
+                    Animated.sequence([
+                        Animated.timing(stretch, { toValue: 1, duration: 120, useNativeDriver: true }),
+                        Animated.timing(stretch, { toValue: 0, duration: 200, useNativeDriver: true })
+                    ])
+                );
+                anims.push(Animated.spring(orbX, { toValue: x, useNativeDriver: true, ...t.motion.spring }));
             } else {
-                capsuleX.setValue(x);
+                orbX.setValue(x);
                 placed.current = true;
             }
         }
 
-        anims.push(Animated.timing(capsuleOpacity, {
-            toValue: barWidth && hasActive ? 1 : 0,
-            duration: t.motion.fast,
-            useNativeDriver: true
-        }));
+        anims.push(
+            Animated.timing(orbOpacity, {
+                toValue: barWidth && hasActive ? 1 : 0,
+                duration: t.motion.fast,
+                useNativeDriver: true
+            })
+        );
 
         Animated.parallel(anims).start();
-    }, [activeIndex, hasActive, barWidth, itemWidth, capsuleX, capsuleOpacity, t.motion]);
+    }, [activeIndex, hasActive, barWidth, itemWidth, orbX, orbOpacity, stretch, t.motion]);
+
+    // Stretch along travel (x) and pinch across it (y) — classic squash-and-stretch.
+    const scaleX = stretch.interpolate({ inputRange: [0, 1], outputRange: [1, 1.18] });
+    const scaleY = stretch.interpolate({ inputRange: [0, 1], outputRange: [1, 0.9] });
+
+    // Constant dark pill in both themes (see header note).
+    const barColor = t.isDark ? '#0C0C11' : '#141419';
+    const wellFill = 'rgba(255,255,255,0.03)';
+    const wellRing = 'rgba(255,255,255,0.06)';
+    const railColor = 'rgba(255,255,255,0.07)';
 
     return (
         <View
@@ -89,82 +116,17 @@ export default function BottomNav({ activeTab, setActiveTab }) {
             ]}
             pointerEvents="box-none"
         >
-            {/* Shadow lives on the wrapper: the bar clips its own overflow, so an
-                inner shadow would be cut off. */}
             <View style={[styles.shadowWrap, { borderRadius: BAR_HEIGHT / 2 }, t.shadows.lg]}>
-                <View style={[styles.bar, { borderRadius: BAR_HEIGHT / 2 }]}>
-                    {/* Frost. Bare, so nothing else is layered on top of it.
-                        Intensity is kept LOW on purpose: expo-blur's tint lays a wash
-                        of its own over the blur, and it scales with intensity — at 70
-                        with tint="dark" the bar came out nearly solid navy no matter
-                        how weak the tint below it was. Low intensity keeps the frost
-                        while letting the backdrop through. */}
-                    <BlurView
-                        intensity={t.isDark ? 32 : 40}
-                        tint={t.blurTint}
-                        experimentalBlurMethod={Platform.OS === 'android' ? 'dimezisBlurView' : undefined}
-                        style={StyleSheet.absoluteFill}
-                    />
-                    {/* Clear. Barely-there tint: only enough to hold icon contrast on a
-                        light backdrop, not enough to occlude what is behind. */}
+                {/* The pill itself: solid matte black, rounded to a stadium. No clip —
+                    the orb's glow needs to breathe past this edge. */}
+                <View style={[styles.bar, { borderRadius: BAR_HEIGHT / 2, backgroundColor: barColor }]}>
+                    {/* Rail: one thin line through the centres of the wells. */}
                     <View
                         pointerEvents="none"
-                        style={[
-                            StyleSheet.absoluteFill,
-                            { backgroundColor: withAlpha(t.colors.surfaceAlt, t.isDark ? 0.07 : 0.14) }
-                        ]}
-                    />
-                    {/* Soft edge instead of a stroke. A 1px border reads as a drawn
-                        outline; real glass shows a diffuse gradient where light grazes
-                        its top face. One gradient, fading out well before the bottom,
-                        so there is no hard line anywhere. */}
-                    <LinearGradient
-                        colors={[
-                            // primaryAlt, not onPrimary: pure white over a black
-                            // backdrop composites to GREY, which left the bar reading as
-                            // neutral chrome inside an otherwise purple app. Tinting the
-                            // grazing light with the brand hue keeps it subtle while
-                            // making the glass belong to this product. Alpha runs a
-                            // little higher than white did, since a mid-tone hue carries
-                            // less apparent luminance than white at the same opacity.
-                            withAlpha(t.colors.primaryAlt, t.isDark ? 0.20 : 0.5),
-                            withAlpha(t.colors.primaryAlt, t.isDark ? 0.05 : 0.12),
-                            'rgba(255,255,255,0)'
-                        ]}
-                        locations={[0, 0.35, 1]}
-                        start={{ x: 0.5, y: 0 }}
-                        end={{ x: 0.5, y: 1 }}
-                        style={StyleSheet.absoluteFill}
-                        pointerEvents="none"
+                        style={[styles.rail, { backgroundColor: railColor, left: itemWidth / 2, right: itemWidth / 2 }]}
                     />
 
                     <View style={styles.row} onLayout={(e) => setBarWidth(e.nativeEvent.layout.width)}>
-                        {capsuleW ? (
-                            <Animated.View
-                                pointerEvents="none"
-                                style={[
-                                    styles.capsuleSlot,
-                                    { width: itemWidth, opacity: capsuleOpacity, transform: [{ translateX: capsuleX }] }
-                                ]}
-                            >
-                                {/* A LIGHTER pane than the glass around it, with no stroke.
-                                    It was previously darker, which made the active tab a
-                                    recess — the opposite of highlighting it. Lifting it
-                                    instead is what makes the icon it sits under read as
-                                    selected, and a soft top-to-bottom falloff keeps it
-                                    from looking like a drawn box. */}
-                                <LinearGradient
-                                    colors={[
-                                        withAlpha(t.colors.primaryAlt, t.isDark ? 0.26 : 0.42),
-                                        withAlpha(t.colors.primaryAlt, t.isDark ? 0.10 : 0.20)
-                                    ]}
-                                    start={{ x: 0.5, y: 0 }}
-                                    end={{ x: 0.5, y: 1 }}
-                                    style={[styles.capsule, { width: capsuleW }]}
-                                />
-                            </Animated.View>
-                        ) : null}
-
                         {TABS.map((tab, i) => {
                             const isActive = i === activeIndex;
                             return (
@@ -173,27 +135,75 @@ export default function BottomNav({ activeTab, setActiveTab }) {
                                     style={styles.navItem}
                                     onPress={() => setActiveTab(tab.name)}
                                     accessibilityRole="tab"
-                                    // Icon-only, matching the reference; screen readers
-                                    // still get the tab name.
                                     accessibilityLabel={`${tab.name} tab`}
                                     accessibilityState={{ selected: isActive }}
                                 >
-                                    <Ionicons
-                                        name={isActive ? tab.icon : `${tab.icon}-outline`}
-                                        size={ICON_SIZE}
-                                        color={
-                                            // Active stays near-white for maximum pop
-                                            // against the tinted highlight; inactive uses
-                                            // the themed muted tone, which is already
-                                            // hue-tinted rather than flat grey.
-                                            isActive ? t.colors.onPrimary : t.colors.textMuted
-                                        }
-                                    />
+                                    {/* Resting well. Stays put; the orb rides over the
+                                        active one, so the well under the orb reads as
+                                        its socket. */}
+                                    <View style={[styles.well, { backgroundColor: wellFill, borderColor: wellRing }]}>
+                                        {/* The well's own (inactive) glyph fades out when
+                                            the orb is over it, so the orb's white glyph
+                                            isn't doubled. */}
+                                        <Ionicons
+                                            name={`${tab.icon}-outline`}
+                                            size={ICON_SIZE}
+                                            color={withAlpha('#FFFFFF', isActive ? 0 : 0.5)}
+                                        />
+                                    </View>
                                 </Pressable>
                             );
                         })}
                     </View>
                 </View>
+
+                {/* Orb layer — sibling of the pill, above it, never clipped. */}
+                {itemWidth ? (
+                    <Animated.View
+                        pointerEvents="none"
+                        style={[
+                            styles.orbLayer,
+                            {
+                                width: ORB,
+                                height: ORB,
+                                opacity: orbOpacity,
+                                transform: [{ translateX: orbX }, { scaleX }, { scaleY }]
+                            }
+                        ]}
+                    >
+                        {/* Soft glow halo behind the sphere. A single translucent
+                            disc has a hard edge on Android (no coloured shadow there),
+                            so three concentric rings of decreasing alpha fake a radial
+                            falloff that reads as glow on every platform; the outer ring
+                            also carries iOS's coloured shadow. This is what spills past
+                            the pill edge, exactly like the reference. */}
+                        <View
+                            style={[
+                                styles.haloOuter,
+                                {
+                                    backgroundColor: withAlpha(t.colors.primary, t.isDark ? 0.12 : 0.10),
+                                    shadowColor: t.colors.primary
+                                }
+                            ]}
+                        />
+                        <View style={[styles.haloMid, { backgroundColor: withAlpha(t.colors.primary, t.isDark ? 0.18 : 0.16) }]} />
+                        <View style={[styles.haloInner, { backgroundColor: withAlpha(t.colors.primary, t.isDark ? 0.30 : 0.26) }]} />
+                        {/* The sphere: a diagonal brand gradient (light top-left →
+                            deep bottom-right) reads as a lit ball. */}
+                        <View style={styles.orb}>
+                            <LinearGradient
+                                colors={[t.colors.primaryAlt, t.colors.primary, t.colors.primaryDeep]}
+                                locations={[0, 0.55, 1]}
+                                start={{ x: 0.2, y: 0.1 }}
+                                end={{ x: 0.85, y: 0.95 }}
+                                style={StyleSheet.absoluteFill}
+                            />
+                            {/* Specular: a small bright bloom at the top-left. */}
+                            <View style={styles.orbSheen} />
+                            <Ionicons name={hasActive ? TABS[Math.max(activeIndex, 0)].icon : 'ellipse'} size={ICON_SIZE} color="#FFFFFF" style={styles.orbGlyph} />
+                        </View>
+                    </Animated.View>
+                ) : null}
             </View>
         </View>
     );
@@ -202,12 +212,74 @@ export default function BottomNav({ activeTab, setActiveTab }) {
 const styles = StyleSheet.create({
     container: { position: 'absolute', alignItems: 'center', zIndex: 50 },
     shadowWrap: { width: '100%' },
-    bar: { width: '100%', height: BAR_HEIGHT, overflow: 'hidden' },
-    row: { flex: 1, flexDirection: 'row', alignItems: 'center' },
-    navItem: { flex: 1, height: '100%', alignItems: 'center', justifyContent: 'center' },
+    bar: { width: '100%', height: BAR_HEIGHT, justifyContent: 'center' },
 
-    capsuleSlot: { position: 'absolute', top: 0, bottom: 0, left: 0, alignItems: 'center', justifyContent: 'center' },
-    // Radius is exactly half the height: a true stadium, tangent to the content
-    // box rather than cutting into it.
-    capsule: { height: CAPSULE_H, borderRadius: CAPSULE_H / 2 }
+    rail: { position: 'absolute', top: BAR_HEIGHT / 2, height: StyleSheet.hairlineWidth * 2 },
+
+    row: { flexDirection: 'row', alignItems: 'center' },
+    navItem: { flex: 1, height: BAR_HEIGHT, alignItems: 'center', justifyContent: 'center' },
+    well: {
+        width: WELL,
+        height: WELL,
+        borderRadius: WELL / 2,
+        borderWidth: StyleSheet.hairlineWidth,
+        alignItems: 'center',
+        justifyContent: 'center'
+    },
+
+    // Positioned from the left of the bar; translateX drives it to the active
+    // slot. Vertically centred on the pill, so it rides a touch proud of the
+    // wells (ORB > WELL) — the "raised" read.
+    orbLayer: {
+        position: 'absolute',
+        left: 0,
+        top: (BAR_HEIGHT - ORB) / 2,
+        alignItems: 'center',
+        justifyContent: 'center'
+    },
+    haloOuter: {
+        position: 'absolute',
+        width: HALO,
+        height: HALO,
+        borderRadius: HALO / 2,
+        // iOS coloured glow; Android/web lean on the ring stack itself.
+        ...Platform.select({
+            ios: { shadowOpacity: 0.8, shadowRadius: 12, shadowOffset: { width: 0, height: 0 } },
+            default: {}
+        })
+    },
+    haloMid: {
+        position: 'absolute',
+        width: HALO * 0.78,
+        height: HALO * 0.78,
+        borderRadius: (HALO * 0.78) / 2
+    },
+    haloInner: {
+        position: 'absolute',
+        width: HALO * 0.62,
+        height: HALO * 0.62,
+        borderRadius: (HALO * 0.62) / 2
+    },
+    orb: {
+        width: ORB,
+        height: ORB,
+        borderRadius: ORB / 2,
+        alignItems: 'center',
+        justifyContent: 'center',
+        overflow: 'hidden',
+        ...Platform.select({ android: { elevation: 6 }, default: {} })
+    },
+    orbSheen: {
+        position: 'absolute',
+        top: ORB * 0.12,
+        left: ORB * 0.14,
+        width: ORB * 0.42,
+        height: ORB * 0.42,
+        borderRadius: ORB * 0.21,
+        backgroundColor: 'rgba(255,255,255,0.45)'
+    },
+    orbGlyph: {
+        // Above the shade/sheen washes.
+        zIndex: 1
+    }
 });

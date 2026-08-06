@@ -10,6 +10,7 @@ export { default as GlassInput } from './GlassInput';
 export { default as Avatar, getInitials } from './Avatar';
 export { default as BottomSheet } from './BottomSheet';
 export { default as ProgressBar } from './ProgressBar';
+export { default as FitToScreen } from './FitToScreen';
 export { default as SegmentedTabs } from './SegmentedTabs';
 export { default as PageDots } from './PageDots';
 export { default as BrandMark } from './BrandMark';
