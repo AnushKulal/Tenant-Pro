@@ -56,6 +56,7 @@ const propertyRoutes = require('./routes/propertyRoutes');
 const unitRoutes = require('./routes/unitRoutes');
 const tenantRoutes = require('./routes/tenantRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
+const tenantPortalRoutes = require('./routes/tenantPortalRoutes');
 const { initCronJobs, checkAndSendRentReminders } = require('./services/cronService');
 const initDb = require('./config/initDb');
 const seedDemo = require('./config/seedDemo');
@@ -69,6 +70,7 @@ app.use('/api/properties', propertyRoutes);
 app.use('/api/units', unitRoutes);
 app.use('/api/tenants', tenantRoutes);
 app.use('/api/payments', paymentRoutes);
+app.use('/api/tenant-portal', tenantPortalRoutes);
 
 // --- Basic Health Check ---
 app.get('/', (req, res) => {

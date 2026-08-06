@@ -198,3 +198,23 @@ CREATE TABLE IF NOT EXISTS `settlements` (
   KEY `lease_id` (`lease_id`),
   CONSTRAINT `settlements_ibfk_1` FOREIGN KEY (`lease_id`) REFERENCES `leases` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- 12. maintenance_requests (tenant-raised service requests -> tenants, owners)
+-- Powers the tenant portal's "Raise a request" feature and the landlord's queue.
+CREATE TABLE IF NOT EXISTS `maintenance_requests` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `tenant_id` int(11) NOT NULL,
+  `owner_id` int(11) NOT NULL,
+  `category` varchar(50) NOT NULL DEFAULT 'General',
+  `title` varchar(150) NOT NULL,
+  `description` text DEFAULT NULL,
+  `priority` enum('Low','Medium','High') DEFAULT 'Medium',
+  `status` enum('Open','In Progress','Resolved','Closed') DEFAULT 'Open',
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `tenant_id` (`tenant_id`),
+  KEY `owner_id` (`owner_id`),
+  CONSTRAINT `maintenance_requests_ibfk_1` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `maintenance_requests_ibfk_2` FOREIGN KEY (`owner_id`) REFERENCES `owners` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;

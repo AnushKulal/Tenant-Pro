@@ -1,4 +1,4 @@
-// File: backend/src/middleware/authMiddleware.js
+// File: backend/middleware/authMiddleware.js
 const jwt = require('jsonwebtoken');
 
 const protect = (req, res, next) => {
