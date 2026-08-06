@@ -260,23 +260,31 @@ const reseedExpenses = async (propIds) => {
 // The tenant-portal login, linked to one of the demo tenants so its identity is
 // consistent, so the tenant portal shows this tenant's real dues, payments, home
 // and requests when signed in.
+//
+// Written as a single UPSERT on the UNIQUE email so the row is GUARANTEED to exist
+// with the KNOWN password on every boot. Two things this fixes vs the old
+// select-then-update:
+//   • it can never leave a half-seeded state, and
+//   • it always re-asserts the demo password. The old code skipped the password on
+//     the update branch (to avoid a rehash), so if the stored hash had ever drifted
+//     — a different earlier seed, a manual change — the demo login would silently
+//     stop working. For a single demo account, one bcrypt per boot is nothing and
+//     determinism is worth far more.
 const ensureDemoTenantLogin = async (tenantIds) => {
     const linkTo = tenantIds['Rahul Sharma'] || Object.values(tenantIds)[0] || null;
-    const [rows] = await db.query('SELECT id FROM tenant_users WHERE email = ?', [DEMO_TENANT_EMAIL]);
-    if (rows.length === 0) {
-        const hash = await bcrypt.hash(DEMO_TENANT_PASSWORD, 10);
-        await db.query(
-            `INSERT INTO tenant_users (name, email, phone, password_hash, tenant_id, status)
-             VALUES (?, ?, ?, ?, ?, 'Linked')`,
-            ['Rahul Sharma', DEMO_TENANT_EMAIL, DEMO_TENANT_PHONE, hash, linkTo]
-        );
-        console.log('👤 Demo tenant login created — tenant@gmail.com / Tenant@2004');
-    } else {
-        // Keep the link fresh (tenant id can change if the demo was rebuilt); leave
-        // the password alone so we don't rehash on every boot.
-        await db.query('UPDATE tenant_users SET name = ?, phone = ?, tenant_id = ?, status = ? WHERE id = ?',
-            ['Rahul Sharma', DEMO_TENANT_PHONE, linkTo, 'Linked', rows[0].id]);
-    }
+    const hash = await bcrypt.hash(DEMO_TENANT_PASSWORD, 10);
+    await db.query(
+        `INSERT INTO tenant_users (name, email, phone, password_hash, tenant_id, status)
+         VALUES (?, ?, ?, ?, ?, 'Linked')
+         ON DUPLICATE KEY UPDATE
+            name = VALUES(name),
+            phone = VALUES(phone),
+            password_hash = VALUES(password_hash),
+            tenant_id = VALUES(tenant_id),
+            status = VALUES(status)`,
+        ['Rahul Sharma', DEMO_TENANT_EMAIL, DEMO_TENANT_PHONE, hash, linkTo]
+    );
+    console.log('👤 Demo tenant login ensured — tenant@gmail.com / Tenant@2004 (linked to Rahul Sharma).');
 };
 
 // Self-healing demo maintenance requests, so the tenant portal's Requests section
@@ -301,16 +309,37 @@ const reseedRequests = async (ownerId, tenantIds) => {
     console.log(`🔧 Demo maintenance requests reseeded — ${rows.length}.`);
 };
 
+// Run a self-healing step but never let its failure abort the ones after it.
+// Structure (owner/properties/units/tenants) is a hard dependency for everything
+// else, so those stay in the main try; the independent refresh steps below are
+// isolated so, e.g., a hiccup rebuilding payment history can't stop the tenant
+// LOGIN from being seeded.
+const step = async (label, fn) => {
+    try {
+        await fn();
+    } catch (err) {
+        console.error(`⚠️  Demo seed step "${label}" failed (continuing):`, err.message);
+    }
+};
+
 const seedDemo = async () => {
     try {
         const ownerId = await ensureOwner();
         const propIds = await ensureProperties(ownerId);
         const unitIds = await ensureUnits(propIds);
         const tenantIds = await ensureTenants(ownerId, unitIds);
-        await reseedPayments(tenantIds);
-        await reseedExpenses(propIds);
-        await reseedRequests(ownerId, tenantIds);
-        await ensureDemoTenantLogin(tenantIds);
+
+        // Seed the tenant-portal LOGIN first, right after tenants exist — before the
+        // financial/requests refresh. It used to run last, so any earlier step that
+        // threw (a bad row, a transient error) left the demo tenant login uncreated,
+        // which is exactly the "can't log into the tenant portal" symptom. Ordering
+        // it here, plus isolating the steps below, makes the login independent of
+        // them.
+        await step('tenant-login', () => ensureDemoTenantLogin(tenantIds));
+        await step('payments', () => reseedPayments(tenantIds));
+        await step('expenses', () => reseedExpenses(propIds));
+        await step('requests', () => reseedRequests(ownerId, tenantIds));
+
         console.log('✅ Demo account ready — landlord demo@gmail.com / Kajal@2004, tenant tenant@gmail.com / Tenant@2004');
     } catch (err) {
         // Never block boot on demo seeding — the app must serve real accounts even
