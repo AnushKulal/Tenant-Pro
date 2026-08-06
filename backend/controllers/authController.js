@@ -2,7 +2,7 @@
 const db = require('../config/db');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { transporter, isMailConfigured, mailFrom } = require('../config/mailer');
+const { sendAppMail, isMailConfigured } = require('../config/mailer');
 
 // --- Registration Logic ---
 const registerOwner = async (req, res) => {
@@ -214,8 +214,10 @@ const forgotPassword = async (req, res) => {
 
             {
                 try {
-                    await transporter.sendMail({
-                        from: `"TenantPro" <${mailFrom}>`,
+                    // Through the shared sender so the no-reply identity (from name,
+                    // automated-message headers, do-not-reply footer) is applied here
+                    // exactly as it is for rent reminders.
+                    await sendAppMail({
                         to: accountEmail,
                         subject: 'Your TenantPro password reset code',
                         html: `

@@ -261,7 +261,7 @@ const styles = StyleSheet.create({
     inputLabel: { fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8, marginLeft: 4 },
     inputWrapper: { flexDirection: 'row', alignItems: 'center', borderRadius: 16, paddingHorizontal: 16, height: 55, borderWidth: 1 },
     inputIcon: { marginRight: 12 },
-    input: { flex: 1, fontSize: 15, fontWeight: '500' },
+    input: { flex: 1, minWidth: 0, fontSize: 15, fontWeight: '500' },
 
     // Button
     saveBtnWrapper: { marginTop: 10 },

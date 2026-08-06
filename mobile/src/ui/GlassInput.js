@@ -127,6 +127,9 @@ export default function GlassInput({
                             <TouchableOpacity
                                 onPress={() => setReveal((r) => !r)}
                                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                                // A guaranteed gap before the icon so the flexing
+                                // TextInput can never butt right up against it.
+                                style={styles.trailingBtn}
                                 accessibilityLabel={reveal ? 'Hide password' : 'Show password'}
                             >
                                 <Ionicons
@@ -155,7 +158,13 @@ const styles = StyleSheet.create({
     glass: { width: '100%' },
     row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 15 },
     rowMultiline: { alignItems: 'flex-start', paddingVertical: 12 },
-    input: { flex: 1, paddingVertical: 15, fontWeight: '500' },
+    // minWidth:0 is the fix for the clipped trailing icon. Without it, on Android a
+    // flex:1 TextInput will not shrink below its placeholder's intrinsic width, so a
+    // long placeholder ("Confirm password") pushes the eye toggle past the field's
+    // right edge, where overflow:hidden crops it. Web/Yoga shrinks it anyway, which
+    // is why this only ever showed on device. minWidth:0 forces the shrink on both.
+    input: { flex: 1, minWidth: 0, paddingVertical: 15, fontWeight: '500' },
+    trailingBtn: { marginLeft: 8 },
     errorRow: { flexDirection: 'row', alignItems: 'center', marginTop: 6, marginLeft: 6 },
     errorText: { fontSize: 12.5, fontWeight: '600', marginLeft: 4 }
 });

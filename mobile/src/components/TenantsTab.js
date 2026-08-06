@@ -722,7 +722,7 @@ const styles = StyleSheet.create({
     headerSection: { paddingHorizontal: 20, marginTop: 2, marginBottom: 10 },
     searchBar: { flexDirection: 'row', alignItems: 'center', borderRadius: 16, paddingHorizontal: 15, height: 50, borderWidth: 1 },
     searchIcon: { marginRight: 10 },
-    searchInput: { flex: 1, fontSize: 15, fontWeight: '500' },
+    searchInput: { flex: 1, minWidth: 0, fontSize: 15, fontWeight: '500' },
 
     // Filters
     filterWrapper: { marginBottom: 10 },
