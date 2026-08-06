@@ -96,16 +96,6 @@ const MODULES = [
             'Settings carries appearance — Light, Dark, or System, which follows your phone — along with links to Help & Support and the terms of service.',
             'Appearance can also be flipped straight from the ⋯ menu, which keeps the menu open so you can see the change happen.'
         ]
-    },
-    {
-        key: 'guest',
-        icon: 'rocket-outline',
-        title: 'Guest mode',
-        summary: 'A full demo with no signup.',
-        body: [
-            '"Explore as Guest" on the sign-in screen mints a unique guest id and drops you into a fully populated account: two properties, five units, four tenants and recorded payments.',
-            'It is a demonstration, not a private workspace. Guests share the demo account\'s data, so anything one guest changes is visible to another. Create a real account before entering anything you care about.'
-        ]
     }
 ];
 
@@ -147,8 +137,7 @@ const NAVIGATION = [
 
 const ROADMAP = [
     'Notifications for upcoming and overdue rent.',
-    'Password recovery for tenant accounts (owners already have it).',
-    'Isolated guest sessions, so two people exploring the demo cannot see each other\'s edits.'
+    'Password recovery for tenant accounts (owners already have it).'
 ];
 
 // --- A collapsible section ---------------------------------------------------

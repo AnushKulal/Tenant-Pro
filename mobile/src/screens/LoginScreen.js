@@ -7,9 +7,9 @@
 // toggle. Here the pill only flips local state, so the thumb springs across and
 // the card grows/shrinks in place.
 //
-// Layout: brand lockup → Login/Sign Up pill → frosted form card → guest entry →
-// social row → footer link. Everything floats on <Screen>'s aurora canvas; the
-// screen itself never paints an opaque surface.
+// Layout: brand lockup → Login/Sign Up pill → frosted form card → social row →
+// footer link. Everything floats on <Screen>'s aurora canvas; the screen itself
+// never paints an opaque surface.
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
     View,
@@ -203,7 +203,6 @@ export default function LoginScreen({ navigation, route }) {
     const [confirmPasswordError, setConfirmPasswordError] = useState('');
     const [generalError, setGeneralError] = useState(''); // Handles backend errors (e.g., wrong password)
     const [isLoading, setIsLoading] = useState(false); // Controls the "Signing in..." / "Creating Account..." state
-    const [isGuestLoading, setIsGuestLoading] = useState(false); // Controls the "Exploring..." guest state
 
     // <Screen scroll> skips its own entrance transform, so the header animates here.
     const headerIn = useRef(new Animated.Value(0)).current;
@@ -424,64 +423,16 @@ export default function LoginScreen({ navigation, route }) {
         }
     };
 
-    // --- Guest Login: drop straight into the fully-loaded demo account ---
-    const handleGuestLogin = async () => {
-        setGeneralError('');
-        setIsGuestLoading(true);
-        try {
-            // Sign in to the shared demo landlord account (pre-filled with sample data).
-            const response = await client.post('/auth/login', {
-                email: 'demo@gmail.com',
-                password: 'Kajal@2004'
-            });
-            const { token, owner } = response.data;
-
-            // A guest gets their OWN identity rather than silently appearing as
-            // "Demo": a unique id is minted and becomes the display name for the
-            // session, while the data underneath is still the demo account's, since
-            // that is what makes the app worth exploring. Crockford-style alphabet
-            // (no I/O/0/1) so the id can be read aloud or typed without ambiguity.
-            const ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
-            const suffix = Array.from({ length: 6 }, () =>
-                ALPHABET[Math.floor(Math.random() * ALPHABET.length)]
-            ).join('');
-            const guestId = `GUEST-${suffix}`;
-
-            await AsyncStorage.setItem('userToken', token);
-            await AsyncStorage.setItem('ownerData', JSON.stringify({
-                ...owner,
-                // Shown throughout the app in place of the demo owner's name, so it
-                // is always obvious this is a guest session and not a real account.
-                name: `Guest ${suffix}`,
-                isGuest: true,
-                guestId,
-                // Keep the underlying demo identity for anything that needs it.
-                demoEmail: owner?.email ?? null
-            }));
-            await AsyncStorage.setItem('guestId', guestId);
-
-            Avatar.prefetch(owner?.profile_pic);
-
-            enterOwnerApp(navigation);
-        } catch (error) {
-            const backendError = error.response?.data?.message ||
-                'Guest demo is warming up (the server may be waking up). Please try again in a moment.';
-            setGeneralError(backendError);
-        } finally {
-            setIsGuestLoading(false);
-        }
-    };
-
     // --- Social login: not wired to real providers yet ---
     const handleSocialLogin = (provider) => {
         Alert.alert(
             `${provider} sign-in`,
-            `Signing in with ${provider} is coming soon. For now, use your email and password, or tap "Explore as Guest" to try the app instantly.`,
+            `Signing in with ${provider} is coming soon. For now, use your email and password to sign in.`,
             [{ text: 'Got it' }]
         );
     };
 
-    const anyLoading = isLoading || isGuestLoading;
+    const anyLoading = isLoading;
 
     const headerStyle = {
         opacity: headerIn,
@@ -823,27 +774,6 @@ export default function LoginScreen({ navigation, route }) {
                             </Animated.View>
                         </View>
                     </GlassCard>
-
-                    <View style={{ marginTop: t.spacing.lg }}>
-                        <GlassButton
-                            label="Explore as Guest"
-                            variant="glass"
-                            icon="rocket-outline"
-                            loading={isGuestLoading}
-                            loadingLabel="Loading demo…"
-                            disabled={anyLoading}
-                            onPress={handleGuestLogin}
-                        />
-                        <Text
-                            style={[
-                                t.typography.caption,
-                                styles.centerText,
-                                { color: t.colors.textMuted, marginTop: t.spacing.sm }
-                            ]}
-                        >
-                            Jump into a fully-loaded demo — no account needed.
-                        </Text>
-                    </View>
 
                     <View style={[styles.dividerRow, { marginVertical: t.spacing.xxl }]}>
                         <View style={[styles.hairline, { backgroundColor: t.colors.border }]} />
