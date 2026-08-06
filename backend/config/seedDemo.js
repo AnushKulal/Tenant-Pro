@@ -258,8 +258,8 @@ const reseedExpenses = async (propIds) => {
 };
 
 // The tenant-portal login, linked to one of the demo tenants so its identity is
-// consistent. The tenant portal is still a placeholder today, so this mainly makes
-// the portal signable-into for demos; it is ready for when the portal renders data.
+// consistent, so the tenant portal shows this tenant's real dues, payments, home
+// and requests when signed in.
 const ensureDemoTenantLogin = async (tenantIds) => {
     const linkTo = tenantIds['Rahul Sharma'] || Object.values(tenantIds)[0] || null;
     const [rows] = await db.query('SELECT id FROM tenant_users WHERE email = ?', [DEMO_TENANT_EMAIL]);

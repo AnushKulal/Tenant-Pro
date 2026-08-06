@@ -153,8 +153,12 @@ export default function TenantHomeScreen({ navigation }) {
         if (landlord?.phone) Linking.openURL(`tel:${landlord.phone}`).catch(() => {});
     };
 
+    // padded={false}: the ScrollView supplies its own 16px horizontal inset
+    // (styles.scroll), matching the rest of the app. Leaving Screen's default 24px
+    // on top would double-pad to 40px and render the portal narrower than every
+    // other screen.
     return (
-        <Screen scroll edges={['top']}>
+        <Screen scroll padded={false} edges={['top']}>
             <ScrollView
                 contentContainerStyle={styles.scroll}
                 showsVerticalScrollIndicator={false}
