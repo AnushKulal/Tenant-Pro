@@ -100,7 +100,11 @@ export default function TenantLoginScreen({ navigation, route }) {
     const useMobile = !isSignup && loginBy === 'phone';
     // Set when the server rejects the credentials, so the screen can offer a reset
     // right where the failure happened instead of making the user hunt for it.
-    const [wrongCredentials, setWrongCredentials] = useState(false);
+    // 'password' -> offer a reset, 'account' -> offer sign-up. null when there is
+    // no actionable failure.
+    const [failureKind, setFailureKind] = useState(null);
+    const wrongCredentials = failureKind === 'password';
+    const notRegistered = failureKind === 'account';
 
     const [form, setForm] = useState({ name: '', email: '', phone: '', password: '', confirm: '' });
     const [error, setError] = useState('');
@@ -171,7 +175,7 @@ export default function TenantLoginScreen({ navigation, route }) {
 
     const handleLogin = async () => {
         setError('');
-        setWrongCredentials(false);
+        setFailureKind(null);
         const { password } = form;
         const identifier = (loginBy === 'phone' ? form.phone : form.email).trim();
         if (!identifier || !password) {
@@ -188,7 +192,12 @@ export default function TenantLoginScreen({ navigation, route }) {
         } catch (e) {
             // 401 is specifically "those details are wrong", which is the one case
             // where offering a password reset is the useful next step.
-            setWrongCredentials(e.response?.status === 401);
+            const code = e.response?.data?.code;
+            setFailureKind(
+                code === 'NOT_REGISTERED' ? 'account'
+                    : code === 'WRONG_PASSWORD' || e.response?.status === 401 ? 'password'
+                        : null
+            );
             setError(e.response?.data?.message || 'Unable to sign in. Please try again.');
         } finally {
             setLoading(false);
@@ -321,9 +330,12 @@ export default function TenantLoginScreen({ navigation, route }) {
                                     the one the eye was already on. This sits under
                                     the message that prompted it and leaves the rest
                                     of the form alone. */}
-                                {wrongCredentials ? (
+                                {failureKind ? (
                                     <Pressable
-                                        onPress={() => navigation.navigate('ForgotPassword', { role: 'tenant' })}
+                                        onPress={() => {
+                                            if (notRegistered) switchMode('signup');
+                                            else navigation.navigate('ForgotPassword', { role: 'tenant' });
+                                        }}
                                         disabled={loading}
                                         style={({ pressed }) => [
                                             styles.errorAction,
@@ -331,10 +343,10 @@ export default function TenantLoginScreen({ navigation, route }) {
                                             pressed && { backgroundColor: withAlpha(t.colors.danger, 0.14) }
                                         ]}
                                         accessibilityRole="button"
-                                        accessibilityLabel="Reset your password"
+                                        accessibilityLabel={notRegistered ? 'Create an account' : 'Reset your password'}
                                     >
                                         <Text style={[t.typography.caption, styles.errorActionText, { color: t.colors.danger }]}>
-                                            Reset your password
+                                            {notRegistered ? 'Create an account' : 'Reset your password'}
                                         </Text>
                                         <Ionicons name="arrow-forward" size={14} color={t.colors.danger} />
                                     </Pressable>

@@ -30,6 +30,23 @@ const registerTenant = async (req, res) => {
             return res.status(409).json({ message: 'This mobile number is already registered.' });
         }
 
+        // The two portals are mutually exclusive — see the matching check in
+        // registerOwner. One email or mobile belongs to a landlord account OR a
+        // tenant account, never both, because sign-in accepts either identifier and
+        // an address in both tables would be ambiguous.
+        const [crossOwner] = await db.query(
+            'SELECT email, phone FROM owners WHERE email = ? OR phone = ?',
+            [email, phone]
+        );
+        if (crossOwner.length > 0) {
+            const clash = crossOwner[0];
+            return res.status(409).json({
+                message: clash.email === email
+                    ? 'This email is already used for a landlord account. Use a different email, or sign in through the landlord portal.'
+                    : 'This mobile number is already used for a landlord account. Use a different number, or sign in through the landlord portal.'
+            });
+        }
+
         const passwordHash = await bcrypt.hash(password, 10);
         const [result] = await db.query(
             'INSERT INTO tenant_users (name, email, phone, password_hash) VALUES (?, ?, ?, ?)',
@@ -71,16 +88,21 @@ const loginTenant = async (req, res) => {
         );
         const user = rows[0];
 
-        // Same message either way, so nobody can enumerate registered accounts.
-        const WRONG = 'Incorrect email/mobile number or password.';
-
+        // Distinguished on purpose — see the note in authController.loginOwner for
+        // the trade-off and the mitigation.
         if (!user) {
-            return res.status(401).json({ message: WRONG });
+            return res.status(404).json({
+                code: 'NOT_REGISTERED',
+                message: 'No tenant account is registered with these details.'
+            });
         }
 
         const isMatch = await bcrypt.compare(password, user.password_hash);
         if (!isMatch) {
-            return res.status(401).json({ message: WRONG });
+            return res.status(401).json({
+                code: 'WRONG_PASSWORD',
+                message: 'Incorrect password. Try again or reset it.'
+            });
         }
 
         const token = jwt.sign(

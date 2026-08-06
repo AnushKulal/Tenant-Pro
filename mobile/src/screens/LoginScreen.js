@@ -181,7 +181,12 @@ export default function LoginScreen({ navigation, route }) {
     const useMobile = !isSignup && loginBy === 'phone';
     // Set when the server rejects the credentials, which is the one case where
     // offering a password reset is the useful next step.
-    const [wrongCredentials, setWrongCredentials] = useState(false);
+    // What the last failure was, so the screen can offer the RIGHT next step:
+    // 'password' -> reset it, 'account' -> create one. null when there is no
+    // actionable failure.
+    const [failureKind, setFailureKind] = useState(null);
+    const wrongCredentials = failureKind === 'password';
+    const notRegistered = failureKind === 'account';
 
     // Shared fields stay mounted in both modes so toggling never drops typing.
     const [email, setEmail] = useState('');
@@ -268,7 +273,7 @@ export default function LoginScreen({ navigation, route }) {
     const handleLogin = async () => {
         // Clear previous general errors
         setGeneralError('');
-        setWrongCredentials(false);
+        setFailureKind(null);
 
         let isValid = true;
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -331,7 +336,12 @@ export default function LoginScreen({ navigation, route }) {
             // 401 means specifically "those details are wrong" — the one failure
             // where a password reset is the likely next step, so the screen
             // promotes that option rather than leaving the user stuck re-typing.
-            setWrongCredentials(error.response?.status === 401);
+            const code = error.response?.data?.code;
+            setFailureKind(
+                code === 'NOT_REGISTERED' ? 'account'
+                    : code === 'WRONG_PASSWORD' || error.response?.status === 401 ? 'password'
+                        : null
+            );
             setGeneralError(backendError);
         } finally {
             // Always stop the loading spinner, whether it succeeded or failed
@@ -579,9 +589,12 @@ export default function LoginScreen({ navigation, route }) {
                                     the one the eye was already on. This sits under
                                     the message that prompted it and leaves the rest
                                     of the form alone. */}
-                                {wrongCredentials ? (
+                                {failureKind ? (
                                     <Pressable
-                                        onPress={() => navigation.navigate('ForgotPassword')}
+                                        onPress={() => {
+                                            if (notRegistered) setMode('signup');
+                                            else navigation.navigate('ForgotPassword');
+                                        }}
                                         disabled={anyLoading}
                                         style={({ pressed }) => [
                                             styles.errorAction,
@@ -589,10 +602,10 @@ export default function LoginScreen({ navigation, route }) {
                                             pressed && { backgroundColor: withAlpha(t.colors.danger, 0.14) }
                                         ]}
                                         accessibilityRole="button"
-                                        accessibilityLabel="Reset your password"
+                                        accessibilityLabel={notRegistered ? 'Create an account' : 'Reset your password'}
                                     >
                                         <Text style={[t.typography.caption, styles.errorActionText, { color: t.colors.danger }]}>
-                                            Reset your password
+                                            {notRegistered ? 'Create an account' : 'Reset your password'}
                                         </Text>
                                         <Ionicons name="arrow-forward" size={14} color={t.colors.danger} />
                                     </Pressable>
