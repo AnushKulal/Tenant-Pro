@@ -515,6 +515,14 @@ export default function LoginScreen({ navigation, route }) {
                 style={styles.flex}
             >
                 <ScrollView
+                    // style flex:1 bounds the scroll viewport to the screen. Without
+                    // it, contentContainerStyle's `flexGrow:1 + justifyContent:center`
+                    // centres correctly on tall screens but CLIPS the top on short
+                    // ones — the header scrolls off above the top and can't be reached.
+                    // Bounded height turns that same centering into "centre when it
+                    // fits, scroll when it doesn't", which is what makes it work on
+                    // every screen size and with the keyboard open.
+                    style={styles.flex}
                     contentContainerStyle={[styles.scrollBody, { paddingBottom: t.spacing.huge }]}
                     keyboardShouldPersistTaps="handled"
                     showsVerticalScrollIndicator={false}
@@ -912,7 +920,7 @@ const styles = StyleSheet.create({
     flex: { flex: 1 },
     // Centres the stack vertically on tall phones but still scrolls when the
     // keyboard shrinks the viewport.
-    scrollBody: { flexGrow: 1, justifyContent: 'center' },
+    scrollBody: { flexGrow: 1, justifyContent: 'center', paddingTop: 8 },
     backRow: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', paddingVertical: 4 },
     errorStrip: { flexDirection: 'row', alignItems: 'center', padding: 12 },
     errorText: { flex: 1, fontWeight: '700' },

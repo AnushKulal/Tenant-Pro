@@ -1,24 +1,44 @@
-// Seeds a ready-to-use DEMO account with sample data, so the app can be shown
-// off immediately.
-//   • If the demo owner doesn't exist, it creates everything (with images).
-//   • If it already exists, it backfills any missing images.
-// It never touches non-demo accounts.
+// Seeds a ready-to-use DEMO account so the app can be shown off immediately, and
+// keeps it that way. This is a REAL owner account — nothing flags it as special —
+// but its data self-heals to a known, full state on every boot, so a demo always
+// starts from the same rich picture no matter what the last demo did to it.
 //
-//   Login:  demo@gmail.com  /  Kajal@2004
+//   Landlord login:  demo@gmail.com     /  Kajal@2004
+//   Tenant login:    tenant@gmail.com   /  Tenant@2004   (tenant portal)
+//
+// Design notes:
+//   • Structure (properties/units/tenants) is created-if-missing and then UPDATED
+//     to known values, so it never duplicates and never drifts.
+//   • Financial history (payments, expenses) is DELETED and rebuilt every boot,
+//     scoped to demo-owned rows only. That is what makes it self-healing: recording
+//     a payment during a demo does not permanently alter the account.
+//   • Dates are computed relative to "now" at runtime, so the six-month revenue
+//     chart and the dues always look current — never a fixed year that ages.
+//   • Every query is scoped to the demo owner / its tenants / its properties. It
+//     never reads or writes another account's data.
 const db = require('../config/db');
 const bcrypt = require('bcryptjs');
 
 const DEMO_EMAIL = 'demo@gmail.com';
 const DEMO_PASSWORD = 'Kajal@2004';
+const DEMO_PHONE = '9000000000';
+
+// Tenant-portal login. A different email/phone from the landlord on purpose — the
+// two portals are mutually exclusive per identifier, so they cannot collide.
+const DEMO_TENANT_EMAIL = 'tenant@gmail.com';
+const DEMO_TENANT_PASSWORD = 'Tenant@2004';
+const DEMO_TENANT_PHONE = '9000000001';
 
 // Gender-matched portraits (randomuser.me) and property/room photos (picsum.photos).
 const IMG = {
     owner: 'https://randomuser.me/api/portraits/men/32.jpg',
     tenants: {
-        'Rahul Sharma': 'https://randomuser.me/api/portraits/men/45.jpg',   // male
-        'Priya Nair': 'https://randomuser.me/api/portraits/women/44.jpg',   // female
-        'Amit Verma': 'https://randomuser.me/api/portraits/men/68.jpg',     // male
-        'Sneha Reddy': 'https://randomuser.me/api/portraits/women/65.jpg'   // female
+        'Rahul Sharma': 'https://randomuser.me/api/portraits/men/45.jpg',
+        'Priya Nair': 'https://randomuser.me/api/portraits/women/44.jpg',
+        'Amit Verma': 'https://randomuser.me/api/portraits/men/68.jpg',
+        'Sneha Reddy': 'https://randomuser.me/api/portraits/women/65.jpg',
+        'Karthik Rao': 'https://randomuser.me/api/portraits/men/12.jpg',
+        'Neha Gupta': 'https://randomuser.me/api/portraits/women/28.jpg'
     },
     properties: {
         'Sunrise PG': 'https://picsum.photos/seed/tp-sunrise-pg/800/600',
@@ -33,156 +53,246 @@ const IMG = {
     }
 };
 
-// Tenants: [name, phone, email, company, unit_number_key, deposit, rent_share, move_in, next_due, credit]
-const TENANTS = [
-    ['Rahul Sharma', '9812345670', 'rahul@example.com', 'Infosys', '101', 16000, 8000, '2026-02-01', '2026-08-01', 100],
-    ['Priya Nair', '9812345671', 'priya@example.com', 'Wipro', '101', 16000, 8000, '2026-03-01', '2026-08-01', 95],
-    ['Amit Verma', '9812345672', 'amit@example.com', 'TCS', '102', 24000, 12000, '2026-01-15', '2026-08-15', 100],
-    ['Sneha Reddy', '9812345673', 'sneha@example.com', 'Amazon', 'A1', 44000, 22000, '2026-04-10', '2026-08-10', 90]
+// --- Date helpers (runtime-relative, so the demo never ages) -----------------
+const pad = (n) => String(n).padStart(2, '0');
+const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+// A date `months` before now, clamped to `day`. Used for payment history and dues.
+const monthsAgo = (months, day = 5) => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth() - months, day);
+};
+const daysFromNow = (days) => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate() + days);
+};
+
+// --- Declarative dataset -----------------------------------------------------
+const PROPERTIES = [
+    { name: 'Sunrise PG', type: 'PG', address: '12, 5th Cross, Koramangala', locality: 'Koramangala', city: 'Bengaluru', pincode: '560034' },
+    { name: 'Green Meadows Apartment', type: 'Apartment', address: '45, Sector 2, HSR Layout', locality: 'HSR Layout', city: 'Bengaluru', pincode: '560102' }
 ];
 
-// --- Create the whole demo account from scratch (with images) ---
-const createDemo = async () => {
-    const conn = await db.getConnection();
-    try {
-        await conn.beginTransaction();
+// [unit_number, property_name, room_type, capacity, base_rent, status]
+const UNITS = [
+    ['101', 'Sunrise PG', 'Standard Sharing', 2, 16000, 'Occupied'],
+    ['102', 'Sunrise PG', 'Deluxe Single', 1, 12000, 'Occupied'],
+    ['103', 'Sunrise PG', 'Standard Sharing', 2, 16000, 'Occupied'],
+    ['A1', 'Green Meadows Apartment', '1 BHK', 1, 22000, 'Occupied'],
+    ['A2', 'Green Meadows Apartment', '2 BHK', 1, 30000, 'Vacant']  // left vacant so the "Vacant Units" metric is non-zero
+];
 
-        const passwordHash = await bcrypt.hash(DEMO_PASSWORD, 10);
-        const [ownerRes] = await conn.query(
+// [name, phone, email, company, unit_number, deposit, rent_share, move_in_months_ago, credit, dueOffsetDays]
+// dueOffsetDays: negative = overdue (feeds "Pending Dues"), positive = paid up.
+const TENANTS = [
+    ['Rahul Sharma', '9812345670', 'rahul@example.com', 'Infosys', '101', 16000, 8000, 6, 100, 24],
+    ['Priya Nair', '9812345671', 'priya@example.com', 'Wipro', '101', 16000, 8000, 5, 95, 24],
+    ['Amit Verma', '9812345672', 'amit@example.com', 'TCS', '102', 24000, 12000, 7, 100, -3],   // overdue
+    ['Sneha Reddy', '9812345673', 'sneha@example.com', 'Amazon', 'A1', 44000, 22000, 4, 90, 20],
+    ['Karthik Rao', '9812345674', 'karthik@example.com', 'Flipkart', '103', 16000, 8000, 3, 88, -1], // overdue
+    ['Neha Gupta', '9812345675', 'neha@example.com', 'Zomato', '103', 16000, 8000, 2, 92, 27]
+];
+
+// Expenses give the account a "used" feel and make property P&L believable.
+// [property_name, category, amount, months_ago, description]
+const EXPENSES = [
+    ['Sunrise PG', 'Maintenance', 3500, 1, 'Plumbing repair — 2nd floor'],
+    ['Sunrise PG', 'Electricity', 4200, 1, 'Common area + water pump'],
+    ['Sunrise PG', 'Internet', 1499, 2, 'Monthly broadband'],
+    ['Sunrise PG', 'Cleaning', 2000, 0, 'Housekeeping'],
+    ['Green Meadows Apartment', 'Maintenance', 5000, 2, 'Lift AMC'],
+    ['Green Meadows Apartment', 'Water', 1800, 1, 'Tanker top-up'],
+    ['Green Meadows Apartment', 'Electricity', 2600, 0, 'Common area']
+];
+
+const METHODS = ['UPI', 'UPI', 'Cash', 'UPI', 'Bank Transfer'];
+
+// --- Idempotent "ensure" steps ----------------------------------------------
+
+// Owner row + payment settings. Returns the demo owner id.
+const ensureOwner = async () => {
+    const [existing] = await db.query('SELECT id FROM owners WHERE email = ?', [DEMO_EMAIL]);
+    let ownerId;
+    if (existing.length === 0) {
+        const hash = await bcrypt.hash(DEMO_PASSWORD, 10);
+        const [res] = await db.query(
             'INSERT INTO owners (name, email, phone, password_hash, profile_pic) VALUES (?, ?, ?, ?, ?)',
-            ['Demo', DEMO_EMAIL, '9000000000', passwordHash, IMG.owner]
+            ['Demo Landlord', DEMO_EMAIL, DEMO_PHONE, hash, IMG.owner]
         );
-        const ownerId = ownerRes.insertId;
+        ownerId = res.insertId;
+    } else {
+        ownerId = existing[0].id;
+        // Self-heal the display fields (name/photo) without touching the password.
+        await db.query('UPDATE owners SET name = ?, profile_pic = ? WHERE id = ?', ['Demo Landlord', IMG.owner, ownerId]);
+    }
 
-        await conn.query(
-            'INSERT INTO payment_settings (owner_id, upi_id, upi_number) VALUES (?, ?, ?)',
-            [ownerId, 'demo@okhdfcbank', '9000000000']
-        );
+    // UNIQUE(owner_id) makes this a clean upsert.
+    await db.query(
+        `INSERT INTO payment_settings (owner_id, upi_id, upi_number) VALUES (?, ?, ?)
+         ON DUPLICATE KEY UPDATE upi_id = VALUES(upi_id), upi_number = VALUES(upi_number)`,
+        [ownerId, 'demo@okhdfcbank', DEMO_PHONE]
+    );
+    return ownerId;
+};
 
-        // Properties
-        const [p1] = await conn.query(
-            `INSERT INTO properties (owner_id, name, property_type, address, locality, city, pincode, upi_id, image_url)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [ownerId, 'Sunrise PG', 'PG', '12, 5th Cross, Koramangala', 'Koramangala', 'Bengaluru', '560034', 'demo@okhdfcbank', IMG.properties['Sunrise PG']]
-        );
-        const [p2] = await conn.query(
-            `INSERT INTO properties (owner_id, name, property_type, address, locality, city, pincode, upi_id, image_url)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [ownerId, 'Green Meadows Apartment', 'Apartment', '45, Sector 2, HSR Layout', 'HSR Layout', 'Bengaluru', '560102', 'demo@okhdfcbank', IMG.properties['Green Meadows Apartment']]
-        );
+const ensureProperties = async (ownerId) => {
+    const ids = {};
+    for (const p of PROPERTIES) {
+        const [rows] = await db.query('SELECT id FROM properties WHERE owner_id = ? AND name = ?', [ownerId, p.name]);
+        if (rows.length === 0) {
+            const [res] = await db.query(
+                `INSERT INTO properties (owner_id, name, property_type, address, locality, city, pincode, upi_id, image_url)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [ownerId, p.name, p.type, p.address, p.locality, p.city, p.pincode, 'demo@okhdfcbank', IMG.properties[p.name]]
+            );
+            ids[p.name] = res.insertId;
+        } else {
+            ids[p.name] = rows[0].id;
+            await db.query('UPDATE properties SET image_url = ?, address = ?, locality = ?, city = ?, pincode = ? WHERE id = ?',
+                [IMG.properties[p.name], p.address, p.locality, p.city, p.pincode, rows[0].id]);
+        }
+    }
+    return ids;
+};
 
-        // Units (rooms): [property_id, unit_number, room_type, capacity, base_rent, status]
-        const units = [
-            [p1.insertId, '101', 'Standard Sharing', 2, 16000, 'Occupied'],
-            [p1.insertId, '102', 'Deluxe Single', 1, 12000, 'Occupied'],
-            [p1.insertId, '103', 'Standard Sharing', 2, 16000, 'Vacant'],
-            [p2.insertId, 'A1', '1 BHK', 1, 22000, 'Occupied'],
-            [p2.insertId, 'A2', '2 BHK', 1, 30000, 'Vacant']
-        ];
-        const unitIds = {};
-        for (const u of units) {
-            const [ur] = await conn.query(
+const ensureUnits = async (propIds) => {
+    const ids = {};
+    for (const [num, propName, roomType, cap, rent, status] of UNITS) {
+        const propertyId = propIds[propName];
+        const [rows] = await db.query('SELECT id FROM units WHERE property_id = ? AND unit_number = ?', [propertyId, num]);
+        if (rows.length === 0) {
+            const [res] = await db.query(
                 `INSERT INTO units (property_id, unit_number, room_type, capacity, rent_split_type, base_rent, status, image_url)
                  VALUES (?, ?, ?, ?, 'Equal', ?, ?, ?)`,
-                [u[0], u[1], u[2], u[3], u[4], u[5], IMG.units[u[1]]]
+                [propertyId, num, roomType, cap, rent, status, IMG.units[num]]
             );
-            unitIds[u[1]] = ur.insertId;
+            ids[num] = res.insertId;
+        } else {
+            ids[num] = rows[0].id;
+            await db.query('UPDATE units SET room_type = ?, capacity = ?, base_rent = ?, status = ?, image_url = ? WHERE id = ?',
+                [roomType, cap, rent, status, IMG.units[num], rows[0].id]);
         }
+    }
+    return ids;
+};
 
-        // Tenants
-        const tenantIds = {};
-        for (const t of TENANTS) {
-            const [tr] = await conn.query(
+const ensureTenants = async (ownerId, unitIds) => {
+    const ids = {};
+    for (const [name, phone, email, company, unitNum, deposit, rentShare, moveInMonths, credit, dueOffset] of TENANTS) {
+        const unitId = unitIds[unitNum];
+        const moveIn = ymd(monthsAgo(moveInMonths, 1));
+        const nextDue = ymd(daysFromNow(dueOffset));
+        const [rows] = await db.query('SELECT id FROM tenants WHERE owner_id = ? AND name = ?', [ownerId, name]);
+        if (rows.length === 0) {
+            const [res] = await db.query(
                 `INSERT INTO tenants
                  (owner_id, unit_id, status, name, phone, email, company, deposit, rent_share, credit_score, image_url, move_in_date, billing_cycle, next_rent_due)
                  VALUES (?, ?, 'Active', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Anniversary', ?)`,
-                [ownerId, unitIds[t[4]], t[0], t[1], t[2], t[3], t[5], t[6], t[9], IMG.tenants[t[0]], t[7], t[8]]
+                [ownerId, unitId, name, phone, email, company, deposit, rentShare, credit, IMG.tenants[name], moveIn, nextDue]
             );
-            tenantIds[t[0]] = tr.insertId;
-        }
-
-        // A few recorded payments
-        const payments = [
-            ['Rahul Sharma', 8000, '2026-07-01', 'UPI'],
-            ['Amit Verma', 12000, '2026-07-05', 'UPI'],
-            ['Sneha Reddy', 22000, '2026-07-03', 'Cash']
-        ];
-        for (const pay of payments) {
-            await conn.query(
-                `INSERT INTO payments (tenant_id, amount_paid, payment_date, payment_method, reference_id)
-                 VALUES (?, ?, ?, ?, ?)`,
-                [tenantIds[pay[0]], pay[1], pay[2], pay[3], 'DEMO-REF']
+            ids[name] = res.insertId;
+        } else {
+            ids[name] = rows[0].id;
+            await db.query(
+                `UPDATE tenants SET unit_id = ?, status = 'Active', phone = ?, email = ?, company = ?,
+                 deposit = ?, rent_share = ?, credit_score = ?, image_url = ?, move_in_date = ?, next_rent_due = ?
+                 WHERE id = ?`,
+                [unitId, phone, email, company, deposit, rentShare, credit, IMG.tenants[name], moveIn, nextDue, rows[0].id]
             );
         }
-
-        await conn.commit();
-        console.log('✅ Demo account seeded! Login with demo@gmail.com / Kajal@2004');
-    } catch (err) {
-        await conn.rollback();
-        console.error('❌ Demo seed failed (rolled back):', err.message);
-    } finally {
-        conn.release();
     }
+    return ids;
 };
 
-// --- Ensure the demo account's sample images are set ---
-//
-// This used to only fill rows where image_url was NULL or '', which meant any row
-// that had once been written with a value the app could not display stayed broken
-// forever — demo photos were reported missing on device even though the URLs load
-// fine in a browser. These are the DEMO account's own cosmetic sample images and
-// their correct values are known constants, so writing them unconditionally is
-// safe and lets the account self-heal on every boot.
-//
-// Row counts are logged because this runs on a remote host: when demo images are
-// reported missing, the log tells us whether the UPDATEs matched nothing (a name
-// mismatch) or matched and the problem is client-side.
-const backfillDemoImages = async (ownerId) => {
-    let owners = 0, properties = 0, units = 0, tenants = 0;
+// Self-healing: wipe the demo's payment history and rebuild six months of it.
+const reseedPayments = async (tenantIds) => {
+    const ids = Object.values(tenantIds);
+    if (ids.length === 0) return;
+    const placeholders = ids.map(() => '?').join(',');
+    await db.query(`DELETE FROM payments WHERE tenant_id IN (${placeholders})`, ids);
 
-    const [o] = await db.query('UPDATE owners SET profile_pic = ? WHERE id = ?', [IMG.owner, ownerId]);
-    owners = o.affectedRows || 0;
+    let inserted = 0;
+    const names = Object.keys(tenantIds);
+    for (let n = 0; n < names.length; n++) {
+        const name = names[n];
+        const tenantId = tenantIds[name];
+        const [tr] = await db.query('SELECT rent_share, next_rent_due FROM tenants WHERE id = ?', [tenantId]);
+        const rent = Number(tr[0]?.rent_share || 0);
+        if (rent <= 0) continue;
 
-    for (const [name, url] of Object.entries(IMG.properties)) {
-        const [r] = await db.query(
-            'UPDATE properties SET image_url = ? WHERE owner_id = ? AND name = ?',
-            [url, ownerId, name]
-        );
-        properties += r.affectedRows || 0;
+        // Five completed months of on-time payments, plus the current month only if
+        // the tenant is paid up (dueOffset was positive → next_rent_due in future).
+        const paidCurrentMonth = new Date(tr[0].next_rent_due) > new Date();
+        const startMonth = paidCurrentMonth ? 0 : 1;
+        for (let m = startMonth; m <= 5; m++) {
+            const date = ymd(monthsAgo(m, 2 + ((n + m) % 6))); // vary the day a little
+            const method = METHODS[(n + m) % METHODS.length];
+            await db.query(
+                `INSERT INTO payments (tenant_id, amount_paid, payment_date, payment_method, reference_id)
+                 VALUES (?, ?, ?, ?, ?)`,
+                [tenantId, rent, date, method, 'DEMO-REF']
+            );
+            inserted++;
+        }
     }
-    for (const [unitNumber, url] of Object.entries(IMG.units)) {
-        const [r] = await db.query(
-            `UPDATE units u JOIN properties p ON u.property_id = p.id
-             SET u.image_url = ?
-             WHERE p.owner_id = ? AND u.unit_number = ?`,
-            [url, ownerId, unitNumber]
-        );
-        units += r.affectedRows || 0;
-    }
-    for (const [name, url] of Object.entries(IMG.tenants)) {
-        const [r] = await db.query(
-            'UPDATE tenants SET image_url = ? WHERE owner_id = ? AND name = ?',
-            [url, ownerId, name]
-        );
-        tenants += r.affectedRows || 0;
-    }
+    console.log(`💸 Demo payments reseeded — ${inserted} across ${names.length} tenants (6-month history).`);
+};
 
-    console.log(
-        `🖼️  Demo images ensured — owner:${owners} properties:${properties} units:${units} tenants:${tenants}`
-    );
-    if (properties === 0 && units === 0 && tenants === 0) {
-        console.warn('⚠️  Demo image UPDATEs matched no rows — names may differ from the seed constants.');
+const reseedExpenses = async (propIds) => {
+    const ids = Object.values(propIds);
+    if (ids.length === 0) return;
+    const placeholders = ids.map(() => '?').join(',');
+    await db.query(`DELETE FROM expenses WHERE property_id IN (${placeholders})`, ids);
+
+    let inserted = 0;
+    for (const [propName, category, amount, monthsBack, description] of EXPENSES) {
+        const propertyId = propIds[propName];
+        if (!propertyId) continue;
+        await db.query(
+            `INSERT INTO expenses (property_id, expense_category, amount, expense_date, description)
+             VALUES (?, ?, ?, ?, ?)`,
+            [propertyId, category, amount, ymd(monthsAgo(monthsBack, 12)), description]
+        );
+        inserted++;
+    }
+    console.log(`🧾 Demo expenses reseeded — ${inserted} across ${ids.length} properties.`);
+};
+
+// The tenant-portal login, linked to one of the demo tenants so its identity is
+// consistent. The tenant portal is still a placeholder today, so this mainly makes
+// the portal signable-into for demos; it is ready for when the portal renders data.
+const ensureDemoTenantLogin = async (tenantIds) => {
+    const linkTo = tenantIds['Rahul Sharma'] || Object.values(tenantIds)[0] || null;
+    const [rows] = await db.query('SELECT id FROM tenant_users WHERE email = ?', [DEMO_TENANT_EMAIL]);
+    if (rows.length === 0) {
+        const hash = await bcrypt.hash(DEMO_TENANT_PASSWORD, 10);
+        await db.query(
+            `INSERT INTO tenant_users (name, email, phone, password_hash, tenant_id, status)
+             VALUES (?, ?, ?, ?, ?, 'Linked')`,
+            ['Rahul Sharma', DEMO_TENANT_EMAIL, DEMO_TENANT_PHONE, hash, linkTo]
+        );
+        console.log('👤 Demo tenant login created — tenant@gmail.com / Tenant@2004');
+    } else {
+        // Keep the link fresh (tenant id can change if the demo was rebuilt); leave
+        // the password alone so we don't rehash on every boot.
+        await db.query('UPDATE tenant_users SET name = ?, phone = ?, tenant_id = ?, status = ? WHERE id = ?',
+            ['Rahul Sharma', DEMO_TENANT_PHONE, linkTo, 'Linked', rows[0].id]);
     }
 };
 
 const seedDemo = async () => {
-    const [existing] = await db.query('SELECT id FROM owners WHERE email = ?', [DEMO_EMAIL]);
-    if (existing.length === 0) {
-        console.log('🌱 Seeding demo account with sample data...');
-        await createDemo();
-    } else {
-        console.log('🌱 Demo account exists — ensuring sample images are set...');
-        await backfillDemoImages(existing[0].id);
+    try {
+        const ownerId = await ensureOwner();
+        const propIds = await ensureProperties(ownerId);
+        const unitIds = await ensureUnits(propIds);
+        const tenantIds = await ensureTenants(ownerId, unitIds);
+        await reseedPayments(tenantIds);
+        await reseedExpenses(propIds);
+        await ensureDemoTenantLogin(tenantIds);
+        console.log('✅ Demo account ready — landlord demo@gmail.com / Kajal@2004, tenant tenant@gmail.com / Tenant@2004');
+    } catch (err) {
+        // Never block boot on demo seeding — the app must serve real accounts even
+        // if the demo refresh hits a transient DB error.
+        console.error('❌ Demo seed failed (non-fatal):', err.message);
     }
 };
 
