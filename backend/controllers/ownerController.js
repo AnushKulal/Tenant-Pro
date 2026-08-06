@@ -137,7 +137,11 @@ const getDashboardStats = async (req, res) => {
             db.query(`
                 SELECT
                     pay.id, pay.amount_paid, pay.payment_date, pay.payment_method,
-                    t.name as tenant_name, u.unit_number
+                    -- tenant_image is what lets the dashboard show the same face the
+                    -- Tenants tab shows. Without it the row could only render a
+                    -- generic arrow, so a payment never looked like it belonged to
+                    -- a person you recognise.
+                    t.name as tenant_name, t.image_url as tenant_image, u.unit_number
                 FROM payments pay
                 JOIN tenants t ON pay.tenant_id = t.id
                 LEFT JOIN units u ON t.unit_id = u.id

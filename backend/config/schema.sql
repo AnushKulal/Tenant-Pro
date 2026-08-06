@@ -170,9 +170,13 @@ CREATE TABLE IF NOT EXISTS `tenant_users` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- 11. password_resets (email verification codes for "forgot password")
+-- `role` scopes a code to the account type it was issued for. Owners and tenants
+-- are separate tables and the same person may legitimately hold both with one
+-- email address, so without this a code emailed for one could reset the other.
 CREATE TABLE IF NOT EXISTS `password_resets` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `email` varchar(100) NOT NULL,
+  `role` varchar(10) NOT NULL DEFAULT 'owner',
   `code` varchar(10) NOT NULL,
   `expires_at` datetime NOT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),

@@ -21,6 +21,7 @@ import HomeTab from '../components/HomeTab';
 import ProfileTab from '../components/ProfileTab';
 import SettingsTab from '../components/SettingsTab';
 import HelpSupportTab from '../components/HelpSupportTab';
+import DocumentationTab from '../components/DocumentationTab';
 import TermsTab from '../components/TermsTab';
 import PropertiesTab from '../components/PropertiesTab';
 import RoomsTab from '../components/RoomsTab';
@@ -245,6 +246,8 @@ export default function HomeScreen({ navigation }) {
                 return <SettingsTab isDark={isDark} setActiveTab={goToTab} />;
             case 'HelpSupport':
                 return <HelpSupportTab isDark={isDark} />;
+            case 'Documentation':
+                return <DocumentationTab />;
             case 'Terms':
                 return <TermsTab isDark={isDark} />;
             case 'Properties':

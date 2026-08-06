@@ -28,8 +28,14 @@ const STEPS = [
     { key: 'reset', label: 'New password' }
 ];
 
-export default function ForgotPasswordScreen({ navigation }) {
+export default function ForgotPasswordScreen({ navigation, route }) {
     const t = useTheme();
+
+    // Owners and tenants are separate accounts in separate tables, so the flow has
+    // to say which one it is resetting. Defaults to owner, which is how the screen
+    // has always behaved and what the owner login still navigates in as.
+    const role = route?.params?.role === 'tenant' ? 'tenant' : 'owner';
+    const isTenant = role === 'tenant';
 
     const [step, setStep] = useState('request'); // 'request' | 'reset' | 'done'
     const [email, setEmail] = useState('');
@@ -76,7 +82,7 @@ export default function ForgotPasswordScreen({ navigation }) {
         if (!email.trim()) { setError('Please enter your email.'); return; }
         setIsLoading(true);
         try {
-            await client.post('/auth/forgot-password', { email: email.trim() });
+            await client.post('/auth/forgot-password', { email: email.trim(), role });
             setInfo('If that email is registered, a 6-digit code has been sent. Check your inbox.');
             setStep('reset');
         } catch (e) {
@@ -94,7 +100,7 @@ export default function ForgotPasswordScreen({ navigation }) {
         setIsLoading(true);
         try {
             await client.post('/auth/reset-password', {
-                email: email.trim(), code: code.trim(), newPassword
+                email: email.trim(), code: code.trim(), newPassword, role
             });
             setStep('done');
         } catch (e) {
@@ -126,8 +132,10 @@ export default function ForgotPasswordScreen({ navigation }) {
         transform: [{ scale: successPop.interpolate({ inputRange: [0, 1], outputRange: [0.55, 1] }) }]
     };
 
+    // Naming the account type matters here: someone who holds both a landlord and a
+    // tenant account with one email needs to know which password this resets.
     const subtitle = step === 'request'
-        ? 'Enter your email and we\'ll send you a reset code.'
+        ? `Enter the email on your ${isTenant ? 'tenant account' : 'account'} and we'll send you a reset code.`
         : 'Enter the code we emailed you and choose a new password.';
 
     const notice = ({ text, tone, icon }) => (

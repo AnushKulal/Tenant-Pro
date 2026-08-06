@@ -6,7 +6,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import client from '../api/client';
 import { useTheme, withAlpha } from '../theme';
-import { GlassView } from '../ui';
+import { GlassView, Avatar } from '../ui';
 
 export default function HomeTab({ isDark, selectedProperty }) {
     const t = useTheme();
@@ -163,9 +163,27 @@ export default function HomeTab({ isDark, selectedProperty }) {
                     {recentPayments.length > 0 ? recentPayments.map((payment, index) => (
                         <View key={payment.id} style={[styles.paymentItem, index !== recentPayments.length - 1 && { borderBottomWidth: 1, borderBottomColor: t.colors.border }]}>
 
-                            {/* Icon / Avatar */}
-                            <View style={[styles.paymentIconBox, { backgroundColor: withAlpha(t.colors.success, 0.15) }]}>
-                                <Ionicons name="arrow-down" size={16} color={t.colors.success} />
+                            {/* The tenant's own face, with the money-in arrow kept as
+                                a badge so the row still reads as an incoming payment
+                                at a glance. Avatar falls back to initials on a
+                                gradient when there is no photo — which also means
+                                this degrades gracefully against a backend that
+                                predates `tenant_image`. */}
+                            <View style={styles.paymentAvatarWrap}>
+                                <Avatar
+                                    name={payment.tenant_name}
+                                    uri={payment.tenant_image}
+                                    size={42}
+                                    radius={21}
+                                />
+                                <View
+                                    style={[
+                                        styles.paymentBadge,
+                                        { backgroundColor: t.colors.success, borderColor: t.colors.bg }
+                                    ]}
+                                >
+                                    <Ionicons name="arrow-down" size={10} color={t.colors.onPrimary} />
+                                </View>
                             </View>
 
                             {/* Tenant Details */}
@@ -226,7 +244,12 @@ const styles = StyleSheet.create({
     // ✨ NEW STYLES FOR RECENT PAYMENTS ✨
     recentListContainer: { borderRadius: 20, overflow: 'hidden', paddingHorizontal: 16, paddingVertical: 8 },
     paymentItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14 },
-    paymentIconBox: { width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginRight: 14 },
+    paymentAvatarWrap: { marginRight: 14 },
+    paymentBadge: {
+        position: 'absolute', bottom: -1, right: -1,
+        width: 18, height: 18, borderRadius: 9, borderWidth: 2,
+        alignItems: 'center', justifyContent: 'center'
+    },
     paymentInfo: { flex: 1, justifyContent: 'center' },
     paymentName: { fontSize: 15, fontWeight: '700', marginBottom: 2 },
     paymentSub: { fontSize: 12, fontWeight: '500' },

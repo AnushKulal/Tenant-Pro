@@ -127,6 +127,7 @@ export default function HeaderMenu({
         { key: 'Transactions', icon: 'wallet-outline', label: 'Transactions', tab: 'Transactions' },
         { key: 'PaymentSettings', icon: 'qr-code-outline', label: 'Payment Setup', tab: 'PaymentSettings' },
         { key: 'Settings', icon: 'settings-outline', label: 'Settings', tab: 'Settings' },
+        { key: 'Documentation', icon: 'book-outline', label: 'Documentation', tab: 'Documentation' },
         { key: 'HelpSupport', icon: 'help-buoy-outline', label: 'Help & Support', tab: 'HelpSupport' },
         { key: 'divider-1', divider: true },
         {

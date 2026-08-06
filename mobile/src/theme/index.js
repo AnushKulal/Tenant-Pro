@@ -184,29 +184,35 @@ const THEME_KEY = 'themePreference'; // 'system' | 'dark' | 'light'
 
 const ThemeContext = createContext(null);
 
-// --- Theme cross-dissolve ----------------------------------------------------
+// --- Theme cross-fade --------------------------------------------------------
 // Switching theme means every colour in the tree changes at once, and there is no
 // way to tween that: colours live in plain style objects, and animating hundreds
-// of them would need the JS driver and would still not be atomic.
-//
-// So the swap itself stays instant and is simply hidden. A full-screen pane in the
-// INCOMING background colour fades in, the theme flips underneath it, and the pane
-// fades back out to reveal the new one. What you see is one surface dissolving
-// into the other, which is what "smooth" means here — and it costs exactly one
-// animated opacity on the native driver, regardless of how many screens are
+// of them would need the JS driver and would still not be atomic. So the swap
+// stays instant and is hidden behind a full-screen pane whose opacity is the only
+// thing animated — one native-driver value, regardless of how many screens are
 // mounted.
 //
+// The pane is the colour you are coming FROM, not the one you are going to. That
+// detail is the whole difference between a cross-fade and a flash. Using the
+// INCOMING colour (the first version of this) meant switching to light painted a
+// blank WHITE screen before the light UI existed, and switching to dark went
+// blank BLACK first — a brightness jump to a screen with nothing on it, which is
+// exactly what a flash is. Fading up the colour already on screen changes nothing
+// visible; the content simply settles into its own background. Then the new theme
+// fades up out of it, so brightness only ever moves gradually and in one
+// direction.
+//
 // The hold matters: re-styling the whole tree takes more than a frame, so the
-// cover stays fully opaque briefly after the swap. Without it the tail of the
-// re-render is visible as a flash.
+// pane stays fully opaque briefly after the swap. Without it the tail of that
+// re-render shows.
 //
 // Caveat worth knowing if a toggle is ever added inside a Modal: this pane lives
 // at the app root, and a Modal renders in its own Android window, so it would
-// paint over the dissolve. Every current toggle site (the header menu, Settings)
-// is in-window.
-const COVER_IN = 200;
-const COVER_HOLD = 90;
-const COVER_OUT = 320;
+// paint over the fade. Every current toggle site (the header menu, Settings) is
+// in-window.
+const COVER_IN = 140;
+const COVER_HOLD = 60;
+const COVER_OUT = 260;
 
 // `initialPreference` pins the theme instead of following the OS. The app leaves
 // it alone ('system' → restore whatever the user last chose); it exists so a
@@ -248,9 +254,10 @@ export function ThemeProvider({ children, initialPreference = 'system' }) {
 
     // Runs the cover-in → commit → hold → reveal sequence. `commit` is whatever
     // state change actually flips the theme, so it lands while nothing is visible.
-    const dissolveTo = useCallback((nextIsDark, commit) => {
+    // The pane takes the CURRENT background — see the note above the constants.
+    const crossFade = useCallback((commit) => {
         dissolving.current = true;
-        setCoverColor((nextIsDark ? darkColors : lightColors).bg);
+        setCoverColor((isDark ? darkColors : lightColors).bg);
         cover.setValue(0);
 
         Animated.timing(cover, {
@@ -278,7 +285,7 @@ export function ThemeProvider({ children, initialPreference = 'system' }) {
                 });
             }, COVER_HOLD);
         });
-    }, [cover]);
+    }, [cover, isDark]);
 
     const setMode = useCallback((mode) => {
         // Ignore a second tap mid-dissolve rather than stacking animations that
@@ -301,11 +308,11 @@ export function ThemeProvider({ children, initialPreference = 'system' }) {
             return;
         }
 
-        dissolveTo(nextIsDark, () => {
+        crossFade(() => {
             setPreference(mode);
             persist();
         });
-    }, [appliedScheme, isDark, dissolveTo]);
+    }, [appliedScheme, isDark, crossFade]);
 
     // Adopt OS scheme changes.
     useEffect(() => {
@@ -319,8 +326,8 @@ export function ThemeProvider({ children, initialPreference = 'system' }) {
             return;
         }
 
-        dissolveTo(systemScheme === 'dark', () => setAppliedScheme(systemScheme));
-    }, [systemScheme, appliedScheme, preference, dissolveTo]);
+        crossFade(() => setAppliedScheme(systemScheme));
+    }, [systemScheme, appliedScheme, preference, crossFade]);
 
     const value = useMemo(() => {
         const colors = isDark ? darkColors : lightColors;
