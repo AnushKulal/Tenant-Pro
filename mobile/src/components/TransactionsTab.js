@@ -166,7 +166,7 @@ const styles = StyleSheet.create({
     scrollContent: { paddingHorizontal: 20, paddingTop: 5, paddingBottom: 40 },
 
     searchBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 15, height: 50 },
-    searchInput: { flex: 1, fontSize: 15, fontWeight: '500' },
+    searchInput: { flex: 1, minWidth: 0, fontSize: 15, fontWeight: '500' },
 
     // ✨ Month Group Styles
     monthGroup: { marginBottom: 25 },

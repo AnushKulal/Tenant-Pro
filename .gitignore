@@ -1,0 +1,4 @@
+
+# Python bytecode from vendored skills
+__pycache__/
+*.pyc
