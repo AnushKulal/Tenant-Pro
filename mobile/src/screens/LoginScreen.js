@@ -571,6 +571,32 @@ export default function LoginScreen({ navigation, route }) {
                                         {generalError}
                                     </Text>
                                 </GlassView>
+
+                                {/* The recovery action belongs to the failure, not
+                                    to the corner of the form. Swapping the standing
+                                    "Forgot Password?" link into a bordered button
+                                    put a second, differently-shaped control next to
+                                    the one the eye was already on. This sits under
+                                    the message that prompted it and leaves the rest
+                                    of the form alone. */}
+                                {wrongCredentials ? (
+                                    <Pressable
+                                        onPress={() => navigation.navigate('ForgotPassword')}
+                                        disabled={anyLoading}
+                                        style={({ pressed }) => [
+                                            styles.errorAction,
+                                            { borderRadius: t.radii.md },
+                                            pressed && { backgroundColor: withAlpha(t.colors.danger, 0.14) }
+                                        ]}
+                                        accessibilityRole="button"
+                                        accessibilityLabel="Reset your password"
+                                    >
+                                        <Text style={[t.typography.caption, styles.errorActionText, { color: t.colors.danger }]}>
+                                            Reset your password
+                                        </Text>
+                                        <Ionicons name="arrow-forward" size={14} color={t.colors.danger} />
+                                    </Pressable>
+                                ) : null}
                             </Animated.View>
                         ) : null}
 
@@ -740,8 +766,8 @@ export default function LoginScreen({ navigation, route }) {
                                 importantForAccessibility={isSignup ? 'no-hide-descendants' : 'auto'}
                             >
                                 <GlassButton
-                                    label={wrongCredentials ? 'Reset your password' : 'Forgot Password?'}
-                                    variant={wrongCredentials ? 'glass' : 'ghost'}
+                                    label="Forgot Password?"
+                                    variant="ghost"
                                     size="sm"
                                     fullWidth={false}
                                     disabled={anyLoading}
@@ -865,6 +891,11 @@ export default function LoginScreen({ navigation, route }) {
 }
 
 const styles = StyleSheet.create({
+    errorAction: {
+        flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start',
+        gap: 6, marginTop: 8, paddingVertical: 6, paddingHorizontal: 10
+    },
+    errorActionText: { fontWeight: '700' },
     flex: { flex: 1 },
     // Centres the stack vertically on tall phones but still scrolls when the
     // keyboard shrinks the viewport.
