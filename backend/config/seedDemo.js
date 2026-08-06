@@ -279,6 +279,28 @@ const ensureDemoTenantLogin = async (tenantIds) => {
     }
 };
 
+// Self-healing demo maintenance requests, so the tenant portal's Requests section
+// shows real entries in a demo rather than an empty state. Attached to the tenant
+// the demo tenant login is linked to (Rahul Sharma).
+const reseedRequests = async (ownerId, tenantIds) => {
+    const tenantId = tenantIds['Rahul Sharma'];
+    if (!tenantId) return;
+    await db.query('DELETE FROM maintenance_requests WHERE tenant_id = ?', [tenantId]);
+    const rows = [
+        ['Plumbing', 'Leaking tap in bathroom', 'The cold-water tap drips constantly.', 'Medium', 'In Progress'],
+        ['Electrical', 'Ceiling fan not working', 'Fan stopped after the power cut.', 'High', 'Open'],
+        ['Appliance', 'Geyser serviced', 'Water heater checked and cleaned.', 'Low', 'Resolved']
+    ];
+    for (const [category, title, description, priority, status] of rows) {
+        await db.query(
+            `INSERT INTO maintenance_requests (tenant_id, owner_id, category, title, description, priority, status)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [tenantId, ownerId, category, title, description, priority, status]
+        );
+    }
+    console.log(`🔧 Demo maintenance requests reseeded — ${rows.length}.`);
+};
+
 const seedDemo = async () => {
     try {
         const ownerId = await ensureOwner();
@@ -287,6 +309,7 @@ const seedDemo = async () => {
         const tenantIds = await ensureTenants(ownerId, unitIds);
         await reseedPayments(tenantIds);
         await reseedExpenses(propIds);
+        await reseedRequests(ownerId, tenantIds);
         await ensureDemoTenantLogin(tenantIds);
         console.log('✅ Demo account ready — landlord demo@gmail.com / Kajal@2004, tenant tenant@gmail.com / Tenant@2004');
     } catch (err) {
