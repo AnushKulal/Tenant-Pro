@@ -3,8 +3,10 @@
 // but its data self-heals to a known, full state on every boot, so a demo always
 // starts from the same rich picture no matter what the last demo did to it.
 //
-//   Landlord login:  demo@gmail.com     /  Kajal@2004
-//   Tenant login:    tenant@gmail.com   /  Tenant@2004   (tenant portal)
+//   Landlord login:  demo@gmail.com   /  Kajal@2004   (landlord portal)
+//   Tenant login:    demo@gmail.com   /  Kajal@2004   (tenant portal — SAME
+//                    credential works on both; mobile 9000000000 too)
+//   Tenant alias:    tenant@gmail.com /  Tenant@2004  (kept working too)
 //
 // Design notes:
 //   • Structure (properties/units/tenants) is created-if-missing and then UPDATED
@@ -257,22 +259,16 @@ const reseedExpenses = async (propIds) => {
     console.log(`🧾 Demo expenses reseeded — ${inserted} across ${ids.length} properties.`);
 };
 
-// The tenant-portal login, linked to one of the demo tenants so its identity is
-// consistent, so the tenant portal shows this tenant's real dues, payments, home
-// and requests when signed in.
+// Upsert a tenant-portal login row (idempotent on the UNIQUE email), always
+// re-asserting the password so a demo login can never drift.
 //
-// Written as a single UPSERT on the UNIQUE email so the row is GUARANTEED to exist
-// with the KNOWN password on every boot. Two things this fixes vs the old
-// select-then-update:
-//   • it can never leave a half-seeded state, and
-//   • it always re-asserts the demo password. The old code skipped the password on
-//     the update branch (to avoid a rehash), so if the stored hash had ever drifted
-//     — a different earlier seed, a manual change — the demo login would silently
-//     stop working. For a single demo account, one bcrypt per boot is nothing and
-//     determinism is worth far more.
-const ensureDemoTenantLogin = async (tenantIds) => {
-    const linkTo = tenantIds['Rahul Sharma'] || Object.values(tenantIds)[0] || null;
-    const hash = await bcrypt.hash(DEMO_TENANT_PASSWORD, 10);
+// UPSERT — not select-then-update — so the row is GUARANTEED to exist with the
+// KNOWN password on every boot: it can never leave a half-seeded state, and it
+// always re-asserts the password (the old update path skipped it to avoid a
+// rehash, so a drifted hash would silently break the login). One bcrypt per boot
+// for a couple of demo rows is nothing next to that determinism.
+const upsertTenantLogin = async ({ name, email, phone, password, tenantId }) => {
+    const hash = await bcrypt.hash(password, 10);
     await db.query(
         `INSERT INTO tenant_users (name, email, phone, password_hash, tenant_id, status)
          VALUES (?, ?, ?, ?, ?, 'Linked')
@@ -282,9 +278,42 @@ const ensureDemoTenantLogin = async (tenantIds) => {
             password_hash = VALUES(password_hash),
             tenant_id = VALUES(tenant_id),
             status = VALUES(status)`,
-        ['Rahul Sharma', DEMO_TENANT_EMAIL, DEMO_TENANT_PHONE, hash, linkTo]
+        [name, email, phone, hash, tenantId]
     );
-    console.log('👤 Demo tenant login ensured — tenant@gmail.com / Tenant@2004 (linked to Rahul Sharma).');
+};
+
+// The tenant-portal login(s), each linked to a demo tenant so the portal shows
+// that tenant's real dues, payments, home and requests when signed in.
+const ensureDemoTenantLogin = async (tenantIds) => {
+    const linkTo = tenantIds['Rahul Sharma'] || Object.values(tenantIds)[0] || null;
+
+    // ONE credential for BOTH portals. The landlord demo login (demo@gmail.com /
+    // Kajal@2004, mobile 9000000000) also signs into the TENANT portal, linked to
+    // Rahul Sharma. This is safe because the two portal logins hit DIFFERENT tables
+    // — owner login queries `owners`, tenant login queries `tenant_users` — so the
+    // same identifier can live in both with no ambiguity at sign-in. It is a
+    // demo-only convenience: the mutual-exclusivity check in registration still
+    // stops REAL users from holding both. Same phone as the landlord so the
+    // "Mobile" tab matches too, so the whole demo has a single memorable login.
+    await upsertTenantLogin({
+        name: 'Rahul Sharma',
+        email: DEMO_EMAIL,       // demo@gmail.com — same as the landlord
+        phone: DEMO_PHONE,       // 9000000000     — same as the landlord
+        password: DEMO_PASSWORD, // Kajal@2004     — same as the landlord
+        tenantId: linkTo
+    });
+
+    // The original dedicated tenant login is kept working as an alias, so anything
+    // that already used it does not break.
+    await upsertTenantLogin({
+        name: 'Rahul Sharma',
+        email: DEMO_TENANT_EMAIL,       // tenant@gmail.com
+        phone: DEMO_TENANT_PHONE,       // 9000000001
+        password: DEMO_TENANT_PASSWORD, // Tenant@2004
+        tenantId: linkTo
+    });
+
+    console.log('👤 Demo tenant-portal login ensured — demo@gmail.com / Kajal@2004 works on BOTH portals (alias: tenant@gmail.com / Tenant@2004).');
 };
 
 // Self-healing demo maintenance requests, so the tenant portal's Requests section
