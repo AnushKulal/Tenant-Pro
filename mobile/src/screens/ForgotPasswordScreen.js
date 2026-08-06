@@ -24,7 +24,7 @@ import { Screen, GlassCard, GlassView, GlassButton, GlassInput, BrandMark, Progr
 
 // The stepper only tracks the two data-entry steps; 'done' reads as complete.
 const STEPS = [
-    { key: 'request', label: 'Your email' },
+    { key: 'request', label: 'Your account' },
     { key: 'reset', label: 'New password' }
 ];
 
@@ -79,11 +79,17 @@ export default function ForgotPasswordScreen({ navigation, route }) {
 
     const requestCode = async () => {
         setError(''); setInfo('');
-        if (!email.trim()) { setError('Please enter your email.'); return; }
+        if (!email.trim()) { setError('Enter your registered email or mobile number.'); return; }
         setIsLoading(true);
         try {
-            await client.post('/auth/forgot-password', { email: email.trim(), role });
-            setInfo('If that email is registered, a 6-digit code has been sent. Check your inbox.');
+            const res = await client.post('/auth/forgot-password', { identifier: email.trim(), email: email.trim(), role });
+            // The server echoes the masked destination, so the message can say WHERE
+            // to look. A code sent to an address you forgot you used is otherwise
+            // indistinguishable from one that was never sent.
+            const sentTo = res?.data?.sentTo;
+            setInfo(sentTo
+                ? `A 6-digit code has been sent to ${sentTo}. Check that inbox.`
+                : 'A 6-digit code has been sent. Check your inbox.');
             setStep('reset');
         } catch (e) {
             setError(e.response?.data?.message || 'Something went wrong. Please try again.');
@@ -100,7 +106,7 @@ export default function ForgotPasswordScreen({ navigation, route }) {
         setIsLoading(true);
         try {
             await client.post('/auth/reset-password', {
-                email: email.trim(), code: code.trim(), newPassword, role
+                identifier: email.trim(), email: email.trim(), code: code.trim(), newPassword, role
             });
             setStep('done');
         } catch (e) {
@@ -135,7 +141,7 @@ export default function ForgotPasswordScreen({ navigation, route }) {
     // Naming the account type matters here: someone who holds both a landlord and a
     // tenant account with one email needs to know which password this resets.
     const subtitle = step === 'request'
-        ? `Enter the email on your ${isTenant ? 'tenant account' : 'account'} and we'll send you a reset code.`
+        ? `Enter the email or mobile number on your ${isTenant ? 'tenant account' : 'account'} and we'll send a code to its registered email.`
         : 'Enter the code we emailed you and choose a new password.';
 
     const notice = ({ text, tone, icon }) => (
@@ -281,11 +287,17 @@ export default function ForgotPasswordScreen({ navigation, route }) {
 
                             {step === 'request' ? (
                                 <>
+                                    {/* Either identifier, matching what sign-in
+                                        accepts — someone who signs in with their
+                                        mobile number should not have to remember
+                                        which email they used. The code still goes to
+                                        the address on the account, never to anything
+                                        typed here. */}
                                     <GlassInput
                                         value={email}
                                         onChangeText={setEmail}
-                                        placeholder="Email address"
-                                        icon="mail-outline"
+                                        placeholder="Email or mobile number"
+                                        icon="person-outline"
                                         editable={!isLoading}
                                         autoCapitalize="none"
                                         keyboardType="email-address"

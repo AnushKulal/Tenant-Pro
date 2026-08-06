@@ -3,13 +3,11 @@
     "name": "TenantPro",
     "slug": "mobile",
     "owner": "anush_kulal",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/logo.png",
     "userInterfaceStyle": "automatic",
-    "runtimeVersion": {
-      "policy": "appVersion"
-    },
+    "runtimeVersion": "1.0.0",
     "updates": {
       "enabled": true,
       "url": "https://u.expo.dev/3b258101-bef2-412f-8be0-53af8b224dfb",

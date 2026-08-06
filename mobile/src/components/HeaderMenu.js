@@ -41,6 +41,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { GlassView, Avatar } from '../ui';
 import { useTheme, withAlpha } from '../theme';
+import { APP_VERSION_LABEL } from '../appInfo';
 
 // Wider than a plain row list needs: the account block at the top carries a name
 // and an email, and those should not be truncating on a normal-length address.
@@ -70,7 +71,7 @@ export default function HeaderMenu({
     fullName,
     email,
     profilePic,
-    version = 'TenantPro v1.0'
+    version = APP_VERSION_LABEL
 }) {
     const t = useTheme();
     const insets = useSafeAreaInsets();

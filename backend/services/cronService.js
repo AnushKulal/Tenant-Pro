@@ -1,17 +1,15 @@
 // File: backend/services/cronService.js
 const cron = require('node-cron');
-const nodemailer = require('nodemailer');
 const twilio = require('twilio');
 const db = require('../config/db');
 
-// --- 1. EMAIL SETUP (Nodemailer) ---
-const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-        user: process.env.EMAIL_USER, 
-        pass: process.env.EMAIL_PASS  
-    }
-});
+// --- 1. EMAIL SETUP ---
+// Deliberately the SHARED transporter, not a private one. This file used to build
+// its own Gmail-only transport, which meant configuring the server with a
+// transactional provider (SMTP_HOST/PORT/USER/PASS) fixed password-reset emails
+// while rent reminders stayed silently broken — two email paths, one configured.
+// One transporter, one place to configure, one boot check that covers both.
+const { transporter, isMailConfigured, mailFrom } = require('../config/mailer');
 
 // --- 2. TWILIO SETUP (SMS & WhatsApp) ---
 let twilioClient = null;
@@ -72,7 +70,7 @@ const checkAndSendRentReminders = async () => {
             // ==============================================
             if (tenant.notify_email && tenant.tenant_email) {
                 const mailOptions = {
-                    from: `"TenantPro System" <${process.env.EMAIL_USER}>`,
+                    from: `"TenantPro System" <${mailFrom}>`,
                     to: tenant.tenant_email,
                     subject: `Rent Reminder: ${tenant.property_name} - Unit ${tenant.unit_number}`,
                     html: `
@@ -92,11 +90,18 @@ const checkAndSendRentReminders = async () => {
                     `
                 };
 
-                try {
-                    await transporter.sendMail(mailOptions);
-                    console.log(`📧 Email sent to ${tenant.tenant_name}`);
-                } catch (err) {
-                    console.error(`❌ Failed to send email to ${tenant.tenant_name}:`, err.message);
+                if (!isMailConfigured) {
+                    // Say it per run rather than failing quietly for every tenant:
+                    // an unconfigured server would otherwise log a wall of identical
+                    // send errors that look like a delivery problem.
+                    console.warn(`⚠️  [CRON] Email not configured — no reminder sent to ${tenant.tenant_name}.`);
+                } else {
+                    try {
+                        await transporter.sendMail(mailOptions);
+                        console.log(`📧 Email sent to ${tenant.tenant_name}`);
+                    } catch (err) {
+                        console.error(`❌ Failed to send email to ${tenant.tenant_name}:`, err.message);
+                    }
                 }
             }
 
