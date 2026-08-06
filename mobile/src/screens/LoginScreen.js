@@ -19,7 +19,6 @@ import {
     Easing,
     KeyboardAvoidingView,
     Platform,
-    ScrollView,
     Pressable,
     Alert
 } from 'react-native';
@@ -27,7 +26,7 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import client from '../api/client';
 import { useTheme, withAlpha } from '../theme';
-import { Screen, GlassCard, GlassView, GlassButton, GlassInput, BrandMark, SegmentedTabs, Avatar } from '../ui';
+import { Screen, GlassCard, GlassView, GlassButton, GlassInput, BrandMark, SegmentedTabs, Avatar, FitToScreen } from '../ui';
 import { enterOwnerApp } from '../navigation/flow';
 
 // The top toggle picks the sign-in IDENTIFIER. It used to switch login/sign-up,
@@ -514,19 +513,7 @@ export default function LoginScreen({ navigation, route }) {
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                 style={styles.flex}
             >
-                <ScrollView
-                    // style flex:1 bounds the scroll viewport to the screen. Without
-                    // it, contentContainerStyle's `flexGrow:1 + justifyContent:center`
-                    // centres correctly on tall screens but CLIPS the top on short
-                    // ones — the header scrolls off above the top and can't be reached.
-                    // Bounded height turns that same centering into "centre when it
-                    // fits, scroll when it doesn't", which is what makes it work on
-                    // every screen size and with the keyboard open.
-                    style={styles.flex}
-                    contentContainerStyle={[styles.scrollBody, { paddingBottom: t.spacing.huge }]}
-                    keyboardShouldPersistTaps="handled"
-                    showsVerticalScrollIndicator={false}
-                >
+                <FitToScreen>
                     <Animated.View style={headerStyle}>
                         <Pressable
                             onPress={() => navigation.navigate('RoleSelection')}
@@ -905,7 +892,7 @@ export default function LoginScreen({ navigation, route }) {
                             </Text>
                         </Pressable>
                     </Animated.View>
-                </ScrollView>
+                </FitToScreen>
             </KeyboardAvoidingView>
         </Screen>
     );
@@ -920,7 +907,6 @@ const styles = StyleSheet.create({
     flex: { flex: 1 },
     // Centres the stack vertically on tall phones but still scrolls when the
     // keyboard shrinks the viewport.
-    scrollBody: { flexGrow: 1, justifyContent: 'center', paddingTop: 8 },
     backRow: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', paddingVertical: 4 },
     errorStrip: { flexDirection: 'row', alignItems: 'center', padding: 12 },
     errorText: { flex: 1, fontWeight: '700' },
