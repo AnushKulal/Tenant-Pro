@@ -59,6 +59,7 @@ const paymentRoutes = require('./routes/paymentRoutes');
 const { initCronJobs, checkAndSendRentReminders } = require('./services/cronService');
 const initDb = require('./config/initDb');
 const seedDemo = require('./config/seedDemo');
+const { mailProvider, isMailConfigured, verifyMail } = require('./config/mailer');
 
 // --- Mount Routes ---
 app.use('/api/auth', authRoutes);
@@ -81,7 +82,15 @@ app.get('/', (req, res) => {
 app.get('/healthz', async (req, res) => {
     try {
         await db.query('SELECT 1');
-        res.status(200).json({ status: 'ok', db: 'up', time: new Date().toISOString() });
+        // `mail` is reported because a missing email configuration is invisible
+        // otherwise: password reset simply never arrives and nothing on the client
+        // can tell you why. Only the provider name is exposed, never a credential.
+        res.status(200).json({
+            status: 'ok',
+            db: 'up',
+            mail: isMailConfigured ? mailProvider : 'not-configured',
+            time: new Date().toISOString()
+        });
     } catch (e) {
         // Surface the real driver error so connection problems can be diagnosed
         // (wrong host/port/SSL/credentials, IP allowlist, etc.).
@@ -90,6 +99,7 @@ app.get('/healthz', async (req, res) => {
         res.status(500).json({
             status: 'degraded',
             db: 'down',
+            mail: isMailConfigured ? mailProvider : 'not-configured',
             code: e.code,
             errno: e.errno
         });
@@ -116,6 +126,11 @@ const PORT = process.env.PORT || 5000;
 // requests don't need to wait for init; we run it in the background instead.
 app.listen(PORT, () => {
     console.log(`✅ Server is running on port ${PORT}`);
+    // Say at boot whether reset emails can actually be sent. Credentials that are
+    // present but wrong look exactly like no credentials from the outside — the
+    // request succeeds and the email never arrives — so this is the one place that
+    // difference becomes visible. Never blocks serving.
+    verifyMail().catch(() => {});
 });
 
 // Background init (non-blocking): create tables if missing, seed demo once,

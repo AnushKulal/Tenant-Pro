@@ -2,7 +2,7 @@
 const db = require('../config/db');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { transporter, isMailConfigured } = require('../config/mailer');
+const { transporter, isMailConfigured, mailFrom } = require('../config/mailer');
 
 // --- Registration Logic ---
 const registerOwner = async (req, res) => {
@@ -126,6 +126,15 @@ const forgotPassword = async (req, res) => {
             return res.status(400).json({ message: 'Please provide your email.' });
         }
 
+        // Say so plainly rather than accepting the request and dropping it. This is
+        // a server-wide condition, identical for every address, so it leaks nothing.
+        if (!isMailConfigured) {
+            console.warn('⚠️  Password reset requested but email is not configured — see the boot log.');
+            return res.status(503).json({
+                message: 'Password reset is unavailable right now. Please contact support.'
+            });
+        }
+
         const target = resolveTarget(role);
         const [owners] = await db.query(
             `SELECT id, name FROM \`${target.table}\` WHERE email = ?`,
@@ -147,10 +156,10 @@ const forgotPassword = async (req, res) => {
                 [email, target.role, code]
             );
 
-            if (isMailConfigured) {
+            {
                 try {
                     await transporter.sendMail({
-                        from: `"TenantPro" <${process.env.EMAIL_USER}>`,
+                        from: `"TenantPro" <${mailFrom}>`,
                         to: email,
                         subject: 'Your TenantPro password reset code',
                         html: `
@@ -164,10 +173,17 @@ const forgotPassword = async (req, res) => {
                     });
                     console.log(`📧 Password reset code sent to ${email}`);
                 } catch (mailErr) {
+                    // Previously this was swallowed and the request still answered
+                    // "a code has been sent". The user then waited for an email that
+                    // was never going to arrive, with nothing anywhere saying why.
+                    // A send failure is effectively always global (bad credentials,
+                    // provider down) rather than specific to one address, so
+                    // reporting it reveals nothing about who is registered.
                     console.error('❌ Failed to send reset email:', mailErr.message);
+                    return res.status(502).json({
+                        message: 'We could not send the email just now. Please try again in a minute.'
+                    });
                 }
-            } else {
-                console.warn(`⚠️ EMAIL not configured — reset code for ${email} is ${code} (dev only).`);
             }
         }
 
