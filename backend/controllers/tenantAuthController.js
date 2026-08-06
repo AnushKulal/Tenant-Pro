@@ -15,9 +15,19 @@ const registerTenant = async (req, res) => {
             return res.status(400).json({ message: 'Password must be at least 6 characters.' });
         }
 
-        const [existing] = await db.query('SELECT id FROM tenant_users WHERE email = ?', [email]);
+        // Check the phone too: it is a sign-in identifier now, so a duplicate one
+        // would make that number ambiguous at login. Reported separately so the user
+        // knows which field to change.
+        const [existing] = await db.query(
+            'SELECT email, phone FROM tenant_users WHERE email = ? OR phone = ?',
+            [email, phone]
+        );
         if (existing.length > 0) {
-            return res.status(409).json({ message: 'An account with this email already exists.' });
+            const clash = existing[0];
+            if (clash.email === email) {
+                return res.status(409).json({ message: 'An account with this email already exists.' });
+            }
+            return res.status(409).json({ message: 'This mobile number is already registered.' });
         }
 
         const passwordHash = await bcrypt.hash(password, 10);
@@ -46,20 +56,31 @@ const registerTenant = async (req, res) => {
 // --- Tenant Login ---
 const loginTenant = async (req, res) => {
     try {
-        const { email, password } = req.body;
-        if (!email || !password) {
-            return res.status(400).json({ message: 'Please provide email and password.' });
+        // Email OR mobile number, same as the landlord side. `email` still accepted
+        // so an older build keeps working.
+        const { email, identifier, password } = req.body;
+        const login = String(identifier ?? email ?? '').trim();
+
+        if (!login || !password) {
+            return res.status(400).json({ message: 'Enter your email or mobile number and your password.' });
         }
 
-        const [rows] = await db.query('SELECT * FROM tenant_users WHERE email = ?', [email]);
+        const [rows] = await db.query(
+            'SELECT * FROM tenant_users WHERE email = ? OR phone = ?',
+            [login, login]
+        );
         const user = rows[0];
+
+        // Same message either way, so nobody can enumerate registered accounts.
+        const WRONG = 'Incorrect email/mobile number or password.';
+
         if (!user) {
-            return res.status(401).json({ message: 'Invalid email or password.' });
+            return res.status(401).json({ message: WRONG });
         }
 
         const isMatch = await bcrypt.compare(password, user.password_hash);
         if (!isMatch) {
-            return res.status(401).json({ message: 'Invalid email or password.' });
+            return res.status(401).json({ message: WRONG });
         }
 
         const token = jwt.sign(

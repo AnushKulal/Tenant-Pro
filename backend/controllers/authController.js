@@ -51,23 +51,32 @@ const registerOwner = async (req, res) => {
 // --- Login Logic ---
 const loginOwner = async (req, res) => {
     try {
-        const { email, password } = req.body;
+        // Sign-in accepts an email OR a mobile number. `identifier` is what the app
+        // sends now; `email` is still honoured so an older build keeps working.
+        const { email, identifier, password } = req.body;
+        const login = String(identifier ?? email ?? '').trim();
 
-        if (!email || !password) {
-            return res.status(400).json({ message: 'Please provide email and password' });
+        if (!login || !password) {
+            return res.status(400).json({ message: 'Enter your email or mobile number and your password.' });
         }
 
-        const sql = `SELECT * FROM owners WHERE email = ?`;
-        const [rows] = await db.execute(sql, [email]);
-        const owner = rows[0]; 
+        // One query for both: phone is unique per owner, so matching either column
+        // cannot return someone else's account.
+        const sql = `SELECT * FROM owners WHERE email = ? OR phone = ?`;
+        const [rows] = await db.execute(sql, [login, login]);
+        const owner = rows[0];
+
+        // Deliberately identical for "no such account" and "wrong password" — telling
+        // them apart would let anyone enumerate who is registered.
+        const WRONG = 'Incorrect email/mobile number or password.';
 
         if (!owner) {
-            return res.status(401).json({ message: 'Invalid email or password' });
+            return res.status(401).json({ message: WRONG });
         }
 
         const isMatch = await bcrypt.compare(password, owner.password_hash);
         if (!isMatch) {
-            return res.status(401).json({ message: 'Invalid email or password' });
+            return res.status(401).json({ message: WRONG });
         }
 
         // Generate JWT token

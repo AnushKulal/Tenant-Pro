@@ -30,7 +30,10 @@ import { useTheme, withAlpha } from '../theme';
 import { Screen, GlassCard, GlassView, GlassButton, GlassInput, BrandMark, SegmentedTabs, Avatar } from '../ui';
 import { enterOwnerApp } from '../navigation/flow';
 
-const MODES = [{ label: 'Login', value: 'login' }, { label: 'Sign Up', value: 'signup' }];
+// The top toggle picks the sign-in IDENTIFIER. It used to switch login/sign-up,
+// which gave creating an account — the rarest action here — equal billing with the
+// one people perform daily. Sign-up moved to the link at the bottom of the screen.
+const LOGIN_BY = [{ label: 'Email', value: 'email' }, { label: 'Mobile', value: 'phone' }];
 
 const SOCIALS = [
     { provider: 'Google', icon: 'logo-google' },
@@ -54,53 +57,52 @@ const scorePassword = (pw) => {
 };
 
 // --- Collapsible ------------------------------------------------------------
-// Mode-specific fields live in here. Only this small wrapper animates its
-// height; the surrounding GlassCard then grows and shrinks naturally, which is
-// the "fields enlarge" effect — animating the whole card's height would put the
-// entire form on the JS thread for every frame.
+// Shows or hides the fields that belong to only one mode.
 //
-// height cannot run on the native driver (that only supports transform and
-// opacity), so this uses useNativeDriver: false deliberately. The children's
-// own fade/slide is native-driven by the caller.
+// It used to animate its own `height` from a measured natural height while
+// clipping the children with overflow:'hidden'. That measurement is the bug that
+// made sign-up unusable: on Android the clipped child reported a height of 0, so
+// `natural` never became a real number and the block stayed collapsed even in
+// sign-up mode. The fields were therefore invisible AND empty, and validation
+// answered "Please fill in all fields" about inputs the user could not see. It
+// looked correct in a browser render, because react-native-web does not clip a
+// child's own measured box the way Yoga does — the same web/native divergence
+// that has bitten this app before, and the reason it survived review.
 //
-// LayoutAnimation is not used: this app is RN 0.81 + New Architecture, where its
-// support is inconsistent. The height is measured instead.
+// So nothing is measured any more. The children are simply not rendered when
+// closed, and fade + slide in when they open. The GlassCard resizes because its
+// content genuinely changed, which needs no animation to be correct. Field VALUES
+// live in the parent's state, so unmounting an input never loses typing.
 function Collapsible({ open, children, style }) {
     const t = useTheme();
-    const height = useRef(new Animated.Value(0)).current;
-    const natural = useRef(0);      // measured content height
-    const measured = useRef(false); // has the first measurement landed?
+    const reveal = useRef(new Animated.Value(0)).current;
 
     useEffect(() => {
-        // Before the first onLayout there is nothing to animate to; that pass is
-        // handled inside onLayout so a screen opened in signup mode starts open.
-        if (!measured.current) return;
-        Animated.timing(height, {
-            toValue: open ? natural.current : 0,
+        if (!open) {
+            reveal.setValue(0);
+            return;
+        }
+        Animated.timing(reveal, {
+            toValue: 1,
             duration: t.motion.normal,
             easing: Easing.out(Easing.cubic),
-            useNativeDriver: false
+            useNativeDriver: true
         }).start();
-    }, [open, height, t.motion.normal]);
+    }, [open, reveal, t.motion.normal]);
 
-    const onLayout = (e) => {
-        const h = e.nativeEvent.layout.height;
-        // Children keep their natural layout height even while the wrapper clips
-        // them to 0, so this reports the real target and never re-measures to 0.
-        // It also re-fires when an inline field error makes the block taller.
-        if (h <= 0 || Math.abs(h - natural.current) < 0.5) return;
-        const first = !measured.current;
-        natural.current = h;
-        measured.current = true;
-        if (!open) return;
-        // First measurement while open = mounted in signup mode: snap, don't grow.
-        if (first) height.setValue(h);
-        else Animated.timing(height, { toValue: h, duration: t.motion.fast, useNativeDriver: false }).start();
-    };
+    if (!open) return null;
 
     return (
-        <Animated.View style={[styles.collapsible, { height }, style]}>
-            <View onLayout={onLayout}>{children}</View>
+        <Animated.View
+            style={[
+                style,
+                {
+                    opacity: reveal,
+                    transform: [{ translateY: reveal.interpolate({ inputRange: [0, 1], outputRange: [-8, 0] }) }]
+                }
+            ]}
+        >
+            {children}
         </Animated.View>
     );
 }
@@ -172,6 +174,14 @@ export default function LoginScreen({ navigation, route }) {
     const initialMode = route?.params?.mode === 'signup' ? 'signup' : 'login';
     const [mode, setMode] = useState(initialMode);
     const isSignup = mode === 'signup';
+
+    // Which identifier sign-in is using. Sign-up always collects both, so the
+    // toggle is hidden there.
+    const [loginBy, setLoginBy] = useState('email');
+    const useMobile = !isSignup && loginBy === 'phone';
+    // Set when the server rejects the credentials, which is the one case where
+    // offering a password reset is the useful next step.
+    const [wrongCredentials, setWrongCredentials] = useState(false);
 
     // Shared fields stay mounted in both modes so toggling never drops typing.
     const [email, setEmail] = useState('');
@@ -258,12 +268,24 @@ export default function LoginScreen({ navigation, route }) {
     const handleLogin = async () => {
         // Clear previous general errors
         setGeneralError('');
+        setWrongCredentials(false);
 
         let isValid = true;
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-        // Validate Email
-        if (!email.trim()) {
+        // Validate whichever identifier is in use. The mobile branch only checks for
+        // enough digits: numbering plans vary, and rejecting a real number is worse
+        // than letting the server answer.
+        if (useMobile) {
+            const digits = phone.replace(/\D/g, '');
+            if (!phone.trim()) {
+                setPhoneError('Mobile number is required.');
+                isValid = false;
+            } else if (digits.length < 10) {
+                setPhoneError('Enter your full mobile number.');
+                isValid = false;
+            }
+        } else if (!email.trim()) {
             setEmailError('Email address is required.');
             isValid = false;
         } else if (!emailRegex.test(email)) {
@@ -285,7 +307,8 @@ export default function LoginScreen({ navigation, route }) {
 
         try {
             // Hit the backend login route
-            const response = await client.post('/auth/login', { email, password });
+            const identifier = (useMobile ? phone : email).trim();
+            const response = await client.post('/auth/login', { identifier, password });
 
             console.log('Login Success:', response.data.message);
 
@@ -303,8 +326,12 @@ export default function LoginScreen({ navigation, route }) {
             // RESET the stack (not replace) so back from Home exits the app.
             enterOwnerApp(navigation);
         } catch (error) {
-            // Grab the message sent from the Node.js backend (e.g., "Invalid email or password")
+            // Grab the message sent from the Node.js backend
             const backendError = error.response?.data?.message || 'Unable to connect to server. Please try again later.';
+            // 401 means specifically "those details are wrong" — the one failure
+            // where a password reset is the likely next step, so the screen
+            // promotes that option rather than leaving the user stuck re-typing.
+            setWrongCredentials(error.response?.status === 401);
             setGeneralError(backendError);
         } finally {
             // Always stop the loading spinner, whether it succeeded or failed
@@ -518,10 +545,11 @@ export default function LoginScreen({ navigation, route }) {
                         </Animated.Text>
                     </Animated.View>
 
-                    <Animated.View style={[headerStyle, { marginTop: t.spacing.xxl }]}>
-                        {/* setMode only — navigating here is what killed the thumb animation. */}
-                        <SegmentedTabs options={MODES} value={mode} onChange={setMode} />
-                    </Animated.View>
+                    {!isSignup ? (
+                        <Animated.View style={[headerStyle, { marginTop: t.spacing.xxl }]}>
+                            <SegmentedTabs options={LOGIN_BY} value={loginBy} onChange={setLoginBy} />
+                        </Animated.View>
+                    ) : null}
 
                     <GlassCard delay={140} style={{ marginTop: t.spacing.xl }} elevation="lg">
                         {generalError ? (
@@ -588,21 +616,28 @@ export default function LoginScreen({ navigation, route }) {
                             </Animated.View>
                         </Collapsible>
 
-                        {/* Email + Password stay mounted in both modes — unmounting them
-                            would throw away whatever was already typed. */}
+                        {/* The identifier field. In sign-up it is always the email;
+                            when signing in it follows the Email/Mobile toggle, writing
+                            to whichever piece of state that identifier belongs to so
+                            neither value is lost by switching. */}
                         <GlassInput
-                            value={email}
+                            value={useMobile ? phone : email}
                             onChangeText={(text) => {
-                                setEmail(text);
-                                setEmailError('');
+                                if (useMobile) {
+                                    setPhone(text);
+                                    setPhoneError('');
+                                } else {
+                                    setEmail(text);
+                                    setEmailError('');
+                                }
                                 setGeneralError(''); // Clear backend error on typing
                             }}
-                            placeholder="Email Address"
-                            icon="mail-outline"
-                            error={emailError}
+                            placeholder={useMobile ? 'Mobile Number' : 'Email Address'}
+                            icon={useMobile ? 'call-outline' : 'mail-outline'}
+                            error={useMobile ? phoneError : emailError}
                             editable={!anyLoading}
                             autoCapitalize="none"
-                            keyboardType="email-address"
+                            keyboardType={useMobile ? 'phone-pad' : 'email-address'}
                             returnKeyType="next"
                         />
 
@@ -705,8 +740,8 @@ export default function LoginScreen({ navigation, route }) {
                                 importantForAccessibility={isSignup ? 'no-hide-descendants' : 'auto'}
                             >
                                 <GlassButton
-                                    label="Forgot Password?"
-                                    variant="ghost"
+                                    label={wrongCredentials ? 'Reset your password' : 'Forgot Password?'}
+                                    variant={wrongCredentials ? 'glass' : 'ghost'}
                                     size="sm"
                                     fullWidth={false}
                                     disabled={anyLoading}

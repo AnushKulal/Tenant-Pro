@@ -43,72 +43,46 @@ const scorePassword = (pw) => {
     return score;
 };
 
-// Collapsible wrapper for the fields that only one mode owns.
+// Shows or hides the fields that belong to only one mode.
 //
-// Only this small block animates its height — never the whole card — so the
-// surrounding GlassCard grows and shrinks naturally around it. Height is a
-// layout prop, so it MUST run on the JS driver (useNativeDriver: true throws for
-// anything but transform/opacity); the fade + slide of the contents run on the
-// native driver alongside it.
+// It used to animate a measured height while clipping its children with
+// overflow:'hidden'. That measurement is the bug that made sign-up unusable: on
+// Android the clipped child reports a height of 0, so the natural height never
+// became a real number and the block stayed collapsed even in sign-up mode. The
+// fields were invisible AND empty, and validation then complained "Please fill in
+// all fields" about inputs the user could not see. A browser render showed it
+// working, because react-native-web does not clip a child's measured box the way
+// Yoga does.
 //
-// Measuring: `overflow: 'hidden'` clips paint but Yoga still lays the children
-// out at their natural size, so onLayout on the inner view reports a real height
-// even while collapsed. Zero readings are ignored so a stale 0 can never become
-// the target, and a later, taller reading (the strength meter appearing while
-// the block is open) re-animates instead of clipping.
+// Nothing is measured now: closed means not rendered, open fades and slides in,
+// and the card resizes because its content actually changed. Values live in the
+// parent's state, so unmounting an input never loses typing.
 function Collapsible({ expanded, children }) {
     const t = useTheme();
-    const height = useRef(new Animated.Value(0)).current;                // px — JS driver
-    const reveal = useRef(new Animated.Value(expanded ? 1 : 0)).current; // native driver
-    const natural = useRef(0);
-    const measured = useRef(false);
+    const reveal = useRef(new Animated.Value(0)).current;
 
     useEffect(() => {
-        Animated.parallel([
-            Animated.timing(height, {
-                toValue: expanded ? natural.current : 0,
-                duration: t.motion.normal,
-                useNativeDriver: false
-            }),
-            Animated.timing(reveal, {
-                toValue: expanded ? 1 : 0,
-                duration: t.motion.normal,
-                // Opening: let the gap start to appear first so the fields slide
-                // into space instead of over their neighbours.
-                delay: expanded ? Math.round(t.motion.normal * 0.25) : 0,
-                useNativeDriver: true
-            })
-        ]).start();
-    }, [expanded, height, reveal, t.motion.normal]);
+        if (!expanded) {
+            reveal.setValue(0);
+            return;
+        }
+        Animated.timing(reveal, {
+            toValue: 1,
+            duration: t.motion.normal,
+            useNativeDriver: true
+        }).start();
+    }, [expanded, reveal, t.motion.normal]);
 
-    const onLayout = (e) => {
-        const h = Math.round(e.nativeEvent.layout.height);
-        if (!h || h === natural.current) return;
-        natural.current = h;
-        const first = !measured.current;
-        measured.current = true;
-        if (!expanded) return;
-        // Arriving already in sign-up mode: snap, there is nothing to grow from.
-        if (first) height.setValue(h);
-        else Animated.timing(height, { toValue: h, duration: t.motion.fast, useNativeDriver: false }).start();
-    };
+    if (!expanded) return null;
 
     return (
         <Animated.View
-            style={[styles.collapsible, { height }]}
-            // Collapsed fields stay mounted (values survive a mode switch) but
-            // must not be reachable by touch or the keyboard's next-field jump.
-            pointerEvents={expanded ? 'auto' : 'none'}
+            style={{
+                opacity: reveal,
+                transform: [{ translateY: reveal.interpolate({ inputRange: [0, 1], outputRange: [-8, 0] }) }]
+            }}
         >
-            <Animated.View
-                onLayout={onLayout}
-                style={{
-                    opacity: reveal,
-                    transform: [{ translateY: reveal.interpolate({ inputRange: [0, 1], outputRange: [-10, 0] }) }]
-                }}
-            >
-                {children}
-            </Animated.View>
+            {children}
         </Animated.View>
     );
 }
@@ -119,6 +93,14 @@ export default function TenantLoginScreen({ navigation, route }) {
     const initialMode = route?.params?.mode === 'signup' ? 'signup' : 'login';
     const [mode, setMode] = useState(initialMode);
     const isSignup = mode === 'signup';
+
+    // Sign-in identifier. The top toggle chooses which one you are using; sign-up
+    // always needs both, so the toggle is hidden there.
+    const [loginBy, setLoginBy] = useState('email');
+    const useMobile = !isSignup && loginBy === 'phone';
+    // Set when the server rejects the credentials, so the screen can offer a reset
+    // right where the failure happened instead of making the user hunt for it.
+    const [wrongCredentials, setWrongCredentials] = useState(false);
 
     const [form, setForm] = useState({ name: '', email: '', phone: '', password: '', confirm: '' });
     const [error, setError] = useState('');
@@ -189,16 +171,24 @@ export default function TenantLoginScreen({ navigation, route }) {
 
     const handleLogin = async () => {
         setError('');
-        const { email, password } = form;
-        if (!email.trim() || !password) { setError('Please enter your email and password.'); return; }
+        setWrongCredentials(false);
+        const { password } = form;
+        const identifier = (loginBy === 'phone' ? form.phone : form.email).trim();
+        if (!identifier || !password) {
+            setError(`Enter your ${loginBy === 'phone' ? 'mobile number' : 'email'} and password.`);
+            return;
+        }
         setLoading(true);
         try {
-            const res = await client.post('/tenant-auth/login', { email: email.trim(), password });
+            const res = await client.post('/tenant-auth/login', { identifier, password });
             await AsyncStorage.setItem('tenantToken', res.data.token);
             await AsyncStorage.setItem('tenantData', JSON.stringify(res.data.tenant));
             // RESET the stack (not replace) so back from the portal exits the app.
             enterTenantApp(navigation);
         } catch (e) {
+            // 401 is specifically "those details are wrong", which is the one case
+            // where offering a password reset is the useful next step.
+            setWrongCredentials(e.response?.status === 401);
             setError(e.response?.data?.message || 'Unable to sign in. Please try again.');
         } finally {
             setLoading(false);
@@ -288,14 +278,20 @@ export default function TenantLoginScreen({ navigation, route }) {
                         </View>
                     </Animated.View>
 
-                    <Animated.View style={[headerStyle, { marginTop: t.spacing.xxl }]}>
-                        <SegmentedTabs
-                            options={[{ label: 'Sign In', value: 'login' }, { label: 'Sign Up', value: 'signup' }]}
-                            value={mode}
-                            // State only — navigating is what broke the toggle animation.
-                            onChange={switchMode}
-                        />
-                    </Animated.View>
+                    {/* Sign in with either identifier. This used to toggle
+                        login/sign-up, which put the rarest action (creating an
+                        account) at the top of the screen with equal weight to the
+                        one people do daily. Sign-up now lives in the link at the
+                        bottom, where it belongs. */}
+                    {!isSignup ? (
+                        <Animated.View style={[headerStyle, { marginTop: t.spacing.xxl }]}>
+                            <SegmentedTabs
+                                options={[{ label: 'Email', value: 'email' }, { label: 'Mobile', value: 'phone' }]}
+                                value={loginBy}
+                                onChange={setLoginBy}
+                            />
+                        </Animated.View>
+                    ) : null}
 
                     <GlassCard delay={140} style={{ marginTop: t.spacing.xl }} elevation="lg">
                         {error ? (
@@ -336,13 +332,13 @@ export default function TenantLoginScreen({ navigation, route }) {
                         </Collapsible>
 
                         <GlassInput
-                            value={form.email}
-                            onChangeText={set('email')}
-                            placeholder="Email address"
-                            icon="mail-outline"
+                            value={useMobile ? form.phone : form.email}
+                            onChangeText={useMobile ? set('phone') : set('email')}
+                            placeholder={useMobile ? 'Mobile number' : 'Email address'}
+                            icon={useMobile ? 'call-outline' : 'mail-outline'}
                             editable={!loading}
                             autoCapitalize="none"
-                            keyboardType="email-address"
+                            keyboardType={useMobile ? 'phone-pad' : 'email-address'}
                             returnKeyType="next"
                         />
 
@@ -435,7 +431,9 @@ export default function TenantLoginScreen({ navigation, route }) {
                         {/* Password recovery only makes sense while signing in — and
                             it goes to the shared reset screen with role: 'tenant', so
                             the emailed code resets the tenant account rather than a
-                            landlord account that happens to use the same address. */}
+                            landlord account that happens to use the same address.
+                            After a rejected sign-in it is emphasised, because at that
+                            moment it is the most likely thing the user needs. */}
                         <Collapsible expanded={!isSignup}>
                             <Animated.View
                                 style={loginFade}
@@ -444,8 +442,8 @@ export default function TenantLoginScreen({ navigation, route }) {
                                 importantForAccessibility={isSignup ? 'no-hide-descendants' : 'auto'}
                             >
                                 <GlassButton
-                                    label="Forgot Password?"
-                                    variant="ghost"
+                                    label={wrongCredentials ? 'Reset your password' : 'Forgot Password?'}
+                                    variant={wrongCredentials ? 'glass' : 'ghost'}
                                     size="sm"
                                     fullWidth={false}
                                     disabled={loading}
