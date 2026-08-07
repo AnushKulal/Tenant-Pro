@@ -23,6 +23,14 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      # EAS reads app.json's config plugins from node_modules to compute the
+      # build config before uploading — so deps are required even for a hosted build.
+      - name: Install dependencies
+        working-directory: mobile
+        run: npm install
 
       - name: Build APK on EAS (hosted queue) and fetch the URL
         working-directory: mobile
