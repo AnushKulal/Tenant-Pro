@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, ScrollView } from 'react-native';
+import { View, ScrollView, RefreshControl } from 'react-native';
 import { useVm } from '../AppContext';
 import { useT } from '../ThemeContext';
 import { T, Eyebrow, Row, Glyph } from '../ui';
@@ -10,7 +10,7 @@ export default function LedgerScreen() {
     const col = (v) => (v && (v[0] === '#' || v.startsWith('rgb')) ? v : t[v]);
 
     return (
-        <ScrollView contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 22 }} showsVerticalScrollIndicator={false}>
+        <ScrollView contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 22 }} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={vm.refreshing} onRefresh={vm.refresh} tintColor={t.fg2} colors={[t.lime]} progressBackgroundColor={t.ink2} />}>
             <T w={700} s={32} lh={1.02} style={{ letterSpacing: -1.6, marginBottom: 4 }}>Ledger</T>
             <T w={400} s={13} lh={1.4} c={t.fg2} style={{ marginBottom: 16 }}>Every rupee in and out · {vm.ledgerScope}</T>
 

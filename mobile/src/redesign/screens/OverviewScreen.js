@@ -1,8 +1,8 @@
 import React from 'react';
-import { View, ScrollView, Image } from 'react-native';
+import { View, ScrollView, Image, RefreshControl } from 'react-native';
 import { useVm } from '../AppContext';
 import { useT } from '../ThemeContext';
-import { T, Eyebrow, Card, Row, Press, Glyph, Face } from '../ui';
+import { T, Eyebrow, Card, Row, Press, Glyph, IconChip, Face } from '../ui';
 
 export default function OverviewScreen() {
     const vm = useVm();
@@ -14,7 +14,27 @@ export default function OverviewScreen() {
         <ScrollView
             contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 22 }}
             showsVerticalScrollIndicator={false}
+            refreshControl={
+                <RefreshControl
+                    refreshing={vm.refreshing}
+                    onRefresh={vm.refresh}
+                    tintColor={t.fg2}
+                    colors={[t.lime]}
+                    progressBackgroundColor={t.ink2}
+                />
+            }
         >
+            {/* Data error banner */}
+            {vm.hasDataError && (
+                <Row align="center" gap={10} style={{ backgroundColor: t.csoft, borderRadius: 14, padding: 12, marginBottom: 14 }}>
+                    <Glyph name="cloud-offline-outline" size={16} color={t.coral} />
+                    <T w={500} s={12} lh={1.4} c={t.coral} style={{ flex: 1 }}>{vm.dataError}</T>
+                    <Press onPress={vm.retryLoad} style={{ paddingVertical: 5, paddingHorizontal: 9 }}>
+                        <Eyebrow s={9} ls={0.1} c={t.coral}>RETRY</Eyebrow>
+                    </Press>
+                </Row>
+            )}
+
             {/* Header */}
             <Row align="flex-end" justify="space-between" style={{ marginBottom: 18 }}>
                 <View>
@@ -32,6 +52,22 @@ export default function OverviewScreen() {
                 </View>
             </Row>
 
+            {vm.isEmptyAccount ? (
+                <Card radius={24} pad={22} style={{ alignItems: 'center', marginTop: 8 }}>
+                    <IconChip name="home-outline" size={22} bg={t.lsoft} color={t.accent} box={48} radius={16} />
+                    <T w={700} s={20} style={{ letterSpacing: -0.6, marginTop: 16, textAlign: 'center' }}>No properties yet</T>
+                    <T w={400} s={13} lh={1.5} c={t.fg2} style={{ marginTop: 8, textAlign: 'center' }}>
+                        Add your first property to start tracking rooms, tenants and rent.
+                    </T>
+                    <Press
+                        onPress={vm.addProperty}
+                        style={{ marginTop: 18, paddingVertical: 12, paddingHorizontal: 22, borderRadius: 999, backgroundColor: t.lime }}
+                    >
+                        <T w={600} s={13} lh={1} c={t.on}>Add property</T>
+                    </Press>
+                </Card>
+            ) : (
+                <>
             {/* BENTO */}
             {/* Collected — full width */}
             <Card radius={24} pad={18} rail style={{ marginBottom: 8 }}>
@@ -219,6 +255,8 @@ export default function OverviewScreen() {
                     </Row>
                 ))}
             </View>
+                </>
+            )}
         </ScrollView>
     );
 }

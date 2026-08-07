@@ -9,14 +9,14 @@
 // Everything below reads tokens from useT() and data/actions from useVm(); no
 // screen is imported by v1 and this file imports nothing from v1.
 import React from 'react';
-import { View, Text, ScrollView, Animated, StatusBar as RNStatusBar, Platform } from 'react-native';
+import { View, Text, ScrollView, Animated, ActivityIndicator, StatusBar as RNStatusBar, Platform } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { RedesignThemeProvider, useT } from './ThemeContext';
 import { AppProvider, useVm, useApp } from './AppContext';
 import { useRedesignFonts } from './fonts';
 import { useEnter, useWipe } from './motion';
-import { Monogram } from './ui';
+import { Monogram, T, Glyph, Press } from './ui';
 
 import Header from './Header';
 import DeckDock from './DeckDock';
@@ -92,6 +92,40 @@ function Shell() {
         return (
             <View style={{ flex: 1, backgroundColor: t.ink, alignItems: 'center', justifyContent: 'center' }}>
                 <Monogram size={64} />
+            </View>
+        );
+    }
+
+    // An owner's real data has not arrived yet. `state.data` still holds the seed
+    // bundle at this point, so rendering a screen here would flash somebody
+    // else's demo figures at a real landlord. Hold on a loader instead — and on a
+    // hard failure offer a retry rather than silently showing seed data as if it
+    // were theirs.
+    const awaitingOwnerData = vm.isOwner && !vm.live;
+    if (awaitingOwnerData && vm.dataLoading) {
+        return (
+            <View style={{ flex: 1, backgroundColor: t.ink, alignItems: 'center', justifyContent: 'center', rowGap: 18 }}>
+                <Monogram size={54} />
+                <ActivityIndicator color={t.lime} />
+                <T mono w={600} s={9} ls={0.14} c={t.fg3}>LOADING YOUR PORTFOLIO</T>
+            </View>
+        );
+    }
+    if (awaitingOwnerData && vm.hasDataError) {
+        return (
+            <View style={{ flex: 1, backgroundColor: t.ink, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32, rowGap: 14 }}>
+                <Glyph name="cloud-offline-outline" size={30} color={t.coral} />
+                <T w={700} s={19} c={t.fg} style={{ letterSpacing: -0.5, textAlign: 'center' }}>Couldn’t load your data</T>
+                <T w={400} s={13} lh={1.5} c={t.fg2} style={{ textAlign: 'center' }}>{vm.dataError}</T>
+                <Press
+                    onPress={vm.retryLoad}
+                    style={{ marginTop: 6, paddingVertical: 13, paddingHorizontal: 26, borderRadius: 999, backgroundColor: t.lime }}
+                >
+                    <T w={700} s={14} c={t.on}>Try again</T>
+                </Press>
+                <Press onPress={vm.askSignOut} style={{ paddingVertical: 8 }}>
+                    <T mono w={600} s={9} ls={0.12} c={t.fg3}>SIGN OUT</T>
+                </Press>
             </View>
         );
     }

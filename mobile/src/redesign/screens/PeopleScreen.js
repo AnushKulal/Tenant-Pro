@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, ScrollView, TextInput } from 'react-native';
+import { View, ScrollView, TextInput, RefreshControl } from 'react-native';
 import { useVm } from '../AppContext';
 import { useT } from '../ThemeContext';
 import { T, Row, Press, Glyph, Face } from '../ui';
@@ -14,6 +14,7 @@ export default function PeopleScreen() {
         <ScrollView
             contentContainerStyle={{ paddingHorizontal: 18, paddingTop: 14, paddingBottom: 22 }}
             showsVerticalScrollIndicator={false}
+            refreshControl={<RefreshControl refreshing={vm.refreshing} onRefresh={vm.refresh} tintColor={t.fg2} colors={[t.lime]} progressBackgroundColor={t.ink2} />}
         >
             {/* Title + add tenant */}
             <Row align="flex-start" justify="space-between" gap={12} style={{ marginBottom: 4 }}>

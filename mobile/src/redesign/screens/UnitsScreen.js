@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, ScrollView, Image } from 'react-native';
+import { View, ScrollView, Image, RefreshControl } from 'react-native';
 import { useVm } from '../AppContext';
 import { useT } from '../ThemeContext';
 import { T, Row, Press, Glyph, Face } from '../ui';
@@ -15,6 +15,7 @@ export default function UnitsScreen() {
         <ScrollView
             contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 22 }}
             showsVerticalScrollIndicator={false}
+            refreshControl={<RefreshControl refreshing={vm.refreshing} onRefresh={vm.refresh} tintColor={t.fg2} colors={[t.lime]} progressBackgroundColor={t.ink2} />}
         >
             {/* Title + Add property */}
             <Row align="flex-start" justify="space-between" gap={12} style={{ marginBottom: 4 }}>

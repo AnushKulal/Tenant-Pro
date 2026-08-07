@@ -12,10 +12,13 @@ import React, {
   createContext, useCallback, useContext, useEffect, useMemo, useRef, useState
 } from 'react';
 import {
-  F, PROPS, UNITS, PRIORITY, TICKETS, MOVE_IN, TENANTS, MONTH_LABELS,
-  creditOf, PAYMENTS as PAYMENTS_SRC, EXPENSES as EXPENSES_SRC
+  PRIORITY, MOVE_IN, MONTH_LABELS, creditOf, SEED
 } from './data';
-import { auth as apiAuth, setToken } from './api';
+import {
+  auth as apiAuth, owner as apiOwner, properties as apiProps,
+  units as apiUnits, tenants as apiTenants, setToken
+} from './api';
+import { mapOwnerData } from './mapping';
 import { loadSession, saveOwnerSession, saveTenantSession, clearSession } from './session';
 
 // Indian-grouped rupee magnitude (e.g. 1234567 -> "12,34,567") WITHOUT
@@ -60,7 +63,16 @@ const INITIAL_STATE = {
   authPhone: '',          // register only
   authBusy: false,
   authError: '',
-  signupRole: 'owner'   // which login screen 'Create account' was tapped from
+  signupRole: 'owner',  // which login screen 'Create account' was tapped from
+
+  // ── Data (Phase 3) ──
+  // Starts as the seed so the very first paint is never empty; replaced by the
+  // mapped live payload once loadOwnerData() returns. `live` says which one it is.
+  data: SEED,
+  live: false,
+  dataLoading: false,
+  dataError: '',
+  refreshing: false
 };
 
 // ── deriveVm: pure translation of renderVals(). `api` carries the state mutators
@@ -68,12 +80,42 @@ const INITIAL_STATE = {
 function deriveVm(s, api) {
   const { setState, set, go, flash, fxRef } = api;
 
+  // ── Data source (Phase 3) ─────────────────────────────────────────────────
+  // Everything below reads its collections from state.data, which is EITHER the
+  // seed bundle (demo account / before the first fetch) or the live payload
+  // mapped from the backend by mapping.js. deriveVm itself is agnostic.
+  const D = s.data || {};
+  // A live account can legitimately have zero properties/tenants. deriveVm below
+  // dereferences `place` and `who` unconditionally (e.g. place.lon for the map
+  // bbox), so fall back to inert objects rather than undefined.
+  const EMPTY_PLACE = {
+    id: null, name: '', loc: '', short: '', img: null, type: '', address: '',
+    code: '', policy: '', policyIcon: 'business-outline', lat: 0, lon: 0,
+    rating: '', reviews: '', food: '', foodNote: '', amenities: []
+  };
+  const EMPTY_UNIT = { id: null, no: '', prop: null, type: '', rent: '₹0', cap: 1 };
+  const EMPTY_TICKET = {
+    id: null, who: null, unit: '', title: '', cat: '', priority: 'Low',
+    status: 'Open', age: '', body: '', photos: []
+  };
+  const EMPTY_TENANT = {
+    id: null, name: '', img: null, unit: null, type: '', rent: '₹0', rentFull: '₹0',
+    co: '', state: 'paid', days: 0, credit: 0, deposit: '₹0', onTime: 0, late: 0, since: '0 mo'
+  };
+  const TENANTS = D.tenants || [];
+  const PROPS = D.props || [];
+  const UNITS = D.units || [];
+  const TICKETS = D.tickets || [];
+  const PAYMENTS_SRC = D.payments || [];
+  const EXPENSES_SRC = D.expenses || [];
+  const live = !!s.live;
+
   const mode = s.theme || 'dark';
   const dark = mode === 'dark';
   // NOTE: colour resolution (ACCENTS/SURFACES/EDGES/vars) is owned by
   // ThemeContext and intentionally dropped here — the vm carries token keys only.
 
-  const whoBase = TENANTS.find((t) => t.id === s.who) || TENANTS[0];
+  const whoBase = TENANTS.find((t) => t.id === s.who) || TENANTS[0] || EMPTY_TENANT;
   const who = {
     ...whoBase,
     rent: s.rents[whoBase.id] ? `₹${inr(s.rents[whoBase.id])}` : whoBase.rent,
@@ -81,7 +123,7 @@ function deriveVm(s, api) {
   };
   const credit = creditOf(who);
   const owner = ['home', 'units', 'people', 'tenant', 'ledger', 'settings', 'profile', 'property'].includes(s.route);
-  const place = PROPS.find((p) => p.id === s.place) || PROPS[0];
+  const place = PROPS.find((p) => p.id === s.place) || PROPS[0] || EMPTY_PLACE;
   const d = 0.008;
   const bbox = `${(place.lon - d).toFixed(4)},${(place.lat - d * 0.6).toFixed(4)},${(place.lon + d).toFixed(4)},${(place.lat + d * 0.6).toFixed(4)}`;
 
@@ -128,10 +170,18 @@ function deriveVm(s, api) {
   const unassignedList = ROSTER.filter((t) => !t.unit);
   const money = (n) => `₹${inr(n)}`;
   const num = (t) => Number(t.rent.replace(/[^0-9]/g, ''));
-  const expected = inScope.reduce((a, t) => a + num(t), 0);
+  const expectedCalc = inScope.reduce((a, t) => a + num(t), 0);
   const paidList = inScope.filter((t) => t.state === 'paid');
-  const collected = paidList.reduce((a, t) => a + num(t), 0);
-  const pending = expected - collected;
+  const collectedCalc = paidList.reduce((a, t) => a + num(t), 0);
+
+  // When the data is live, prefer the backend's own aggregates: rentCollected is
+  // SUM(payments) for the month and pendingDues is SUM(rent_share) actually due,
+  // which is more accurate than re-deriving them from tenant rows here. Scoped
+  // views fall back to the computed figures (the API aggregates portfolio-wide).
+  const useStats = live && D.stats && !scoped;
+  const collected = useStats ? D.stats.rentCollected : collectedCalc;
+  const pending = useStats ? D.stats.pendingDues : (expectedCalc - collectedCalc);
+  const expected = useStats ? (collected + pending) : expectedCalc;
   const overdueList = inScope.filter((t) => t.state === 'overdue');
   const pct = expected ? Math.round((collected / expected) * 100) : 0;
   const firstVacant = unitList.find((u) => u.vacant);
@@ -140,16 +190,23 @@ function deriveVm(s, api) {
 
   const kShort = (n) => (n >= 1000 ? `₹${Math.round(n / 1000)}K` : `₹${n}`);
   // A tenant contributes to a past month only if they had already moved in.
-  const series = [5, 4, 3, 2, 1, 0].map((back) => (back === 0
+  const seriesCalc = [5, 4, 3, 2, 1, 0].map((back) => (back === 0
     ? collected
     : inScope.filter((t) => parseInt(t.since, 10) >= back).reduce((a, t) => a + num(t), 0)));
+  // The backend already groups six months of payments — use that when live.
+  const series = (live && D.chartValues && D.chartValues.length)
+    ? D.chartValues
+    : seriesCalc;
+  const monthLabels = (live && D.chartLabels && D.chartLabels.length)
+    ? D.chartLabels
+    : MONTH_LABELS;
   const peak = Math.max(...series, 1);
   const firstIdx = series.findIndex((v) => v > 0);
   const lastFull = series[4];
   const base = firstIdx >= 0 ? series[firstIdx] : 0;
   const ratio = base ? lastFull / base : 0;
   const trendLabel = !base ? '▲ NEW'
-    : ratio >= 1.15 ? `▲ ${ratio.toFixed(1)}× VS ${MONTH_LABELS[firstIdx]}`
+    : ratio >= 1.15 ? `▲ ${ratio.toFixed(1)}× VS ${monthLabels[firstIdx]}`
     : `▲ STEADY ${5 - firstIdx} MO`;
 
   const statusOf = (t) => s.tstatus[t.id] || t.status;
@@ -187,13 +244,14 @@ function deriveVm(s, api) {
     fg: PRIORITY[k].fg,
     bg: PRIORITY[k].bg
   })).filter((c) => c.n !== '0');
-  const openTicket = TICKETS.find((t) => t.id === s.ticket) || TICKETS[0];
+  const openTicket = TICKETS.find((t) => t.id === s.ticket) || TICKETS[0] || EMPTY_TICKET;
   const openPerson = TENANTS.find((x) => x.id === openTicket.who) || {};
 
   const PAYMENTS = PAYMENTS_SRC.filter((p) => !scoped || unitProp[p.unit] === curProp);
   const EXPENSES = EXPENSES_SRC.filter((e) => !scoped || e.prop === curProp);
 
   const nameOf = (id) => (TENANTS.find((t) => t.id === id) || {}).name;
+  const imgOf = (id) => (TENANTS.find((t) => t.id === id) || {}).img;
   const toNum = (str) => Number(str.replace(/,/g, ''));
   const inRow = (p) => ({
     name: nameOf(p.who), sub: `UNIT ${p.unit} · ${p.method} · DEMO-REF`,
@@ -225,7 +283,7 @@ function deriveVm(s, api) {
   });
   const mover = ROSTER.find((t) => t.id === s.mover);
   // The tenant portal is the same roster seen from the other side.
-  const me = ROSTER.find((t) => t.id === 'rahul') || ROSTER[0] || TENANTS[0];
+  const me = ROSTER.find((t) => t.id === 'rahul') || ROSTER[0] || TENANTS[0] || EMPTY_TENANT;
   const myUnit = UNITS.find((u) => u.no === me.unit);
   const myProp = myUnit ? PROPS.find((p) => p.id === myUnit.prop) : null;
   const jqv = s.jq.trim().toLowerCase();
@@ -238,7 +296,7 @@ function deriveVm(s, api) {
     if (s.jfilter === 'single') return roomTypes(p.id).includes('single') || roomTypes(p.id).includes('bhk');
     return p.short.toLowerCase() === s.jfilter;
   });
-  const invProp = PROPS.find((p) => p.id === s.invite) || PROPS[0];
+  const invProp = PROPS.find((p) => p.id === s.invite) || PROPS[0] || EMPTY_PLACE;
   const inviteLink = `https://tenantpro.app/join/${invProp.code}`;
 
   const q = s.q.trim().toLowerCase();
@@ -373,6 +431,22 @@ function deriveVm(s, api) {
     session: s.session,
     signedIn: !!s.session,
 
+    // ── Data fetch state (Phase 3) ────────────────────────────────────────────
+    // Screens use these for the first-load spinner, the error banner and
+    // pull-to-refresh. `live` distinguishes real data from the seed/demo bundle.
+    live,
+    dataLoading: s.dataLoading,
+    dataError: s.dataError,
+    hasDataError: !!s.dataError,
+    refreshing: s.refreshing,
+    refresh: () => api.loadOwnerData({ refresh: true }),
+    retryLoad: () => api.loadOwnerData(),
+    // True when the account is real but genuinely has nothing yet — the cue for
+    // an onboarding empty state rather than a spinner.
+    isEmptyAccount: live && !s.dataLoading && (PROPS.length === 0 && TENANTS.length === 0),
+    ownerName: (s.session && s.session.user && s.session.user.name) || '',
+    ownerEmail: (s.session && s.session.user && s.session.user.email) || '',
+
     goSignup: () => setState({ signupRole: s.route === 'tlogin' ? 'tenant' : 'owner', route: 'signup', overlay: null }),
     isSignup: s.route === 'signup',
     adult: s.adult,
@@ -497,7 +571,7 @@ function deriveVm(s, api) {
     bars: series.map((v, i) => {
       const now = i === 5;
       return {
-        m: MONTH_LABELS[i],
+        m: monthLabels[i] || '',
         h: peak ? `${Math.round((v / peak) * 100)}%` : '0%',
         fill: now ? 'lime' : 'line2',
         lab: now ? 'fg' : 'fg3',
@@ -541,7 +615,7 @@ function deriveVm(s, api) {
     },
 
     recent: PAYMENTS.slice(0, 4).map((p) => ({
-      name: nameOf(p.who), img: F[p.who], sub: `UNIT ${p.unit} · ${p.method}`,
+      name: nameOf(p.who), img: imgOf(p.who), sub: `UNIT ${p.unit} · ${p.method}`,
       amt: `+₹${p.amt}`, date: p.date
     })),
 
@@ -586,7 +660,7 @@ function deriveVm(s, api) {
 
     isUnit: s.overlay === 'unit',
     unitSheet: (() => {
-      const u = UNITS.find((x) => x.no === s.unit) || UNITS[0];
+      const u = UNITS.find((x) => x.no === s.unit) || UNITS[0] || EMPTY_UNIT;
       const occ = occupantsOf(u.no);
       const free = u.cap - occ.length;
       return {
@@ -759,7 +833,7 @@ function deriveVm(s, api) {
       tenure: `${parseInt(who.since, 10)} months with you`,
       assigned: !!(s.roster[who.id] !== undefined ? s.roster[who.id] : who.unit),
       unassigned: !(s.roster[who.id] !== undefined ? s.roster[who.id] : who.unit),
-      movedIn: MOVE_IN[who.id] || '',
+      movedIn: who.movedIn || MOVE_IN[who.id] || '',
       stats: [
         { k: 'WITH YOU', v: who.since, fg: 'fg' },
         { k: 'RENT SHARE', v: who.rent, fg: 'fg' },
@@ -987,7 +1061,7 @@ function deriveVm(s, api) {
       rent: me.rentFull,
       deposit: me.deposit,
       since: me.since,
-      movedIn: MOVE_IN[me.id] || '',
+      movedIn: me.movedIn || MOVE_IN[me.id] || '',
       due: `${me.state === 'overdue' ? 'OVERDUE BY' : 'IN'} ${me.days} DAYS`,
       dueFg: me.state === 'overdue' ? 'coral' : 'on',
       home: myUnit ? `${propName(myUnit.prop)} · Unit ${myUnit.no} · due 30 Aug` : '',
@@ -1060,6 +1134,47 @@ export function AppProvider({ children }) {
   const stateRef = useRef(state);
   stateRef.current = state;
 
+  // Fetch the owner's real data and replace the seed bundle with it. Called after
+  // an owner signs in, after restoring an owner session, and by pull-to-refresh.
+  // The five endpoints are independent, so they go out together; a partial
+  // failure surfaces as an error rather than a half-populated screen.
+  const loadOwnerData = useCallback(async ({ refresh = false } = {}) => {
+    setState(refresh ? { refreshing: true, dataError: '' } : { dataLoading: true, dataError: '' });
+    try {
+      const [dashboard, propsRes, unitsRes, tenantsRes, txRes] = await Promise.all([
+        apiOwner.dashboard('all'),
+        apiProps.list(),
+        apiUnits.list('all'),
+        apiTenants.list(),
+        apiOwner.transactions('all')
+      ]);
+      const data = mapOwnerData({
+        dashboard,
+        properties: propsRes.properties,
+        units: unitsRes.units,
+        tenants: tenantsRes.tenants,
+        transactions: txRes.transactions
+      });
+      setState({
+        data,
+        live: true,
+        dataLoading: false,
+        refreshing: false,
+        dataError: '',
+        // Keep the selected property/tenant valid against the new collections.
+        place: (data.props[0] && data.props[0].id) || null,
+        who: (data.tenants[0] && data.tenants[0].id) || null
+      });
+    } catch (e) {
+      // Leave whatever data is already on screen in place; just report.
+      setState({
+        dataLoading: false,
+        refreshing: false,
+        dataError: errText(e, 'Could not load your data. Pull down to retry.')
+      });
+    }
+  }, [setState]);
+
   // Restore a stored session on launch and route accordingly.
   const resolveSession = useCallback(async () => {
     try {
@@ -1067,6 +1182,7 @@ export function AppProvider({ children }) {
       if (sess.role) {
         setToken(sess.token);
         setState({ session: sess, route: sess.role === 'owner' ? 'home' : 'portal' });
+        if (sess.role === 'owner') loadOwnerData();
       } else {
         setToken(null);
         setState({ session: null, route: 'role' });
@@ -1075,7 +1191,7 @@ export function AppProvider({ children }) {
       setToken(null);
       setState({ session: null, route: 'role' });
     }
-  }, [setState]);
+  }, [setState, loadOwnerData]);
 
   const signIn = useCallback(async (role) => {
     const { authId, authPw } = stateRef.current;
@@ -1098,10 +1214,11 @@ export function AppProvider({ children }) {
         route: role === 'tenant' ? 'portal' : 'home'
       });
       flash(`Welcome back${user && user.name ? `, ${String(user.name).split(' ')[0]}` : ''}`);
+      if (role === 'owner') loadOwnerData();
     } catch (e) {
       setState({ authBusy: false, authError: errText(e, 'Sign in failed. Check your details and try again.') });
     }
-  }, [setState, flash]);
+  }, [setState, flash, loadOwnerData]);
 
   const register = useCallback(async () => {
     const { authId, authPw, authName, authPhone, signupRole } = stateRef.current;
@@ -1142,18 +1259,19 @@ export function AppProvider({ children }) {
     }
   }, [setState, flash]);
 
+
   const signOut = useCallback(async () => {
     try { await clearSession(); } catch (e) { /* clearing is best-effort */ }
     setToken(null);
-    setState({ ...INITIAL_STATE, route: 'role', session: null, theme: stateRef.current.theme });
+    setState({ ...INITIAL_STATE, route: 'role', session: null, data: SEED, live: false, theme: stateRef.current.theme });
   }, [setState]);
 
   // Resolve the stored session once, on mount.
   useEffect(() => { resolveSession(); }, [resolveSession]);
 
   const api = useMemo(
-    () => ({ setState, set, go, flash, fxRef, signIn, register, signOut, resolveSession }),
-    [setState, set, go, flash, signIn, register, signOut, resolveSession]
+    () => ({ setState, set, go, flash, fxRef, signIn, register, signOut, resolveSession, loadOwnerData }),
+    [setState, set, go, flash, signIn, register, signOut, resolveSession, loadOwnerData]
   );
 
   const vm = useMemo(() => deriveVm(state, api), [state, api]);

@@ -147,3 +147,21 @@ export const EXPENSES = [
   { name: 'Plumbing repair', prop: 'sunrise', sub: 'SUNRISE PG · 2ND FLOOR', amt: '3,500', date: '12 JUL', month: 1 },
   { name: 'Tanker top-up', prop: 'green', sub: 'GREEN MEADOWS · WATER', amt: '1,800', date: '9 JUL', month: 1 }
 ];
+
+// ── Seed bundle (Phase 3) ────────────────────────────────────────────────────
+// The shape AppContext holds in `state.data`. Used for the demo account and as
+// the pre-fetch/offline fallback; a live account replaces it wholesale with the
+// mapped API payload (see mapping.js). Keys mirror mapOwnerData()'s output so
+// deriveVm cannot tell the two apart.
+export const SEED = {
+  props: PROPS,
+  units: UNITS,
+  tenants: TENANTS,
+  tickets: TICKETS,
+  payments: PAYMENTS,
+  expenses: EXPENSES,
+  stats: null,        // seed has no backend-authoritative figures; deriveVm computes
+  chartLabels: MONTH_LABELS,
+  chartValues: null,
+  recent: null
+};

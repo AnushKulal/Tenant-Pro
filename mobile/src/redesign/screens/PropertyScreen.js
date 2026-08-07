@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, ScrollView, Image } from 'react-native';
+import { View, ScrollView, Image, RefreshControl } from 'react-native';
 import { useVm } from '../AppContext';
 import { useT } from '../ThemeContext';
 import { T, Eyebrow, Row, Divider, Press, Glyph, IconChip } from '../ui';
@@ -11,7 +11,7 @@ export default function PropertyScreen() {
     if (!place) return null;
 
     return (
-        <ScrollView contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 22 }} showsVerticalScrollIndicator={false}>
+        <ScrollView contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 22 }} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={vm.refreshing} onRefresh={vm.refresh} tintColor={t.fg2} colors={[t.lime]} progressBackgroundColor={t.ink2} />}>
             {/* Hero card */}
             <View style={{ borderRadius: 26, overflow: 'hidden', backgroundColor: t.ink2, borderWidth: 1, borderColor: t.line, marginBottom: 8 }}>
                 <View style={{ position: 'relative' }}>
