@@ -1,14 +1,18 @@
 name: Build Android APK
 
-# Run this manually from the Actions tab (Run workflow). It builds the APK on
-# GitHub's free runners using EAS "local" mode — no Expo build queue.
+# Run this manually from the Actions tab (Run workflow) — pick the branch you
+# want to build. It submits the build to EAS's HOSTED build queue: the Android
+# compile runs on Expo's servers (not this runner), so it no longer times out.
+# The job waits for the build, downloads the APK, uploads it as an artifact and
+# publishes it as a Release. The finished build is ALSO downloadable directly
+# from expo.dev -> your project -> Builds. Needs one repo secret: EXPO_TOKEN.
 on:
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 45   # fail fast instead of hanging for hours
+    timeout-minutes: 90   # hosted build = Expo queue wait + build time
     permissions:
       contents: write     # needed to publish the APK as a Release
     steps:
@@ -19,40 +23,21 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
-          cache-dependency-path: mobile/package-lock.json
 
-      - name: Set up Java (JDK 17)
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 17
-
-      - name: Cache Gradle
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: gradle-${{ runner.os }}-tenantpro
-          restore-keys: gradle-${{ runner.os }}-
-
-      - name: Install dependencies
-        working-directory: mobile
-        run: npm install
-
-      - name: Build APK (EAS local — bypasses the Expo queue)
+      - name: Build APK on EAS (hosted queue) and fetch the URL
         working-directory: mobile
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-          EAS_NO_VCS: "1"   # use the working dir directly; avoids CI git hangs
-        run: >
-          npx eas-cli build
-          --platform android
-          --profile preview
-          --local
-          --non-interactive
-          --output ${{ github.workspace }}/tenantpro.apk
+          EAS_NO_VCS: "1"   # archive the checked-out working dir directly
+        run: |
+          set -e
+          # Submit to Expo's cloud, wait for it to finish, capture the build JSON.
+          npx eas-cli build --platform android --profile preview --non-interactive --wait --json > build.json
+          # Pull the APK download URL out of the result (tolerant of array/object shape).
+          URL=$(node -e "const b=require('./build.json');const a=Array.isArray(b)?b[0]:b;const u=a&&a.artifacts&&(a.artifacts.applicationArchiveUrl||a.artifacts.buildUrl);process.stdout.write(u||'')")
+          if [ -z "$URL" ]; then echo 'No APK URL in EAS build result:'; cat build.json; exit 1; fi
+          echo "APK URL: $URL"
+          curl -L --fail -o "${{ github.workspace }}/tenantpro.apk" "$URL"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
@@ -66,6 +51,6 @@ jobs:
         with:
           tag_name: build-${{ github.run_number }}
           name: TenantPro Android (build ${{ github.run_number }})
-          body: "Download **tenantpro.apk** below and open it on your Android phone to install."
+          body: "Download **tenantpro.apk** below and open it on your Android phone to install. Also available on expo.dev -> Builds."
           files: tenantpro.apk
           make_latest: true
