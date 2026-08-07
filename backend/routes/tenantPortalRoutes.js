@@ -14,6 +14,10 @@ const {
     getRequestMessages,
     createRequestMessage
 } = require('../controllers/tenantPortalController');
+const {
+    createJoinRequest,
+    getMyJoinRequests
+} = require('../controllers/joinController');
 
 router.use(protect);
 
@@ -28,5 +32,12 @@ router.post('/requests', upload.single('request_image'), createRequest);
 // reads at /api/owner/requests/:id/messages.
 router.get('/requests/:id/messages', getRequestMessages);
 router.post('/requests/:id/messages', createRequestMessage);
+
+// --- Join requests ---
+// The one thing here that works BEFORE the account is linked to a tenant record:
+// asking a landlord to link it. Mounted on this router so it inherits the same
+// tenant token check; the landlord decides at /api/owner/join-requests/:id.
+router.post('/join-requests', createJoinRequest);
+router.get('/join-requests', getMyJoinRequests);
 
 module.exports = router;
