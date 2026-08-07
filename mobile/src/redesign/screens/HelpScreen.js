@@ -72,11 +72,17 @@ export default function HelpScreen() {
                     columnGap: 12
                 }}
             >
-                <Image
-                    source={{ uri: landlord.img }}
-                    style={{ width: 40, height: 40, borderRadius: 13, backgroundColor: t.ink3 }}
-                    resizeMode="cover"
-                />
+                {landlord.img ? (
+                    <Image
+                        source={{ uri: landlord.img }}
+                        style={{ width: 40, height: 40, borderRadius: 13, backgroundColor: t.ink3 }}
+                        resizeMode="cover"
+                    />
+                ) : (
+                    <View style={{ width: 40, height: 40, borderRadius: 13, backgroundColor: t.lsoft, alignItems: 'center', justifyContent: 'center' }}>
+                        <T w={700} s={16} c={t.accent}>{landlord.initial}</T>
+                    </View>
+                )}
                 <View style={{ flex: 1 }}>
                     <T w={600} s={14} lh={1.2} numberOfLines={1}>{landlord.name}</T>
                     <T mono w={600} s={10} lh={1.4} ls={0.08} c={t.fg3} style={{ marginTop: 4 }}>

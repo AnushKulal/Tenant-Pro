@@ -55,7 +55,8 @@ export default function SettingsScreen() {
       {/* Settings rows */}
       <View style={{ borderRadius: 22, backgroundColor: t.ink2, borderWidth: 1, borderColor: t.line, overflow: 'hidden', marginBottom: 8 }}>
         {vm.settingsRows.map((s, i) => (
-          <Row key={i} gap={13} style={{ paddingVertical: 15, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: t.line }}>
+          <Press key={i} onPress={s.go}>
+          <Row gap={13} style={{ paddingVertical: 15, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: t.line }}>
             <View style={{ width: 30, height: 30, borderRadius: 10, backgroundColor: t.vsoft, alignItems: 'center', justifyContent: 'center' }}>
               <Glyph name={s.icon} size={15} color={t.accent} />
             </View>
@@ -63,6 +64,7 @@ export default function SettingsScreen() {
             <T mono w={600} s={9} ls={0.06} c={t.fg3}>{s.meta}</T>
             <Glyph name="chevron-forward" size={15} color={t.fg3} />
           </Row>
+          </Press>
         ))}
       </View>
 

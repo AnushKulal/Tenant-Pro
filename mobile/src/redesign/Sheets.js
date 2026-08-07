@@ -8,7 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useVm } from './AppContext';
 import { useT } from './ThemeContext';
 import { grotesk } from './theme';
-import { T, Eyebrow, Row, Press, Glyph } from './ui';
+import { T, Eyebrow, Row, Press, Glyph, Field } from './ui';
 import { useSheetIn, useFadeIn } from './motion';
 
 // ── The conversation on a maintenance request ────────────────────────────────
@@ -677,28 +677,59 @@ export default function Sheets() {
                 {vm.isPay && (
                     <View>
                         <T w={700} s={20} lh={1} style={{ letterSpacing: -0.8, marginBottom: 16 }}>{vm.payLabel || 'Pay ₹8,000'}</T>
-                        <Row style={{ gap: 13, padding: 14, borderRadius: 18, borderWidth: 1, borderColor: t.line, backgroundColor: t.ink3, marginBottom: 8 }}>
-                            <View style={{ width: 40, height: 40, borderRadius: 13, backgroundColor: t.vsoft, alignItems: 'center', justifyContent: 'center' }}>
-                                <Glyph name="at" size={18} color={t.accent} />
+                        {/* The landlord's real UPI details. Tap either row to copy it. */}
+                        {vm.payInfo.missing ? (
+                            <Row gap={9} align="flex-start" style={{ paddingVertical: 12, paddingHorizontal: 13, borderRadius: 14, backgroundColor: t.asoft, marginBottom: 16 }}>
+                                <Glyph name="information-circle-outline" size={15} color={t.amber} />
+                                <T w={500} s={12} lh={1.45} c={t.amber} style={{ flex: 1 }}>{vm.payInfo.missingLine}</T>
+                            </Row>
+                        ) : null}
+
+                        {vm.payInfo.hasUpiId ? (
+                            <Press onPress={vm.payInfo.copyId}>
+                                <Row style={{ gap: 13, padding: 14, borderRadius: 18, borderWidth: 1, borderColor: t.line, backgroundColor: t.ink3, marginBottom: 8 }}>
+                                    <View style={{ width: 40, height: 40, borderRadius: 13, backgroundColor: t.vsoft, alignItems: 'center', justifyContent: 'center' }}>
+                                        <Glyph name="at" size={18} color={t.accent} />
+                                    </View>
+                                    <View style={{ flex: 1, minWidth: 0 }}>
+                                        <Eyebrow s={9} ls={0.1}>UPI ID</Eyebrow>
+                                        <T w={600} s={14} lh={1} numberOfLines={1} style={{ marginTop: 6 }}>{vm.payInfo.upiId}</T>
+                                    </View>
+                                    <Glyph name="copy-outline" size={17} color={t.fg3} />
+                                </Row>
+                            </Press>
+                        ) : null}
+
+                        {vm.payInfo.hasUpiNumber ? (
+                            <Press onPress={vm.payInfo.copyNumber}>
+                                <Row style={{ gap: 13, padding: 14, borderRadius: 18, borderWidth: 1, borderColor: t.line, backgroundColor: t.ink3, marginBottom: 8 }}>
+                                    <View style={{ width: 40, height: 40, borderRadius: 13, backgroundColor: t.vsoft, alignItems: 'center', justifyContent: 'center' }}>
+                                        <Glyph name="call-outline" size={17} color={t.accent} />
+                                    </View>
+                                    <View style={{ flex: 1, minWidth: 0 }}>
+                                        <Eyebrow s={9} ls={0.1}>UPI NUMBER</Eyebrow>
+                                        <T w={600} s={14} lh={1} numberOfLines={1} style={{ marginTop: 6 }}>{vm.payInfo.upiNumber}</T>
+                                    </View>
+                                    <Glyph name="copy-outline" size={17} color={t.fg3} />
+                                </Row>
+                            </Press>
+                        ) : null}
+
+                        {vm.payInfo.hasQr ? (
+                            <View style={{ alignItems: 'center', paddingVertical: 14, borderRadius: 18, borderWidth: 1, borderColor: t.line, backgroundColor: t.ink3, marginBottom: 8 }}>
+                                <Eyebrow s={9} ls={0.1} style={{ marginBottom: 10 }}>SCAN TO PAY</Eyebrow>
+                                <Image source={{ uri: vm.payInfo.qr }} style={{ width: 168, height: 168, borderRadius: 12, backgroundColor: t.ink2 }} resizeMode="contain" />
                             </View>
-                            <View style={{ flex: 1 }}>
-                                <Eyebrow s={9} ls={0.1}>UPI ID</Eyebrow>
-                                <T w={600} s={14} lh={1} style={{ marginTop: 6 }}>demo@okhdfcbank</T>
-                            </View>
-                            <Glyph name="copy-outline" size={17} color={t.fg3} />
-                        </Row>
-                        <Row style={{ gap: 13, padding: 14, borderRadius: 18, borderWidth: 1, borderColor: t.line, backgroundColor: t.ink3, marginBottom: 16 }}>
-                            <View style={{ width: 40, height: 40, borderRadius: 13, backgroundColor: t.vsoft, alignItems: 'center', justifyContent: 'center' }}>
-                                <Glyph name="call-outline" size={17} color={t.accent} />
-                            </View>
-                            <View style={{ flex: 1 }}>
-                                <Eyebrow s={9} ls={0.1}>UPI NUMBER</Eyebrow>
-                                <T w={600} s={14} lh={1} style={{ marginTop: 6 }}>9000000000</T>
-                            </View>
-                            <Glyph name="copy-outline" size={17} color={t.fg3} />
-                        </Row>
-                        <Press onPress={vm.closeOverlay} style={{ width: '100%', paddingVertical: 16, borderRadius: 999, backgroundColor: t.lime, alignItems: 'center' }}>
-                            <T w={700} s={14} lh={1} c={t.on}>Open UPI app</T>
+                        ) : null}
+
+                        <View style={{ height: 8 }} />
+
+                        <Press
+                            onPress={vm.payInfo.open}
+                            disabled={vm.payInfo.missing}
+                            style={{ width: '100%', paddingVertical: 16, borderRadius: 999, backgroundColor: vm.payInfo.missing ? t.ink3 : t.lime, borderWidth: 1, borderColor: vm.payInfo.missing ? t.line : t.lime, alignItems: 'center' }}
+                        >
+                            <T w={700} s={14} lh={1} c={vm.payInfo.missing ? t.fg3 : t.on}>Open UPI app</T>
                         </Press>
                         <Eyebrow s={8} ls={0.06} style={{ marginTop: 14, textAlign: 'center' }}>YOUR LANDLORD CONFIRMS IT, THEN IT APPEARS IN YOUR HISTORY</Eyebrow>
                     </View>
@@ -782,6 +813,57 @@ export default function Sheets() {
                         <Press onPress={vm.closeOverlay} style={{ paddingVertical: 15, borderRadius: 999, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line, alignItems: 'center' }}>
                             <T w={600} s={14} c={t.fg}>Close</T>
                         </Press>
+                    </View>
+                )}
+
+                {/* ── Payment settings (owner) ────────────────────────── */}
+                {vm.isPaySettings && vm.paySettings && (
+                    <View>
+                        <T w={700} s={20} lh={1} style={{ letterSpacing: -0.8 }}>Payment settings</T>
+                        <T w={400} s={12.5} lh={1.45} c={t.fg2} style={{ marginTop: 7, marginBottom: 16 }}>
+                            {vm.paySettings.current}
+                        </T>
+
+                        {vm.paySettings.hasError ? (
+                            <Row gap={9} align="flex-start" style={{ paddingVertical: 11, paddingHorizontal: 13, borderRadius: 14, backgroundColor: t.csoft, marginBottom: 12 }}>
+                                <Glyph name="alert-circle-outline" size={15} color={t.coral} />
+                                <T w={500} s={12} lh={1.45} c={t.coral} style={{ flex: 1 }}>{vm.paySettings.error}</T>
+                            </Row>
+                        ) : null}
+
+                        <Field
+                            label="UPI ID"
+                            icon="at"
+                            value={vm.paySettings.upiId}
+                            onChangeText={vm.paySettings.setUpiId}
+                            placeholder="you@okhdfcbank"
+                            editable={!vm.paySettings.busy}
+                            style={{ marginBottom: 10 }}
+                        />
+                        <Field
+                            label="UPI NUMBER"
+                            icon="call-outline"
+                            value={vm.paySettings.upiNumber}
+                            onChangeText={vm.paySettings.setUpiNumber}
+                            placeholder="10-digit mobile"
+                            keyboardType="number-pad"
+                            maxLength={10}
+                            editable={!vm.paySettings.busy}
+                            style={{ marginBottom: 14 }}
+                        />
+
+                        <Row gap={8}>
+                            <Press onPress={vm.closeOverlay} style={{ paddingVertical: 15, paddingHorizontal: 20, borderRadius: 999, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line }}>
+                                <T w={600} s={13.5} c={t.fg2}>Cancel</T>
+                            </Press>
+                            <Press
+                                onPress={vm.paySettings.save}
+                                disabled={vm.paySettings.busy}
+                                style={{ flex: 1, paddingVertical: 15, borderRadius: 999, backgroundColor: t.lime, alignItems: 'center', opacity: vm.paySettings.busy ? 0.7 : 1 }}
+                            >
+                                <T w={700} s={14} c={t.on}>{vm.paySettings.busy ? 'Saving…' : 'Save'}</T>
+                            </Press>
+                        </Row>
                     </View>
                 )}
 

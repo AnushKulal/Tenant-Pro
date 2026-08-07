@@ -163,6 +163,11 @@ export function mapTenant(t, payments, now) {
         type: t.room_type || '',
         rent: `₹${inr(rent)}`,
         rentFull: `₹${inr(rent)}`,
+        // The unformatted figures, kept alongside the display strings because the
+        // write endpoints take numbers — parsing them back out of "₹12,000" would
+        // be a needless round trip through a string that exists for the eye.
+        rentRaw: rent,
+        depositRaw: Number(t.deposit) || 0,
         co: t.company || '',
         state: overdue ? 'overdue' : 'paid',
         days: daysLate,
@@ -204,7 +209,7 @@ export function mapPayment(row, tenantsByName, now) {
 
 // Build the whole `state.data` bundle from the five owner endpoints.
 // `now` is injected so the result is deterministic and testable.
-export function mapOwnerData({ dashboard, properties, units, tenants, transactions, requests }, now = new Date()) {
+export function mapOwnerData({ dashboard, properties, units, tenants, transactions, requests, paySettings }, now = new Date()) {
     const props = (properties || []).map(mapProperty);
     const us = (units || []).map(mapUnit);
 
@@ -227,6 +232,15 @@ export function mapOwnerData({ dashboard, properties, units, tenants, transactio
         tenants: ts,
         payments: pays,
         tickets: (requests || []).map((r) => mapRequest(r, now)),
+        // The owner's UPI details, as tenants will see them. Null until they set
+        // them up — an empty state, not a missing one.
+        pay: paySettings
+            ? {
+                upiId: paySettings.upi_id || '',
+                upiNumber: paySettings.upi_number || '',
+                qr: paySettings.qr_code_url ? mediaUrl(paySettings.qr_code_url) : null
+            }
+            : { upiId: '', upiNumber: '', qr: null },
         // No owner-side endpoint exists for expenses yet.
         expenses: [],
         // Backend-authoritative figures, preferred by deriveVm when live.

@@ -17,7 +17,8 @@ import {
 } from './data';
 import {
   auth as apiAuth, owner as apiOwner, properties as apiProps,
-  units as apiUnits, tenants as apiTenants, portal as apiPortal, setToken, mediaUrl
+  units as apiUnits, tenants as apiTenants, portal as apiPortal, payments as apiPayments,
+  setToken, mediaUrl
 } from './api';
 import { mapOwnerData, mapPortalRequest } from './mapping';
 import { loadSession, saveOwnerSession, saveTenantSession, clearSession, hasOnboarded, setOnboarded } from './session';
@@ -75,6 +76,9 @@ const INITIAL_STATE = {
   dataLoading: false,
   dataError: '',
   refreshing: false,
+  // True while an owner write is in flight, so buttons can show they are working
+  // and cannot be double-fired.
+  writing: false,
 
   // ── Tenant portal ──
   // The signed-in tenant's own bundle (/tenant-portal/me + /requests), kept apart
@@ -92,6 +96,9 @@ const INITIAL_STATE = {
   // The "raise a request" form. `photo` is an expo-image-picker asset, uploaded as
   // `request_image` when present.
   nr: { category: 'Plumbing', title: '', body: '', priority: 'Medium', photo: null, busy: false, error: '' },
+
+  // The payment-settings form, seeded from the saved values when the sheet opens.
+  ps: { upiId: '', upiNumber: '', error: '' },
 
   // ── Password recovery ──
   // Two requests over three panes: 'ask' emails a 6-digit code, 'reset' spends it,
@@ -140,12 +147,15 @@ function deriveVm(s, api) {
   };
   const EMPTY_TENANT = {
     id: null, name: '', img: null, unit: null, type: '', rent: '₹0', rentFull: '₹0',
-    co: '', state: 'paid', days: 0, credit: 0, deposit: '₹0', onTime: 0, late: 0, since: '0 mo'
+    co: '', state: 'paid', days: 0, credit: 0, deposit: '₹0', onTime: 0, late: 0, since: '0 mo',
+    rentRaw: 0, depositRaw: 0
   };
   const TENANTS = D.tenants || [];
   const PROPS = D.props || [];
   const UNITS = D.units || [];
   const TICKETS = D.tickets || [];
+  // The owner's own UPI details (empty until they set them up).
+  const PAY = D.pay || { upiId: '', upiNumber: '', qr: null };
   const PAYMENTS_SRC = D.payments || [];
   const EXPENSES_SRC = D.expenses || [];
   const live = !!s.live;
@@ -157,8 +167,10 @@ function deriveVm(s, api) {
   const TD = s.tdata || null;
   const TLIVE = !!TD;
   // The landlord on the other end of this tenancy — the person the tenant needs to
-  // reach about a request.
-  const LANDLORD = (TD && TD.me && TD.me.owner) || null;
+  // reach about a request. /tenant-portal/me calls this block `landlord`.
+  const LANDLORD = (TD && TD.me && TD.me.landlord) || null;
+  // How to actually pay them: the owner's UPI details, joined into the same call.
+  const PAYINFO = (TD && TD.me && TD.me.payment) || null;
 
   // Shape mirrors the tenant-portal /requests payload (category, title,
   // description, priority, status, created_at), mapped by mapping.js when live.
@@ -238,6 +250,20 @@ function deriveVm(s, api) {
     const d = String(p || '').replace(/[^0-9]/g, '');
     return d.length === 10 ? `+91 ${d.slice(0, 5)} ${d.slice(5)}` : String(p || '');
   };
+  // Copy to the clipboard. Uses RN core's Clipboard — deprecated in favour of
+  // expo-clipboard, but that is a native module and adding one cannot reach an
+  // already-installed build over the air, whereas this is already compiled in.
+  // Reached lazily so the deprecation getter only fires if a copy actually happens.
+  const copyText = (text, done) => {
+    if (!text) return;
+    try {
+      // eslint-disable-next-line global-require
+      require('react-native').Clipboard.setString(String(text));
+      flash(done || 'Copied');
+    } catch (e) {
+      flash('Could not copy that');
+    }
+  };
   const callNumber = (phone, label) => {
     const url = `tel:${String(phone).replace(/[^0-9+]/g, '')}`;
     Linking.openURL(url).catch(() => flash(`Could not start a call to ${label}`));
@@ -251,7 +277,11 @@ function deriveVm(s, api) {
     name: (LANDLORD && LANDLORD.name) || 'Demo Landlord',
     phone: (LANDLORD && LANDLORD.phone) || '9000000000',
     phoneLabel: fmtPhone((LANDLORD && LANDLORD.phone) || '9000000000'),
-    img: (LANDLORD && mediaUrl(LANDLORD.profile_pic)) || 'https://randomuser.me/api/portraits/men/32.jpg',
+    // /tenant-portal/me does not carry the landlord's photo, so on a real tenancy
+    // there is none to show. Return null and let the card fall back to an initial
+    // rather than putting a stranger's stock face next to their name.
+    img: TLIVE ? null : 'https://randomuser.me/api/portraits/men/32.jpg',
+    initial: String((LANDLORD && LANDLORD.name) || 'L').trim().charAt(0).toUpperCase(),
     call: () => {
       const n = (LANDLORD && LANDLORD.phone) || (TLIVE ? '' : '9000000000');
       return n ? callNumber(n, (LANDLORD && LANDLORD.name) || 'your landlord')
@@ -718,7 +748,15 @@ function deriveVm(s, api) {
     isRecord: s.overlay === 'record',
     isPay: s.overlay === 'pay',
     isMenu: s.overlay === 'menu',
-    confirmRecord: () => { setState({ overlay: null }); flash(`${who.rentFull} recorded for ${who.name}`); },
+    // Record a payment for real. `who.rentRaw` is the figure the sheet is showing,
+    // so what is confirmed is exactly what is sent.
+    confirmRecord: () => {
+      setState({ overlay: null });
+      api.recordPayment({
+        tenantId: who.id, amount: who.rentRaw, method: s.method,
+        name: who.name, label: who.rentFull
+      });
+    },
 
     dock: [
       ['OVERVIEW', 'flash-outline', 'home'],
@@ -909,8 +947,12 @@ function deriveVm(s, api) {
       name: t.name, img: t.img,
       sub: `${t.co.toUpperCase()} · ${t.since} WITH YOU`,
       go: () => {
-        setState({ roster: { ...s.roster, [t.id]: s.unit }, overlay: null });
-        flash(`${t.name} assigned to Unit ${s.unit}`);
+        setState({ overlay: null });
+        const target = UNITS.find((u) => u.no === s.unit);
+        api.assignTenant({
+          tenantId: t.id, unitId: target && target.id, name: t.name,
+          where: `Unit ${s.unit}`
+        });
       }
     })),
 
@@ -1003,20 +1045,23 @@ function deriveVm(s, api) {
             fg: 'fg',
             sub: 'pos',
             go: () => {
-              setState({ roster: { ...s.roster, [s.mover]: u.no }, overlay: null });
-              flash(`${mover.name} moved to ${p.name} · Unit ${u.no}`);
+              setState({ overlay: null });
+              api.assignTenant({
+                tenantId: s.mover, unitId: u.id, name: mover.name,
+                where: `${p.name} · Unit ${u.no}`
+              });
             }
           };
         })
     })).filter((p) => p.rooms.length),
     noMoveTargets: !UNITS.some((u) => occupantsOf(u.no).length < u.cap && !(mover && mover.unit === u.no)),
     moveOut: () => {
-      setState({ roster: { ...s.roster, [s.who]: null }, overlay: null });
-      flash(`${who.name} moved out — account kept, now unassigned`);
+      setState({ overlay: null });
+      api.moveTenantOut({ tenantId: who.id, name: who.name });
     },
     deleteMember: () => {
-      setState({ gone: [...s.gone, s.who], overlay: null, route: 'people' });
-      flash(`${who.name}'s account deleted`);
+      setState({ overlay: null, route: 'people' });
+      api.deleteTenant({ tenantId: who.id, name: who.name });
     },
     isRent: s.overlay === 'rent',
     openRent: () => setState({ overlay: 'rent', draft: Number(who.rent.replace(/[^0-9]/g, '')) }),
@@ -1034,8 +1079,13 @@ function deriveVm(s, api) {
       go: () => set('draft', Math.max(0, s.draft + n))
     })),
     saveRent: () => {
-      setState({ rents: { ...s.rents, [s.who]: s.draft }, overlay: null });
-      flash(`${who.name}'s rent set to ₹${inr(s.draft)}`);
+      setState({ overlay: null });
+      // The deposit rides along unchanged: the endpoint writes both money columns,
+      // so leaving it out would silently zero it.
+      api.saveTenantRent({
+        tenantId: who.id, rent: s.draft, deposit: who.depositRaw,
+        name: who.name, label: `₹${inr(s.draft)}`
+      });
     },
     isDanger: s.overlay === 'danger',
     openDanger: () => set('overlay', 'danger'),
@@ -1097,7 +1147,14 @@ function deriveVm(s, api) {
     menuRows: [
       { label: 'My profile', icon: 'person-outline', go: () => go('profile'), fg: 'fg', bg: 'vsoft', ifg: 'accent' },
       { label: 'Settings', icon: 'settings-outline', go: () => go('settings'), fg: 'fg', bg: 'vsoft', ifg: 'accent' },
-      { label: 'Payment settings', icon: 'card-outline', go: () => go('settings'), fg: 'fg', bg: 'vsoft', ifg: 'accent' },
+      // Straight to the sheet — this row used to just open the Settings screen,
+      // which is not what it says it does.
+      {
+        label: 'Payment settings',
+        icon: 'card-outline',
+        go: () => setState({ overlay: 'paysettings', ps: { upiId: PAY.upiId, upiNumber: PAY.upiNumber, error: '' } }),
+        fg: 'fg', bg: 'vsoft', ifg: 'accent'
+      },
       { label: 'Sign out', icon: 'log-out-outline', go: () => set('overlay', 'signout'), fg: 'coral', bg: 'csoft', ifg: 'coral' }
     ],
     isSignOut: s.overlay === 'signout',
@@ -1143,13 +1200,62 @@ function deriveVm(s, api) {
     }),
 
     settingsRows: [
-      { label: 'Payment settings', icon: 'card-outline', meta: 'UPI' },
+      // Only the first row does anything yet; the rest are named but unbuilt, and
+      // say so when tapped rather than looking broken.
+      {
+        label: 'Payment settings',
+        icon: 'card-outline',
+        meta: PAY.upiId || PAY.upiNumber ? 'UPI SET' : 'NOT SET',
+        go: () => setState({
+          overlay: 'paysettings',
+          ps: { upiId: PAY.upiId, upiNumber: PAY.upiNumber, error: '' }
+        })
+      },
       { label: 'Notifications', icon: 'notifications-outline', meta: 'ON' },
       { label: 'Rent reminders', icon: 'alarm-outline', meta: '3 DAYS' },
       { label: 'Documentation', icon: 'book-outline', meta: '' },
       { label: 'Help & support', icon: 'help-buoy-outline', meta: '' },
       { label: 'Terms of service', icon: 'shield-checkmark-outline', meta: '' }
-    ],
+    ].map((r) => ({ ...r, go: r.go || (() => flash(`${r.label} — not built yet`)) })),
+
+    // ── Payment settings (owner) ──
+    // What tenants are shown when they go to pay. Getting this wrong sends rent to
+    // the wrong place, so both fields are validated the same way the server does
+    // before the request goes out.
+    isPaySettings: s.overlay === 'paysettings',
+    paySettings: (() => {
+      const ps = s.ps || { upiId: '', upiNumber: '', error: '' };
+      const put = (patch) => setState({ ps: { ...ps, ...patch, error: '' } });
+      return {
+        upiId: ps.upiId,
+        setUpiId: (e) => put({ upiId: String(e && e.target ? e.target.value : e).trim() }),
+        upiNumber: ps.upiNumber,
+        setUpiNumber: (e) => put({ upiNumber: String(e && e.target ? e.target.value : e).replace(/[^0-9]/g, '') }),
+        error: ps.error || '',
+        hasError: !!ps.error,
+        busy: !!s.writing,
+        current: PAY.upiId || PAY.upiNumber
+          ? `Tenants currently see ${PAY.upiId || PAY.upiNumber}`
+          : 'Your tenants cannot pay through the app until you add these.',
+        save: () => {
+          const id = String(ps.upiId || '').trim();
+          const num = String(ps.upiNumber || '').trim();
+          // Mirror the server's rules so a mistake is caught here, in the field
+          // the user is looking at, rather than as a toast after a round trip.
+          if (!id && !num) { setState({ ps: { ...ps, error: 'Add a UPI ID, a UPI number, or both.' } }); return; }
+          if (id && !/^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}$/.test(id)) {
+            setState({ ps: { ...ps, error: 'That UPI ID does not look right — it should read like name@bank.' } });
+            return;
+          }
+          if (num && !/^\d{10}$/.test(num)) {
+            setState({ ps: { ...ps, error: 'A UPI number must be exactly 10 digits.' } });
+            return;
+          }
+          setState({ overlay: null });
+          api.savePaymentSettings({ upiId: id, upiNumber: num });
+        }
+      };
+    })(),
 
     isFind: s.route === 'tfind',
     isCheckout: s.route === 'tcheckout',
@@ -1340,6 +1446,41 @@ function deriveVm(s, api) {
     // ── The landlord, as the tenant sees them ──
     landlord: landlordCard,
 
+    // ── How to pay them ──
+    // The owner's own UPI details, joined into /tenant-portal/me. The prototype
+    // printed the demo landlord's here, which would have sent a real tenant's rent
+    // to the wrong place — so when a live tenancy has none on file, this says so
+    // rather than showing a plausible-looking default.
+    payInfo: (() => {
+      const upiId = (PAYINFO && PAYINFO.upi_id) || (TLIVE ? '' : 'demo@okhdfcbank');
+      const upiNumber = (PAYINFO && PAYINFO.upi_number) || (TLIVE ? '' : '9000000000');
+      const qr = PAYINFO && PAYINFO.qr_code_url ? mediaUrl(PAYINFO.qr_code_url) : null;
+      // The figure the Pay sheet is showing, so the UPI hand-off pre-fills it.
+      const amount = Number(me.rentRaw) || 0;
+      return {
+        upiId,
+        upiNumber,
+        hasUpiId: !!upiId,
+        hasUpiNumber: !!upiNumber,
+        qr,
+        hasQr: !!qr,
+        // Nothing to pay to — the landlord has not set their details up yet.
+        missing: TLIVE && !upiId && !upiNumber,
+        missingLine: 'Your landlord has not added their UPI details yet. Ask them to add them in Settings → Payment settings.',
+        copyId: () => copyText(upiId, 'UPI ID copied'),
+        copyNumber: () => copyText(upiNumber, 'UPI number copied'),
+        // Hand off to whichever UPI app is installed, pre-filled. Falls back to a
+        // copy if the device has no handler for the upi: scheme.
+        open: () => {
+          const target = upiId || upiNumber;
+          if (!target) { flash('No UPI details to pay to yet'); return; }
+          const url = `upi://pay?pa=${encodeURIComponent(target)}&pn=${encodeURIComponent(landlordCard.name)}`
+            + (amount ? `&am=${amount}&cu=INR` : '');
+          Linking.openURL(url).catch(() => copyText(target, 'No UPI app found — details copied'));
+        }
+      };
+    })(),
+
     // ── Raise a request ──
     openNewRequest: () => setState({ overlay: 'newrequest', nr: { ...BLANK_REQUEST } }),
     isNewRequest: s.overlay === 'newrequest',
@@ -1443,7 +1584,7 @@ export function AppProvider({ children }) {
   const loadOwnerData = useCallback(async ({ refresh = false } = {}) => {
     setState(refresh ? { refreshing: true, dataError: '' } : { dataLoading: true, dataError: '' });
     try {
-      const [dashboard, propsRes, unitsRes, tenantsRes, txRes, reqRes] = await Promise.all([
+      const [dashboard, propsRes, unitsRes, tenantsRes, txRes, reqRes, payRes] = await Promise.all([
         apiOwner.dashboard('all'),
         apiProps.list(),
         apiUnits.list('all'),
@@ -1452,7 +1593,10 @@ export function AppProvider({ children }) {
         // The maintenance queue is newer than the rest of the API, so a backend
         // that predates it must not take the whole dashboard down with it — an
         // empty queue is a correct answer, a blank screen is not.
-        apiOwner.requests('all').catch(() => ({ requests: [] }))
+        apiOwner.requests('all').catch(() => ({ requests: [] })),
+        // Likewise: an owner who has never set up UPI has no row, and that is a
+        // state to render, not an error.
+        apiPayments.getSettings().catch(() => ({ settings: null }))
       ]);
       const data = mapOwnerData({
         dashboard,
@@ -1460,7 +1604,8 @@ export function AppProvider({ children }) {
         units: unitsRes.units,
         tenants: tenantsRes.tenants,
         transactions: txRes.transactions,
-        requests: reqRes.requests
+        requests: reqRes.requests,
+        paySettings: payRes.settings
       });
       setState({
         data,
@@ -1561,6 +1706,39 @@ export function AppProvider({ children }) {
     }
   }, [setState]);
 
+  // ── Owner writes (Phase 4) ─────────────────────────────────────────────────
+  // Every landlord action that changes something on the server goes through here,
+  // so they all behave the same way: run the call, re-read the portfolio so the
+  // screen shows what the server actually stored rather than what we hoped it
+  // would, and report a failure instead of leaving a change on screen that never
+  // landed. That last part is the whole point — the prototype's actions only ever
+  // edited local state, so a "saved" toast meant nothing survived a relaunch.
+  //
+  // On the seed walk-through there is no server row to write to, so the action is
+  // declined out loud rather than pretending.
+  const ownerWrite = useCallback(async (fn, { done, failed }) => {
+    if (!stateRef.current.live) {
+      flash('Sign in to your own account to make changes');
+      return false;
+    }
+    setState({ writing: true });
+    try {
+      await fn();
+      // The prototype's local overrides (room moves, rent edits, deletions,
+      // ticket statuses) exist only to fake persistence. Once the server is the
+      // source of truth they would sit on top of the refreshed data and mask it,
+      // so clear them as the real values arrive.
+      await loadOwnerData({ refresh: true });
+      setState({ writing: false, roster: {}, rents: {}, gone: [], tstatus: {} });
+      if (done) flash(done);
+      return true;
+    } catch (e) {
+      setState({ writing: false });
+      flash(errText(e, failed || 'That did not save. Please try again.'));
+      return false;
+    }
+  }, [setState, flash, loadOwnerData]);
+
   // ── Password recovery ──────────────────────────────────────────────────────
   // Ask the backend to email a code. It only sends to an address that is actually
   // registered — an unknown one comes back 404 and is reported as such rather than
@@ -1624,6 +1802,67 @@ export function AppProvider({ children }) {
       });
     }
   }, [setState]);
+
+  // Record a rent payment against a tenant. The backend also rolls their
+  // next_rent_due forward a month, which is why the refresh matters: the due
+  // countdown on every screen changes as a result of this one call.
+  const recordPayment = useCallback(async ({ tenantId, amount, method, name, label }) => {
+    if (tenantId == null) { flash('No tenant selected'); return false; }
+    const d = new Date();
+    const payment_date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    return ownerWrite(
+      () => apiPayments.record(tenantId, {
+        amount,
+        // The API's vocabulary, not the chip labels': 'BANK' is a bank transfer.
+        payment_mode: method === 'BANK' ? 'Bank Transfer' : method === 'CASH' ? 'Cash' : 'UPI',
+        reference_id: null,
+        payment_date
+      }),
+      { done: `${label} recorded for ${name}`, failed: 'Could not record that payment.' }
+    );
+  }, [ownerWrite, flash]);
+
+  // Change what a tenant pays. Deposit is sent unchanged — the endpoint writes
+  // both columns, so omitting it would zero the deposit.
+  const saveTenantRent = useCallback(({ tenantId, rent, deposit, name, label }) => ownerWrite(
+    () => apiTenants.financials(tenantId, { rent_share: rent, deposit }),
+    { done: `${name}'s rent set to ${label}`, failed: 'Could not update the rent.' }
+  ), [ownerWrite]);
+
+  // Move a tenant into a room. Also used for a first assignment — the endpoint
+  // handles both, and frees the old room if it empties.
+  const assignTenant = useCallback(({ tenantId, unitId, name, where }) => {
+    if (unitId == null) { flash('That room is not on the server yet'); return Promise.resolve(false); }
+    return ownerWrite(
+      () => apiTenants.assignToRoom(tenantId, unitId),
+      { done: `${name} moved to ${where}`, failed: 'Could not move that tenant.' }
+    );
+  }, [ownerWrite, flash]);
+
+  // End a tenancy but keep the person's record — they become unassigned, and the
+  // room is freed for someone else.
+  const moveTenantOut = useCallback(({ tenantId, name }) => ownerWrite(
+    () => apiTenants.moveOut(tenantId),
+    { done: `${name} moved out — account kept, now unassigned`, failed: 'Could not move that tenant out.' }
+  ), [ownerWrite]);
+
+  // Delete the record outright. Destructive, and the sheet asks first.
+  const deleteTenant = useCallback(({ tenantId, name }) => ownerWrite(
+    () => apiTenants.remove(tenantId),
+    { done: `${name}'s account deleted`, failed: 'Could not delete that account.' }
+  ), [ownerWrite]);
+
+  // The UPI details tenants are shown when they go to pay. Saved as multipart
+  // because the same endpoint also accepts a QR image.
+  const savePaymentSettings = useCallback(({ upiId, upiNumber }) => {
+    const form = new FormData();
+    form.append('upi_id', String(upiId || '').trim());
+    form.append('upi_number', String(upiNumber || '').trim());
+    return ownerWrite(
+      () => apiPayments.saveSettings(form),
+      { done: 'Payment details saved', failed: 'Could not save your payment details.' }
+    );
+  }, [ownerWrite]);
 
   // Attach a photo of the problem. expo-image-picker is loaded lazily so the
   // module is only pulled in when a tenant actually reaches for the camera roll.
@@ -1806,12 +2045,14 @@ export function AppProvider({ children }) {
     () => ({
       setState, set, go, flash, fxRef, signIn, register, signOut, resolveSession,
       loadOwnerData, loadTenantData, loadThread, sendReply, setRequestStatus,
-      pickRequestPhoto, createRequest, requestResetCode, submitNewPassword
+      pickRequestPhoto, createRequest, requestResetCode, submitNewPassword,
+      recordPayment, saveTenantRent, assignTenant, moveTenantOut, deleteTenant, savePaymentSettings
     }),
     [
       setState, set, go, flash, signIn, register, signOut, resolveSession,
       loadOwnerData, loadTenantData, loadThread, sendReply, setRequestStatus,
-      pickRequestPhoto, createRequest, requestResetCode, submitNewPassword
+      pickRequestPhoto, createRequest, requestResetCode, submitNewPassword,
+      recordPayment, saveTenantRent, assignTenant, moveTenantOut, deleteTenant, savePaymentSettings
     ]
   );
 
