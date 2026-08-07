@@ -42,7 +42,7 @@ export default function HelpScreen() {
 
             <View style={{ marginBottom: 16, rowGap: 8 }}>
                 {requests.map((r, i) => (
-                    <Press key={i} onPress={vm.openRecord}>
+                    <Press key={i} onPress={r.open}>
                         <Card radius={20} pad={0} rail={col(r.dot)} style={{ paddingVertical: 14, paddingHorizontal: 15 }}>
                             <View style={{ flex: 1, minWidth: 0 }}>
                                 <T w={600} s={14} lh={1.25} c={t.fg}>{r.title}</T>

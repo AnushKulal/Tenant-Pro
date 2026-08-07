@@ -64,6 +64,7 @@ const INITIAL_STATE = {
   authBusy: false,
   authError: '',
   signupRole: 'owner',  // which login screen 'Create account' was tapped from
+  req: null,            // index of the tenant request opened from Help
 
   // ── Data (Phase 3) ──
   // Starts as the seed so the very first paint is never empty; replaced by the
@@ -110,6 +111,19 @@ function deriveVm(s, api) {
   const EXPENSES_SRC = D.expenses || [];
   const live = !!s.live;
   const u = (s.session && s.session.user) || null;
+  // Shape mirrors the tenant-portal /requests payload (category, title,
+  // description, priority, status, created_at) so Phase 5 can swap in live rows.
+  const REQUESTS = (D.requests && D.requests.length) ? D.requests : [
+    { title: 'Leaking tap in bathroom', sub: 'PLUMBING · 28 JUL', status: 'IN PROGRESS', dot: 'amber',
+      category: 'Plumbing', priority: 'High', raised: '28 Jul 2026',
+      body: 'The cold-water tap drips constantly, even when fully closed. It is wasting water and the sound carries at night.' },
+    { title: 'Ceiling fan not working', sub: 'ELECTRICAL · 30 JUL', status: 'OPEN', dot: 'fg2',
+      category: 'Electrical', priority: 'Medium', raised: '30 Jul 2026',
+      body: 'The fan stopped right after a power cut. The regulator clicks but the blades do not move.' },
+    { title: 'Geyser serviced', sub: 'APPLIANCE · 12 JUL', status: 'RESOLVED', dot: 'pos',
+      category: 'Appliance', priority: 'Low', raised: '12 Jul 2026',
+      body: 'The water took much longer to heat than it used to. Descaled and serviced.' }
+  ];
 
   const mode = s.theme || 'dark';
   const dark = mode === 'dark';
@@ -1103,11 +1117,38 @@ function deriveVm(s, api) {
       };
     }),
     noJoinResults: !joinMatches.length,
-    requests: [
-      { title: 'Leaking tap in bathroom', sub: 'PLUMBING · 28 JUL', status: 'IN PROGRESS', dot: 'amber' },
-      { title: 'Ceiling fan not working', sub: 'ELECTRICAL · 30 JUL', status: 'OPEN', dot: 'fg2' },
-      { title: 'Geyser serviced', sub: 'APPLIANCE · 12 JUL', status: 'RESOLVED', dot: 'pos' }
-    ]
+    requests: REQUESTS.map((r, i) => ({
+      ...r,
+      // Tapping a request opens its detail sheet. This previously pointed at
+      // openRecord — the record-a-payment overlay — so tapping a ticket showed a
+      // payment sheet.
+      open: () => setState({ req: i, overlay: 'request' })
+    })),
+
+    // ── Tenant request detail (opened from Help) ──
+    isRequest: s.overlay === 'request',
+    request: (() => {
+      const r = REQUESTS[s.req] || REQUESTS[0] || null;
+      if (!r) return null;
+      // The status ladder the backend's enum defines, so the sheet can show where
+      // this request currently sits.
+      const STEPS = ['OPEN', 'IN PROGRESS', 'RESOLVED'];
+      const at = Math.max(0, STEPS.indexOf(r.status));
+      return {
+        ...r,
+        steps: STEPS.map((label, i) => ({
+          label,
+          done: i <= at,
+          current: i === at,
+          fg: i <= at ? (i === at ? r.dot : 'pos') : 'fg3'
+        })),
+        // The backend stores no attachments or replies for a request yet (see
+        // maintenance_requests: no photo column, no comments table), so the sheet
+        // says so rather than pretending.
+        hasPhotos: false,
+        canReply: false
+      };
+    })()
   };
 }
 

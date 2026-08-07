@@ -70,11 +70,17 @@ export function Card({ children, radius = 24, pad = 16, rail, style, ...rest }) 
     );
 }
 
+// NOTE on spacing: only emit columnGap/rowGap when a gap was actually asked for.
+// Emitting `columnGap: 0` unconditionally silently defeated the equally valid
+// `<Row style={{ gap: N }}>` form — the explicit longhand beat the shorthand, so
+// those rows collapsed to zero spacing (avatar touching its label, etc.). Both
+// `<Row gap={N}>` and a gap passed through `style` now work.
 export function Row({ children, gap = 0, align = 'center', justify, wrap = false, style, ...rest }) {
     return (
         <View
             style={[
-                { flexDirection: 'row', alignItems: align, columnGap: gap, rowGap: wrap ? gap : 0, flexWrap: wrap ? 'wrap' : 'nowrap' },
+                { flexDirection: 'row', alignItems: align, flexWrap: wrap ? 'wrap' : 'nowrap' },
+                gap ? { columnGap: gap, rowGap: wrap ? gap : 0 } : null,
                 justify ? { justifyContent: justify } : null,
                 style
             ]}

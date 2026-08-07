@@ -588,6 +588,61 @@ export default function Sheets() {
                 )}
 
                 {/* ── Menu ────────────────────────────────────────────── */}
+                {/* ── Tenant request detail ─────────────────────────── */}
+                {vm.isRequest && vm.request && (
+                    <View>
+                        <Row gap={9} align="flex-start" style={{ marginBottom: 4 }}>
+                            <View style={{ flex: 1 }}>
+                                <T w={700} s={21} lh={1.15} style={{ letterSpacing: -0.6 }}>{vm.request.title}</T>
+                                <Eyebrow s={10} ls={0.08} style={{ marginTop: 6 }}>{vm.request.sub}</Eyebrow>
+                            </View>
+                            <View style={{ paddingVertical: 5, paddingHorizontal: 9, borderRadius: 8, backgroundColor: t.ink3 }}>
+                                <T mono w={600} s={9} ls={0.05} c={col(vm.request.dot)}>{vm.request.status}</T>
+                            </View>
+                        </Row>
+
+                        {/* status ladder */}
+                        <Row gap={0} style={{ marginTop: 18, marginBottom: 18 }}>
+                            {vm.request.steps.map((st, i) => (
+                                <View key={i} style={{ flex: 1, alignItems: 'center' }}>
+                                    <Row gap={0} style={{ width: '100%' }}>
+                                        <View style={{ flex: 1, height: 2, backgroundColor: i === 0 ? 'transparent' : (st.done ? t.pos : t.line) }} />
+                                        <View style={{ width: 11, height: 11, borderRadius: 6, backgroundColor: st.done ? col(st.fg) : t.ink3, borderWidth: 1, borderColor: st.done ? col(st.fg) : t.line }} />
+                                        <View style={{ flex: 1, height: 2, backgroundColor: i === vm.request.steps.length - 1 ? 'transparent' : (vm.request.steps[i + 1] && vm.request.steps[i + 1].done ? t.pos : t.line) }} />
+                                    </Row>
+                                    <T mono w={600} s={8} ls={0.08} c={st.current ? t.fg : t.fg3} style={{ marginTop: 7 }}>{st.label}</T>
+                                </View>
+                            ))}
+                        </Row>
+
+                        <View style={{ borderRadius: 18, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line, padding: 15, marginBottom: 12 }}>
+                            <Eyebrow s={9} ls={0.12} c={t.fg3} style={{ marginBottom: 8 }}>DESCRIPTION</Eyebrow>
+                            <T w={400} s={13} lh={1.55} c={t.fg2}>{vm.request.body || 'No description was added.'}</T>
+                        </View>
+
+                        <Row gap={8} wrap style={{ marginBottom: 14 }}>
+                            <View style={{ paddingVertical: 7, paddingHorizontal: 11, borderRadius: 999, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line }}>
+                                <T mono w={600} s={9} ls={0.08} c={t.fg2}>{`PRIORITY · ${String(vm.request.priority || '').toUpperCase()}`}</T>
+                            </View>
+                            <View style={{ paddingVertical: 7, paddingHorizontal: 11, borderRadius: 999, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line }}>
+                                <T mono w={600} s={9} ls={0.08} c={t.fg2}>{`RAISED · ${vm.request.raised || '—'}`}</T>
+                            </View>
+                        </Row>
+
+                        {/* Attachments and replies are not stored by the backend yet. */}
+                        <Row gap={9} align="flex-start" style={{ paddingVertical: 12, paddingHorizontal: 13, borderRadius: 14, backgroundColor: t.asoft, marginBottom: 16 }}>
+                            <Glyph name="information-circle-outline" size={15} color={t.amber} />
+                            <T w={500} s={12} lh={1.45} c={t.amber} style={{ flex: 1 }}>
+                                Photos and replies aren’t supported yet — your landlord can see this request and its status.
+                            </T>
+                        </Row>
+
+                        <Press onPress={vm.closeOverlay} style={{ paddingVertical: 15, borderRadius: 999, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line, alignItems: 'center' }}>
+                            <T w={600} s={14} c={t.fg}>Close</T>
+                        </Press>
+                    </View>
+                )}
+
                 {vm.isMenu && (
                     <View>
                         <Row style={{ gap: 13, marginBottom: 18 }}>
