@@ -22,6 +22,7 @@ import Header from './Header';
 import DeckDock from './DeckDock';
 import Sheets from './Sheets';
 import Toast from './Toast';
+import UpdateSheet from './UpdateSheet';
 
 import RoleScreen from './screens/RoleScreen';
 import OwnerLoginScreen from './screens/OwnerLoginScreen';
@@ -165,6 +166,9 @@ function Shell() {
                 sheet replays the `tpsheet` slide-up when it opens. */}
             <Sheets key={state.overlay || 'none'} />
             <Toast />
+
+            {/* OTA prompt — v1's UpdateGate is bypassed in v2, so the redesign owns it. */}
+            <UpdateSheet />
 
             {/* `@keyframes tpwipe` — the flash that covers a theme swap. */}
             <Animated.View
