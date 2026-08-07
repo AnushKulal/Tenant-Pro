@@ -9,12 +9,13 @@
 // Everything below reads tokens from useT() and data/actions from useVm(); no
 // screen is imported by v1 and this file imports nothing from v1.
 import React from 'react';
-import { View, Text, ScrollView, StatusBar as RNStatusBar, Platform } from 'react-native';
+import { View, Text, ScrollView, Animated, StatusBar as RNStatusBar, Platform } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { RedesignThemeProvider, useT } from './ThemeContext';
 import { AppProvider, useVm, useApp } from './AppContext';
 import { useRedesignFonts } from './fonts';
+import { useEnter, useWipe } from './motion';
 
 import Header from './Header';
 import DeckDock from './DeckDock';
@@ -64,12 +65,20 @@ const SCREENS = {
     tsettings: TenantSettingsScreen
 };
 
+// Plays the design's `tpup` entrance for whatever screen is mounted. Keyed by
+// route in Shell, so switching screens replays the rise+fade.
+function ScreenStage({ children }) {
+    const enter = useEnter();
+    return <Animated.View style={[{ flex: 1 }, enter]}>{children}</Animated.View>;
+}
+
 function Shell() {
     const fontsLoaded = useRedesignFonts();
     const t = useT();
     const vm = useVm();
     const { state } = useApp();
     const insets = useSafeAreaInsets();
+    const wipe = useWipe(vm.mode); // flash on theme swap
 
     // Hold the whole app on an ink field until the two typefaces are ready, so
     // nothing renders in a fallback system font and then reflows.
@@ -85,9 +94,11 @@ function Shell() {
 
             <Header />
 
-            <View style={{ flex: 1 }}>
+            {/* `animation: tpup .3s ease both` — remount per route so each screen
+                rises+fades in exactly as the prototype's screens do. */}
+            <ScreenStage key={state.route}>
                 <Screen />
-            </View>
+            </ScreenStage>
 
             {showDock ? (
                 <View style={{ paddingBottom: insets.bottom }}>
@@ -97,9 +108,19 @@ function Shell() {
                 <View style={{ height: insets.bottom }} />
             )}
 
-            {/* overlays + toast paint above everything */}
-            <Sheets />
+            {/* overlays + toast paint above everything. Keyed by overlay so each
+                sheet replays the `tpsheet` slide-up when it opens. */}
+            <Sheets key={state.overlay || 'none'} />
             <Toast />
+
+            {/* `@keyframes tpwipe` — the flash that covers a theme swap. */}
+            <Animated.View
+                pointerEvents="none"
+                style={[
+                    { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: t.ink },
+                    wipe
+                ]}
+            />
 
             <RNStatusBar
                 barStyle={t.isDark ? 'light-content' : 'dark-content'}

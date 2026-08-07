@@ -3,15 +3,22 @@
 // that RedesignRoot stacks above every screen. Which sheet body renders is chosen
 // by whichever overlay flag on the vm is true. Translated from Sheets.html.
 import React from 'react';
-import { View, ScrollView, Image, TextInput } from 'react-native';
+import { View, ScrollView, Image, TextInput, Animated, Dimensions } from 'react-native';
 import { useVm } from './AppContext';
 import { useT } from './ThemeContext';
 import { grotesk } from './theme';
 import { T, Eyebrow, Row, Press, Glyph } from './ui';
+import { useSheetIn, useFadeIn } from './motion';
 
 export default function Sheets() {
     const vm = useVm();
     const t = useT();
+    // `animation: tpsheet .26s cubic-bezier(.2,.8,.2,1)` — slide the sheet up from
+    // off-screen while the scrim fades in. Keyed on which overlay is open so each
+    // sheet replays the motion (see the key on <Sheets/> usage in RedesignRoot).
+    const H = Dimensions.get('window').height;
+    const sheetIn = useSheetIn({ height: H });
+    const scrimIn = useFadeIn();
 
     if (!vm.overlayOpen) return null;
 
@@ -26,11 +33,14 @@ export default function Sheets() {
 
     return (
         <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'flex-end', zIndex: 60 }}>
+            <Animated.View style={[{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }, scrimIn]}>
             <Press
                 onPress={vm.closeOverlay}
                 style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(4,4,6,0.6)' }}
             />
+            </Animated.View>
 
+            <Animated.View style={sheetIn}>
             <ScrollView
                 style={{
                     maxHeight: '85%',
@@ -595,6 +605,7 @@ export default function Sheets() {
                     </View>
                 )}
             </ScrollView>
+            </Animated.View>
         </View>
     );
 }
