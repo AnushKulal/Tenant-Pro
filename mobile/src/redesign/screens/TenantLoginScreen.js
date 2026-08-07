@@ -1,14 +1,12 @@
-import React, { useState } from 'react';
-import { View, ScrollView, TextInput } from 'react-native';
+import React from 'react';
+import { View, ScrollView } from 'react-native';
 import { useVm } from '../AppContext';
 import { useT } from '../ThemeContext';
-import { T, Eyebrow, Row, Press, Glyph, Monogram, Divider } from '../ui';
-import { grotesk } from '../theme';
+import { T, Eyebrow, Row, Press, Glyph, Monogram, Divider, Field } from '../ui';
 
 export default function TenantLoginScreen() {
     const vm = useVm();
     const t = useT();
-    const [show, setShow] = useState(false);
     const col = (v) => (v && (v[0] === '#' || v.startsWith('rgb')) ? v : t[v]);
 
     // idThumbX is a CSS calc string (e.g. "calc(0% + 4px)" / "calc(50% - 4px)").
@@ -47,46 +45,30 @@ export default function TenantLoginScreen() {
                     </Press>
                 </View>
 
-                {/* Tenant identifier field */}
-                <View style={{ borderRadius: 18, backgroundColor: t.ink2, borderWidth: 1, borderColor: t.line, paddingVertical: 14, paddingHorizontal: 16, marginBottom: 10 }}>
-                    <Eyebrow s={9} w={600} ls={0.12} c={t.fg3} style={{ marginBottom: 7 }}>{vm.tenantIdLabel}</Eyebrow>
-                    <Row gap={10}>
-                        <Glyph name="person-outline" size={17} color={t.fg2} />
-                        <TextInput
-                            value={vm.authId}
-                            onChangeText={vm.setAuthId}
-                            placeholder={vm.tenantIdLabel === 'EMAIL' ? 'demo@gmail.com' : '98765 43210'}
-                            placeholderTextColor={t.fg3}
-                            autoCapitalize="none"
-                            autoCorrect={false}
-                            keyboardType={vm.tenantIdLabel === 'EMAIL' ? 'email-address' : 'phone-pad'}
-                            style={{ flex: 1, padding: 0, fontFamily: grotesk(500), fontSize: 15, color: t.fg }}
-                        />
-                    </Row>
-                </View>
+                {/* Tenant identifier field. Keyed on the mode so switching
+                    EMAIL/MOBILE re-mounts it with the right keyboard. */}
+                <Field
+                    key={vm.tenantIdLabel}
+                    label={vm.tenantIdLabel}
+                    icon="person-outline"
+                    value={vm.authId}
+                    onChangeText={vm.setAuthId}
+                    placeholder={vm.tenantIdLabel === 'EMAIL' ? 'demo@gmail.com' : '98765 43210'}
+                    keyboardType={vm.tenantIdLabel === 'EMAIL' ? 'email-address' : 'phone-pad'}
+                    style={{ marginBottom: 10 }}
+                />
 
-                {/* Password field */}
-                <View style={{ borderRadius: 18, backgroundColor: t.ink2, borderWidth: 1, borderColor: t.accent, paddingVertical: 14, paddingHorizontal: 16, marginBottom: 14 }}>
-                    <Eyebrow s={9} w={600} ls={0.12} c={t.accent} style={{ marginBottom: 7 }}>PASSWORD</Eyebrow>
-                    <Row gap={10}>
-                        <Glyph name="lock-closed-outline" size={17} color={t.fg2} />
-                        <TextInput
-                            value={vm.authPw}
-                            onChangeText={vm.setAuthPw}
-                            placeholder="Your password"
-                            placeholderTextColor={t.fg3}
-                            secureTextEntry={!show}
-                            autoCapitalize="none"
-                            autoCorrect={false}
-                            onSubmitEditing={vm.submitLogin}
-                            returnKeyType="go"
-                            style={{ flex: 1, padding: 0, fontFamily: grotesk(500), fontSize: 15, color: t.fg }}
-                        />
-                        <Press onPress={() => setShow((v) => !v)} hitSlop={10}>
-                            <Glyph name={show ? 'eye-off-outline' : 'eye-outline'} size={18} color={t.fg3} />
-                        </Press>
-                    </Row>
-                </View>
+                <Field
+                    label="PASSWORD"
+                    icon="lock-closed-outline"
+                    value={vm.authPw}
+                    onChangeText={vm.setAuthPw}
+                    placeholder="Your password"
+                    secure
+                    onSubmitEditing={vm.submitLogin}
+                    returnKeyType="go"
+                    style={{ marginBottom: 14 }}
+                />
 
                 {vm.hasAuthError ? (
                     <Row gap={8} align="flex-start" style={{ marginBottom: 12, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 12, backgroundColor: t.csoft }}>
@@ -138,7 +120,9 @@ export default function TenantLoginScreen() {
                 </Row>
 
                 <Row justify="space-between" style={{ marginTop: 18 }}>
-                    <T w={400} s={13} c={t.fg2}>Forgot password?</T>
+                    <Press onPress={vm.goForgot} hitSlop={8}>
+                        <T w={500} s={13} c={t.fg2}>Forgot password?</T>
+                    </Press>
                     <Press onPress={vm.goSignup}>
                         <T w={600} s={13} c={t.accent}>Create account</T>
                     </Press>

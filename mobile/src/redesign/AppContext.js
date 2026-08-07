@@ -91,7 +91,22 @@ const INITIAL_STATE = {
 
   // The "raise a request" form. `photo` is an expo-image-picker asset, uploaded as
   // `request_image` when present.
-  nr: { category: 'Plumbing', title: '', body: '', priority: 'Medium', photo: null, busy: false, error: '' }
+  nr: { category: 'Plumbing', title: '', body: '', priority: 'Medium', photo: null, busy: false, error: '' },
+
+  // ── Password recovery ──
+  // Two requests over three panes: 'ask' emails a 6-digit code, 'reset' spends it,
+  // 'done' confirms. `role` decides which account table the backend looks in —
+  // owners and tenants are separate accounts, so a code issued for one can never
+  // reset the other.
+  fp: {
+    step: 'ask', role: 'owner', id: '', code: '', pw: '', pw2: '',
+    busy: false, error: '', sentTo: ''
+  }
+};
+
+const BLANK_FP = {
+  step: 'ask', role: 'owner', id: '', code: '', pw: '', pw2: '',
+  busy: false, error: '', sentTo: ''
 };
 
 // Same list v1's tenant portal offers, so a request raised in either UI is filed
@@ -598,6 +613,56 @@ function deriveVm(s, api) {
 
     goSignup: () => setState({ signupRole: s.route === 'tlogin' ? 'tenant' : 'owner', route: 'signup', overlay: null }),
     isSignup: s.route === 'signup',
+
+    // ── Password recovery ──
+    // Opened from either login screen; the role is taken from whichever one you
+    // came from, and the identifier already typed there is carried over.
+    goForgot: () => setState({
+      route: 'forgot',
+      overlay: null,
+      fp: { ...BLANK_FP, role: s.route === 'tlogin' ? 'tenant' : 'owner', id: s.authId || '' }
+    }),
+    isForgot: s.route === 'forgot',
+    forgot: (() => {
+      const fp = s.fp || BLANK_FP;
+      const put = (patch) => setState({ fp: { ...fp, ...patch, error: '' } });
+      const isTenant = fp.role === 'tenant';
+      return {
+        step: fp.step,
+        asking: fp.step === 'ask',
+        resetting: fp.step === 'reset',
+        done: fp.step === 'done',
+        // Which account type is being recovered, said out loud — the two are
+        // separate accounts and a code for one will not open the other.
+        roleLabel: isTenant ? 'TENANT ACCOUNT' : 'LANDLORD ACCOUNT',
+        stepLabel: fp.step === 'ask' ? 'STEP 1 OF 2 · YOUR ACCOUNT'
+          : fp.step === 'reset' ? 'STEP 2 OF 2 · NEW PASSWORD'
+            : 'DONE',
+        progress: fp.step === 'ask' ? '50%' : '100%',
+        id: fp.id,
+        setId: (e) => put({ id: e && e.target ? e.target.value : e }),
+        code: fp.code,
+        setCode: (e) => put({ code: String(e && e.target ? e.target.value : e).replace(/[^0-9]/g, '') }),
+        pw: fp.pw,
+        setPw: (e) => put({ pw: e && e.target ? e.target.value : e }),
+        pw2: fp.pw2,
+        setPw2: (e) => put({ pw2: e && e.target ? e.target.value : e }),
+        busy: !!fp.busy,
+        error: fp.error || '',
+        hasError: !!fp.error,
+        // Where the code actually went, masked by the server.
+        sentTo: fp.sentTo,
+        sentLine: fp.sentTo
+          ? `A 6-digit code is on its way to ${fp.sentTo}. It expires in 15 minutes.`
+          : 'A 6-digit code is on its way to your registered email. It expires in 15 minutes.',
+        send: () => api.requestResetCode(),
+        resend: () => api.requestResetCode(),
+        save: () => api.submitNewPassword(),
+        // Step back to the identifier if the code went to the wrong account.
+        editAccount: () => setState({ fp: { ...fp, step: 'ask', error: '', code: '', pw: '', pw2: '' } }),
+        backToLogin: () => setState({ route: isTenant ? 'tlogin' : 'login', fp: { ...BLANK_FP }, authPw: '' })
+      };
+    })(),
     adult: s.adult,
     minor: !s.adult,
     ageOptions: [['18 OR OVER', true], ['UNDER 18', false]].map(([label, v]) => {
@@ -1496,6 +1561,70 @@ export function AppProvider({ children }) {
     }
   }, [setState]);
 
+  // ── Password recovery ──────────────────────────────────────────────────────
+  // Ask the backend to email a code. It only sends to an address that is actually
+  // registered — an unknown one comes back 404 and is reported as such rather than
+  // pretending a mail went out, so you find out now instead of waiting on an inbox.
+  const requestResetCode = useCallback(async () => {
+    const fp = stateRef.current.fp;
+    const id = String(fp.id || '').trim();
+    if (!id) { setState({ fp: { ...fp, error: 'Enter your registered email or mobile number.' } }); return; }
+    if (fp.busy) return;
+    setState({ fp: { ...fp, busy: true, error: '' } });
+    try {
+      // `identifier` is what the current backend reads; `email` is sent too so an
+      // older deployment still understands the request.
+      const res = await apiAuth.forgotPassword({ identifier: id, email: id, role: fp.role });
+      setState({
+        fp: {
+          ...stateRef.current.fp,
+          busy: false,
+          error: '',
+          step: 'reset',
+          // The server echoes a masked destination. Saying WHERE the code went
+          // matters: one sent to an address you forgot you used is otherwise
+          // indistinguishable from one that was never sent.
+          sentTo: (res && res.sentTo) || ''
+        }
+      });
+    } catch (e) {
+      setState({
+        fp: {
+          ...stateRef.current.fp,
+          busy: false,
+          error: errText(e, 'Could not send the code. Please try again.')
+        }
+      });
+    }
+  }, [setState]);
+
+  // Spend the code on a new password.
+  const submitNewPassword = useCallback(async () => {
+    const fp = stateRef.current.fp;
+    const code = String(fp.code || '').trim();
+    const bad = !code ? 'Enter the 6-digit code from your email.'
+      : fp.pw.length < 6 ? 'Password must be at least 6 characters.'
+        : fp.pw !== fp.pw2 ? 'Those passwords do not match.'
+          : '';
+    if (bad) { setState({ fp: { ...fp, error: bad } }); return; }
+    if (fp.busy) return;
+    setState({ fp: { ...fp, busy: true, error: '' } });
+    try {
+      const id = String(fp.id || '').trim();
+      await apiAuth.resetPassword({ identifier: id, email: id, code, newPassword: fp.pw, role: fp.role });
+      // Drop the new password from state the moment it is no longer needed.
+      setState({ fp: { ...stateRef.current.fp, busy: false, error: '', step: 'done', pw: '', pw2: '', code: '' } });
+    } catch (e) {
+      setState({
+        fp: {
+          ...stateRef.current.fp,
+          busy: false,
+          error: errText(e, 'Could not reset your password. Please try again.')
+        }
+      });
+    }
+  }, [setState]);
+
   // Attach a photo of the problem. expo-image-picker is loaded lazily so the
   // module is only pulled in when a tenant actually reaches for the camera roll.
   const pickRequestPhoto = useCallback(async () => {
@@ -1677,12 +1806,12 @@ export function AppProvider({ children }) {
     () => ({
       setState, set, go, flash, fxRef, signIn, register, signOut, resolveSession,
       loadOwnerData, loadTenantData, loadThread, sendReply, setRequestStatus,
-      pickRequestPhoto, createRequest
+      pickRequestPhoto, createRequest, requestResetCode, submitNewPassword
     }),
     [
       setState, set, go, flash, signIn, register, signOut, resolveSession,
       loadOwnerData, loadTenantData, loadThread, sendReply, setRequestStatus,
-      pickRequestPhoto, createRequest
+      pickRequestPhoto, createRequest, requestResetCode, submitNewPassword
     ]
   );
 

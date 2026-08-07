@@ -12,7 +12,7 @@
 //   an ionicon via -webkit-mask          → <Glyph name="search" size={15} color={t.fg}/>
 //   an avatar <img> round                 → <Face uri={…} size={34}/>
 import React from 'react';
-import { View, Text, Pressable, Image, StyleSheet } from 'react-native';
+import { View, Text, Pressable, Image, StyleSheet, TextInput } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useT } from './ThemeContext';
 import { grotesk, mono as monoFamily } from './theme';
@@ -119,6 +119,85 @@ export function Press({ children, onPress, style, disabled, hitSlop, ...rest }) 
         >
             {children}
         </Pressable>
+    );
+}
+
+// ── Form field ────────────────────────────────────────────────────────────────
+// The auth screens' labelled input: eyebrow label, leading glyph, and an accent
+// ring. The ring follows REAL focus — the prototype drew the password field
+// permanently lit because that is how the static mock-up was captured, which read
+// as "this field is selected" on a screen where nothing was, and left the two
+// fields looking inconsistent. One component so every auth screen agrees.
+export function Field({
+    label,
+    icon,
+    value,
+    onChangeText,
+    placeholder,
+    secure = false,
+    keyboardType,
+    autoCapitalize = 'none',
+    autoCorrect = false,
+    onSubmitEditing,
+    returnKeyType,
+    editable = true,
+    maxLength,
+    style,
+    inputStyle
+}) {
+    const t = useT();
+    const [focused, setFocused] = React.useState(false);
+    const [reveal, setReveal] = React.useState(false);
+    const lit = focused && editable;
+
+    return (
+        <View
+            style={[
+                {
+                    borderRadius: 18,
+                    backgroundColor: t.ink2,
+                    borderWidth: 1,
+                    borderColor: lit ? t.accent : t.line,
+                    paddingVertical: 14,
+                    paddingHorizontal: 16
+                },
+                style
+            ]}
+        >
+            {label ? (
+                <Eyebrow s={9} w={600} ls={0.12} c={lit ? t.accent : t.fg3} style={{ marginBottom: 7 }}>
+                    {label}
+                </Eyebrow>
+            ) : null}
+            <Row gap={10}>
+                {icon ? <Glyph name={icon} size={17} color={lit ? t.accent : t.fg2} /> : null}
+                <TextInput
+                    value={value}
+                    onChangeText={onChangeText}
+                    onFocus={() => setFocused(true)}
+                    onBlur={() => setFocused(false)}
+                    placeholder={placeholder}
+                    placeholderTextColor={t.fg3}
+                    secureTextEntry={secure && !reveal}
+                    keyboardType={keyboardType}
+                    autoCapitalize={autoCapitalize}
+                    autoCorrect={autoCorrect}
+                    onSubmitEditing={onSubmitEditing}
+                    returnKeyType={returnKeyType}
+                    editable={editable}
+                    maxLength={maxLength}
+                    style={[
+                        { flex: 1, padding: 0, fontFamily: grotesk(500), fontSize: 15, color: t.fg },
+                        inputStyle
+                    ]}
+                />
+                {secure ? (
+                    <Press onPress={() => setReveal((v) => !v)} hitSlop={10}>
+                        <Glyph name={reveal ? 'eye-off-outline' : 'eye-outline'} size={18} color={t.fg3} />
+                    </Press>
+                ) : null}
+            </Row>
+        </View>
     );
 }
 

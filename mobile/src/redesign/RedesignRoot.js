@@ -28,6 +28,7 @@ import OnboardingScreen from './screens/OnboardingScreen';
 import RoleScreen from './screens/RoleScreen';
 import OwnerLoginScreen from './screens/OwnerLoginScreen';
 import CreateAccountScreen from './screens/CreateAccountScreen';
+import ForgotPasswordScreen from './screens/ForgotPasswordScreen';
 import OverviewScreen from './screens/OverviewScreen';
 import UnitsScreen from './screens/UnitsScreen';
 import PeopleScreen from './screens/PeopleScreen';
@@ -51,6 +52,7 @@ const SCREENS = {
     role: RoleScreen,
     login: OwnerLoginScreen,
     signup: CreateAccountScreen,
+    forgot: ForgotPasswordScreen,
     home: OverviewScreen,
     units: UnitsScreen,
     people: PeopleScreen,
