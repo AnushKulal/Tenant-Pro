@@ -2,7 +2,7 @@ import React from 'react';
 import { View, ScrollView } from 'react-native';
 import { useVm } from '../AppContext';
 import { useT } from '../ThemeContext';
-import { T, Eyebrow, Press, Glyph, Monogram } from '../ui';
+import { T, Eyebrow, Press, Glyph, Wordmark } from '../ui';
 
 export default function RoleScreen() {
     const vm = useVm();
@@ -12,10 +12,7 @@ export default function RoleScreen() {
             contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', paddingVertical: 32, paddingHorizontal: 22 }}
             showsVerticalScrollIndicator={false}
         >
-            <View style={{ flexDirection: 'row', alignItems: 'center', columnGap: 10, marginBottom: 6 }}>
-                <Monogram size={38} />
-                <T w={700} s={20} lh={1} style={{ letterSpacing: -0.6 }}>TenantPro</T>
-            </View>
+            <Wordmark mono={38} s={20} style={{ marginBottom: 6 }} />
 
             <T w={700} s={40} lh={1.02} style={{ letterSpacing: -2, marginTop: 26, marginBottom: 8 }}>Two doors.{'\n'}One building.</T>
             <T w={400} s={14} lh={1.5} c={t.fg2} style={{ marginBottom: 30 }}>Pick the side you're on.</T>

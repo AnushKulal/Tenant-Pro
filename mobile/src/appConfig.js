@@ -15,6 +15,6 @@
 // to diff in a commit, not a runtime setting that could strand a user on a
 // half-migrated screen. The redesign also needs native modules (custom fonts,
 // map/QR), so 'v2' ships in a fresh APK — the flag flips in that build.
-export const UI_VERSION = 'v1';
+export const UI_VERSION = 'v2';
 
 export const isRedesign = () => UI_VERSION === 'v2';

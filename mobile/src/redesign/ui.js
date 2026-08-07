@@ -156,4 +156,19 @@ export function Monogram({ size = 38 }) {
     );
 }
 
+// The TenantPro lockup: the TP monogram + the wordmark, with "Pro" in the
+// readable accent tone (lime in dark, deep-lime in light) so it stays legible in
+// both themes. Used on the auth/role screens; keep it the one source of the mark.
+export function Wordmark({ mono = 38, s = 20, gap = 10, showMonogram = true, style }) {
+    const t = useT();
+    return (
+        <View style={[{ flexDirection: 'row', alignItems: 'center', columnGap: gap }, style]}>
+            {showMonogram ? <Monogram size={mono} /> : null}
+            <T w={700} s={s} lh={1} style={{ letterSpacing: -0.6 }}>
+                Tenant<T w={700} s={s} c={t.accent}>Pro</T>
+            </T>
+        </View>
+    );
+}
+
 export const S = StyleSheet.create({ flex1: { flex: 1 }, center: { alignItems: 'center', justifyContent: 'center' } });

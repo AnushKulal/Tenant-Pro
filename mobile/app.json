@@ -5,7 +5,7 @@
     "owner": "anush_kulal",
     "version": "1.3.0",
     "orientation": "portrait",
-    "icon": "./assets/logo.png",
+    "icon": "./assets/icon-tp.png",
     "userInterfaceStyle": "automatic",
     "runtimeVersion": "1.0.0",
     "updates": {
@@ -15,9 +15,9 @@
       "fallbackToCacheTimeout": 0
     },
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/splash-tp.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#08080A"
     },
     "ios": {
       "supportsTablet": true
@@ -25,12 +25,12 @@
     "android": {
       "package": "com.anushkulal.tenantpro",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/logo.png",
-        "backgroundColor": "#ffffff"
+        "foregroundImage": "./assets/adaptive-tp-foreground.png",
+        "backgroundColor": "#C8F751"
       }
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/favicon-tp.png"
     },
     "plugins": [
       "@react-native-community/datetimepicker"
