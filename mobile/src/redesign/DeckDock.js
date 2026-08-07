@@ -95,7 +95,7 @@ export default function DeckDock() {
                             ...DOCK_RADIUS
                         }}
                     >
-                        <Face uri={'https://randomuser.me/api/portraits/men/32.jpg'} size={22} radius={11} />
+                        <Face uri={vm.ownerImg} size={22} radius={11} />
                         <T mono w={600} s={8} lh={1} ls={0.06} c={t.fg2}>YOU</T>
                     </Press>
                 )}

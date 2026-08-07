@@ -16,7 +16,7 @@ import {
 } from './data';
 import {
   auth as apiAuth, owner as apiOwner, properties as apiProps,
-  units as apiUnits, tenants as apiTenants, setToken
+  units as apiUnits, tenants as apiTenants, setToken, mediaUrl
 } from './api';
 import { mapOwnerData } from './mapping';
 import { loadSession, saveOwnerSession, saveTenantSession, clearSession } from './session';
@@ -109,6 +109,7 @@ function deriveVm(s, api) {
   const PAYMENTS_SRC = D.payments || [];
   const EXPENSES_SRC = D.expenses || [];
   const live = !!s.live;
+  const u = (s.session && s.session.user) || null;
 
   const mode = s.theme || 'dark';
   const dark = mode === 'dark';
@@ -446,6 +447,8 @@ function deriveVm(s, api) {
     isEmptyAccount: live && !s.dataLoading && (PROPS.length === 0 && TENANTS.length === 0),
     ownerName: (s.session && s.session.user && s.session.user.name) || '',
     ownerEmail: (s.session && s.session.user && s.session.user.email) || '',
+    ownerImg: (s.session && s.session.user && s.session.user.profile_pic)
+      ? mediaUrl(s.session.user.profile_pic) : null,
 
     goSignup: () => setState({ signupRole: s.route === 'tlogin' ? 'tenant' : 'owner', route: 'signup', overlay: null }),
     isSignup: s.route === 'signup',
@@ -884,12 +887,16 @@ function deriveVm(s, api) {
     askSignOut: () => set('overlay', 'signout'),
     confirmSignOut: () => api.signOut(),
     isProfile: s.route === 'profile',
+    // Real account details from the signed-in session (the prototype hard-coded
+    // the demo landlord here).
     profileFields: [
-      { label: 'FULL NAME', value: 'Demo Landlord' },
-      { label: 'EMAIL', value: 'demo@gmail.com' },
-      { label: 'MOBILE', value: '+91 90000 00000' },
+      { label: 'FULL NAME', value: (u && u.name) || '—' },
+      { label: 'EMAIL', value: (u && u.email) || '—' },
+      { label: 'MOBILE', value: (u && u.phone) || '—' },
       { label: 'PASSWORD', value: '••••••••••' }
     ],
+    // "OWNER · 2 PROPERTIES · 6 TENANTS" — counted from the live collections.
+    profileSubtitle: `OWNER · ${PROPS.length} ${PROPS.length === 1 ? 'PROPERTY' : 'PROPERTIES'} · ${ROSTER.length} ${ROSTER.length === 1 ? 'TENANT' : 'TENANTS'}`,
     themeModes: [['Light', 'light', 'sunny-outline'], ['Dark', 'dark', 'moon-outline'], ['System', 'system', 'phone-portrait-outline']].map(([label, k, icon]) => {
       const on = s.pref === k;
       return {

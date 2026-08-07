@@ -4,6 +4,7 @@
 // by whichever overlay flag on the vm is true. Translated from Sheets.html.
 import React from 'react';
 import { View, ScrollView, Image, TextInput, Animated, Dimensions } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useVm } from './AppContext';
 import { useT } from './ThemeContext';
 import { grotesk } from './theme';
@@ -13,10 +14,12 @@ import { useSheetIn, useFadeIn } from './motion';
 export default function Sheets() {
     const vm = useVm();
     const t = useT();
+    const insets = useSafeAreaInsets();
     // `animation: tpsheet .26s cubic-bezier(.2,.8,.2,1)` — slide the sheet up from
     // off-screen while the scrim fades in. Keyed on which overlay is open so each
     // sheet replays the motion (see the key on <Sheets/> usage in RedesignRoot).
     const H = Dimensions.get('window').height;
+    const SHEET_MAX = Math.round(H * 0.88);
     const sheetIn = useSheetIn({ height: H });
     const scrimIn = useFadeIn();
 
@@ -32,7 +35,7 @@ export default function Sheets() {
     );
 
     return (
-        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'flex-end', zIndex: 60 }}>
+        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'flex-end', zIndex: 60, elevation: 24 }}>
             <Animated.View style={[{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }, scrimIn]}>
             <Press
                 onPress={vm.closeOverlay}
@@ -40,17 +43,18 @@ export default function Sheets() {
             />
             </Animated.View>
 
-            <Animated.View style={sheetIn}>
+            <Animated.View style={[{ position: 'absolute', left: 0, right: 0, bottom: 0, maxHeight: SHEET_MAX }, sheetIn]}>
             <ScrollView
+                bounces={false}
                 style={{
-                    maxHeight: '85%',
+                    maxHeight: SHEET_MAX,
                     backgroundColor: t.ink2,
                     borderTopLeftRadius: 28,
                     borderTopRightRadius: 28,
                     borderTopWidth: 1,
                     borderColor: t.line2
                 }}
-                contentContainerStyle={{ paddingTop: 10, paddingHorizontal: 18, paddingBottom: 26 }}
+                contentContainerStyle={{ paddingTop: 10, paddingHorizontal: 18, paddingBottom: 26 + insets.bottom }}
                 showsVerticalScrollIndicator={false}
             >
                 <Handle />
@@ -587,10 +591,16 @@ export default function Sheets() {
                 {vm.isMenu && (
                     <View>
                         <Row style={{ gap: 13, marginBottom: 18 }}>
-                            <Image source={{ uri: 'https://randomuser.me/api/portraits/men/32.jpg' }} style={{ width: 48, height: 48, borderRadius: 16, backgroundColor: t.accent }} resizeMode="cover" />
+                            {vm.ownerImg ? (
+                                <Image source={{ uri: vm.ownerImg }} style={{ width: 48, height: 48, borderRadius: 16, backgroundColor: t.ink3 }} resizeMode="cover" />
+                            ) : (
+                                <View style={{ width: 48, height: 48, borderRadius: 16, backgroundColor: t.lsoft, alignItems: 'center', justifyContent: 'center' }}>
+                                    <Glyph name="person" size={22} color={t.accent} />
+                                </View>
+                            )}
                             <View style={{ flex: 1 }}>
-                                <T w={600} s={16} lh={1.2}>Demo Landlord</T>
-                                <Eyebrow s={10} ls={0.08} style={{ marginTop: 4 }}>DEMO@GMAIL.COM</Eyebrow>
+                                <T w={600} s={16} lh={1.2} numberOfLines={1}>{vm.ownerName || 'Your account'}</T>
+                                <Eyebrow s={10} ls={0.08} style={{ marginTop: 4 }} numberOfLines={1}>{(vm.ownerEmail || '').toUpperCase()}</Eyebrow>
                             </View>
                         </Row>
                         {(vm.menuRows || []).map((m, i) => (

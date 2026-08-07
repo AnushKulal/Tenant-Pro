@@ -4,8 +4,6 @@ import { useVm } from '../AppContext';
 import { useT } from '../ThemeContext';
 import { T, Eyebrow, Face, Glyph, Press } from '../ui';
 
-const AVATAR = 'https://randomuser.me/api/portraits/men/32.jpg';
-
 export default function MyProfileScreen() {
     const vm = useVm();
     const t = useT();
@@ -27,7 +25,7 @@ export default function MyProfileScreen() {
                 }}
             >
                 <View style={{ position: 'relative' }}>
-                    <Face uri={AVATAR} size={88} radius={28} />
+                    <Face uri={vm.ownerImg} size={88} radius={28} />
                     <Press
                         onPress={vm.noop}
                         style={{
@@ -47,11 +45,11 @@ export default function MyProfileScreen() {
                         <Glyph name="camera" size={15} color={t.on} />
                     </Press>
                 </View>
-                <T w={700} s={21} lh={1.1} style={{ letterSpacing: -0.7, marginTop: 14 }}>
-                    Demo Landlord
+                <T w={700} s={21} lh={1.1} numberOfLines={1} style={{ letterSpacing: -0.7, marginTop: 14 }}>
+                    {vm.ownerName || 'Your account'}
                 </T>
                 <Eyebrow s={10} ls={0.08} c={t.fg3} style={{ marginTop: 7 }}>
-                    OWNER · 2 PROPERTIES · 6 TENANTS
+                    {vm.profileSubtitle}
                 </Eyebrow>
             </View>
 

@@ -147,7 +147,14 @@ function Shell() {
             </ScreenStage>
 
             {showDock ? (
-                <View style={{ paddingBottom: insets.bottom }}>
+                /* A sheet is modal, so the dock must not sit on top of it. Relying
+                   on z-order alone proved platform-dependent (the dock kept painting
+                   over the sheet's last row), so hide it outright while an overlay is
+                   open — opacity + pointerEvents keeps its space so nothing reflows. */
+                <View
+                    pointerEvents={vm.overlayOpen ? 'none' : 'auto'}
+                    style={{ paddingBottom: insets.bottom, zIndex: 1, opacity: vm.overlayOpen ? 0 : 1 }}
+                >
                     <DeckDock />
                 </View>
             ) : (
