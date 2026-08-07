@@ -67,6 +67,12 @@ const daysFromNow = (days) => {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), now.getDate() + days);
 };
+// A MySQL DATETIME `hours` from now (negative = in the past). Used to age the demo
+// maintenance queue, which is shown as a relative age ("2H AGO") rather than a date.
+const hoursFromNow = (hours) => {
+    const d = new Date(Date.now() + hours * 3600000);
+    return `${ymd(d)} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+};
 
 // --- Declarative dataset -----------------------------------------------------
 const PROPERTIES = [
@@ -316,26 +322,93 @@ const ensureDemoTenantLogin = async (tenantIds) => {
     console.log('👤 Demo tenant-portal login ensured — demo@gmail.com / Kajal@2004 works on BOTH portals (alias: tenant@gmail.com / Tenant@2004).');
 };
 
-// Self-healing demo maintenance requests, so the tenant portal's Requests section
-// shows real entries in a demo rather than an empty state. Attached to the tenant
-// the demo tenant login is linked to (Rahul Sharma).
+// Self-healing demo maintenance requests. Spread across SIX different tenants
+// rather than all hung off one, because the landlord's dashboard shows the queue
+// as "who is asking for what" — with a single tenant it read as one person
+// complaining six times instead of a portfolio with a workload.
+//
+// Each row: [tenant, category, title, description, priority, status, hoursAgo,
+//            photo?, thread?]. `thread` is a list of [sender_role, body] pairs
+// seeded in order so a demo opens a request onto a real conversation rather than
+// an empty reply box.
+const REQUESTS = [
+    ['Amit Verma', 'Plumbing', 'No water in the bathroom',
+        'There has been no water in the bathroom since last night. The tap runs dry and the overhead tank line seems blocked. I have not been able to use the bathroom since morning — please send someone today.',
+        'High', 'Open', 2, 'https://picsum.photos/seed/tp-tkt-1a/800/600',
+        [
+            ['tenant', 'Still nothing this morning. The kitchen tap is fine, so it looks like just the bathroom line.'],
+            ['owner', 'Thanks for the photo — the plumber is coming today between 4 and 6pm. Please keep the bathroom accessible.']
+        ]],
+    ['Karthik Rao', 'Electrical', 'Ceiling fan not working',
+        'The fan stopped right after yesterday’s power cut. The regulator clicks but the blades do not move. Other points in the room are working fine.',
+        'High', 'Open', 26, 'https://picsum.photos/seed/tp-tkt-2a/800/600',
+        [['tenant', 'It is getting hard to sleep without the fan. Can someone look at it tomorrow?']]],
+    ['Rahul Sharma', 'Plumbing', 'Leaking tap in bathroom',
+        'The cold-water tap drips constantly, even when fully closed. It is wasting water and the sound carries at night.',
+        'Medium', 'In Progress', 72, 'https://picsum.photos/seed/tp-tkt-3a/800/600',
+        [
+            ['owner', 'Plumber has seen it — the washer needs replacing. Part arrives Thursday.'],
+            ['tenant', 'Understood, thank you for the update.']
+        ]],
+    ['Sneha Reddy', 'General', 'Lift making a grinding noise',
+        'The lift makes a loud grinding sound between the 2nd and 3rd floor. It still runs but it does not sound safe.',
+        'Medium', 'Open', 96, null,
+        [['tenant', 'It happened again this evening. I have started using the stairs.']]],
+    ['Priya Nair', 'General', 'Wi-Fi drops every evening',
+        'The connection drops for 10–15 minutes at a time between 8pm and 10pm. It has been happening all week.',
+        'Low', 'Open', 168, null, []],
+    ['Neha Gupta', 'Appliance', 'Geyser needs a service',
+        'The water takes much longer to heat than it used to. Probably needs a descale and a service.',
+        'Low', 'In Progress', 190, null,
+        [['owner', 'Service booked for Saturday morning.']]],
+    ['Rahul Sharma', 'Appliance', 'Geyser serviced',
+        'Water heater checked and cleaned. Heating normally again.',
+        'Low', 'Resolved', 340, null,
+        [['owner', 'Done — descaled and tested. Closing this out.']]]
+];
+
 const reseedRequests = async (ownerId, tenantIds) => {
-    const tenantId = tenantIds['Rahul Sharma'];
-    if (!tenantId) return;
-    await db.query('DELETE FROM maintenance_requests WHERE tenant_id = ?', [tenantId]);
-    const rows = [
-        ['Plumbing', 'Leaking tap in bathroom', 'The cold-water tap drips constantly.', 'Medium', 'In Progress'],
-        ['Electrical', 'Ceiling fan not working', 'Fan stopped after the power cut.', 'High', 'Open'],
-        ['Appliance', 'Geyser serviced', 'Water heater checked and cleaned.', 'Low', 'Resolved']
-    ];
-    for (const [category, title, description, priority, status] of rows) {
-        await db.query(
-            `INSERT INTO maintenance_requests (tenant_id, owner_id, category, title, description, priority, status)
-             VALUES (?, ?, ?, ?, ?, ?, ?)`,
-            [tenantId, ownerId, category, title, description, priority, status]
+    const ids = Object.values(tenantIds).filter(Boolean);
+    if (ids.length === 0) return;
+
+    // Scoped to this owner's tenants only — never another account's rows. The
+    // messages go with them via ON DELETE CASCADE.
+    await db.query(
+        `DELETE FROM maintenance_requests WHERE tenant_id IN (${ids.map(() => '?').join(',')})`,
+        ids
+    );
+
+    let seeded = 0;
+    let messages = 0;
+    for (const [who, category, title, description, priority, status, hoursAgo, photo, thread] of REQUESTS) {
+        const tenantId = tenantIds[who];
+        if (!tenantId) continue;
+
+        // created_at/updated_at are written explicitly so the queue has a
+        // believable spread of ages ("2H AGO" … "2W AGO") instead of every
+        // request being raised at the moment of the last deploy.
+        const raised = hoursFromNow(-hoursAgo);
+        const [res] = await db.query(
+            `INSERT INTO maintenance_requests
+             (tenant_id, owner_id, category, title, description, priority, status, image_url, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [tenantId, ownerId, category, title, description, priority, status, photo, raised, raised]
         );
+        seeded += 1;
+
+        // Replies land after the request, evenly spaced through its lifetime, so
+        // the thread reads in a sensible order.
+        const list = thread || [];
+        for (let i = 0; i < list.length; i += 1) {
+            const at = hoursFromNow(-hoursAgo + ((i + 1) * hoursAgo) / (list.length + 1));
+            await db.query(
+                'INSERT INTO maintenance_messages (request_id, sender_role, body, created_at) VALUES (?, ?, ?, ?)',
+                [res.insertId, list[i][0], list[i][1], at]
+            );
+            messages += 1;
+        }
     }
-    console.log(`🔧 Demo maintenance requests reseeded — ${rows.length}.`);
+    console.log(`🔧 Demo maintenance requests reseeded — ${seeded} across ${new Set(REQUESTS.map((r) => r[0])).size} tenants, ${messages} messages.`);
 };
 
 // Run a self-healing step but never let its failure abort the ones after it.
