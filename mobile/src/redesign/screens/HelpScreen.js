@@ -1,8 +1,8 @@
 import React from 'react';
-import { View, ScrollView, Image } from 'react-native';
+import { View, ScrollView } from 'react-native';
 import { useVm } from '../AppContext';
 import { useT } from '../ThemeContext';
-import { T, Card, Row, Press, Glyph } from '../ui';
+import { T, Card, Row, Press, Glyph, Avatar } from '../ui';
 
 export default function HelpScreen() {
     const vm = useVm();
@@ -72,23 +72,16 @@ export default function HelpScreen() {
                     columnGap: 12
                 }}
             >
-                {landlord.img ? (
-                    <Image
-                        source={{ uri: landlord.img }}
-                        style={{ width: 40, height: 40, borderRadius: 13, backgroundColor: t.ink3 }}
-                        resizeMode="cover"
-                    />
-                ) : (
-                    <View style={{ width: 40, height: 40, borderRadius: 13, backgroundColor: t.lsoft, alignItems: 'center', justifyContent: 'center' }}>
-                        <T w={700} s={16} c={t.accent}>{landlord.initial}</T>
-                    </View>
-                )}
-                <View style={{ flex: 1 }}>
+                {/* Their picture — or their initials — opens their details. */}
+                <Press onPress={landlord.open}>
+                    <Avatar uri={landlord.img} initials={landlord.initials} size={40} radius={13} />
+                </Press>
+                <Press onPress={landlord.open} style={{ flex: 1 }}>
                     <T w={600} s={14} lh={1.2} numberOfLines={1}>{landlord.name}</T>
                     <T mono w={600} s={10} lh={1.4} ls={0.08} c={t.fg3} style={{ marginTop: 4 }}>
                         {landlord.phoneLabel}
                     </T>
-                </View>
+                </Press>
                 <Press
                     onPress={landlord.call}
                     style={{

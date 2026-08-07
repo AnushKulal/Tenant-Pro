@@ -204,19 +204,14 @@ export default function OverviewScreen() {
                             </Row>
                             <Row align="center" gap={6} style={{ marginTop: 12 }}>
                                 <T mono w={600} s={9} lh={1} ls={0.08} c={col(tk.statusFg)} style={{ flex: 1 }}>{tk.status}</T>
-                                <Press onPress={tk.read} style={{ paddingVertical: 8, paddingHorizontal: 12, borderRadius: 11, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line }}>
+                                {/* Just Read. An "Open" button beside a status already
+                                    reading OPEN said nothing, and a dashboard is for
+                                    seeing what needs doing — the doing happens in the
+                                    ticket itself. */}
+                                <Press onPress={tk.read} style={{ flexDirection: 'row', alignItems: 'center', columnGap: 6, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 11, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line }}>
                                     <T w={600} s={11} lh={1} c={t.fg}>Read</T>
+                                    <Glyph name="chevron-forward" size={12} color={t.fg3} />
                                 </Press>
-                                {tk.started && (
-                                    <Press onPress={tk.resolve} style={{ paddingVertical: 8, paddingHorizontal: 12, borderRadius: 11, backgroundColor: t.lime }}>
-                                        <T w={600} s={11} lh={1} c={t.on}>Resolve</T>
-                                    </Press>
-                                )}
-                                {tk.notStarted && (
-                                    <Press onPress={tk.start} style={{ paddingVertical: 8, paddingHorizontal: 12, borderRadius: 11, backgroundColor: t.lime }}>
-                                        <T w={600} s={11} lh={1} c={t.on}>Open</T>
-                                    </Press>
-                                )}
                             </Row>
                         </View>
                     </Card>

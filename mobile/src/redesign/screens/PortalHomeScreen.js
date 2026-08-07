@@ -2,7 +2,7 @@ import React from 'react';
 import { View, ScrollView } from 'react-native';
 import { useVm } from '../AppContext';
 import { useT } from '../ThemeContext';
-import { T, Eyebrow, Card, Row, Pill, Press, Glyph, IconChip, Face } from '../ui';
+import { T, Eyebrow, Card, Row, Pill, Press, Glyph, IconChip, Face, Avatar } from '../ui';
 
 export default function PortalHomeScreen() {
     const vm = useVm();
@@ -137,17 +137,13 @@ export default function PortalHomeScreen() {
             {/* Linked: landlord contact */}
             {vm.portalLinked && (
                 <Card radius={22} pad={0} style={{ paddingVertical: 16, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', columnGap: 12 }}>
-                    {(vm.landlord || {}).img ? (
-                        <Face uri={vm.landlord.img} size={40} radius={13} style={{ backgroundColor: t.accent }} />
-                    ) : (
-                        <View style={{ width: 40, height: 40, borderRadius: 13, backgroundColor: t.lsoft, alignItems: 'center', justifyContent: 'center' }}>
-                            <T w={700} s={16} c={t.accent}>{(vm.landlord || {}).initial}</T>
-                        </View>
-                    )}
-                    <View style={{ flex: 1 }}>
+                    <Press onPress={(vm.landlord || {}).open}>
+                        <Avatar uri={(vm.landlord || {}).img} initials={(vm.landlord || {}).initials} size={40} radius={13} />
+                    </Press>
+                    <Press onPress={(vm.landlord || {}).open} style={{ flex: 1 }}>
                         <T w={600} s={14} lh={1.2} numberOfLines={1}>{(vm.landlord || {}).name}</T>
                         <Eyebrow s={10} ls={0.08} c={t.fg3} style={{ marginTop: 4 }}>{(vm.landlord || {}).phoneLabel}</Eyebrow>
-                    </View>
+                    </Press>
                     <Press
                         onPress={(vm.landlord || {}).call}
                         style={{ width: 38, height: 38, borderRadius: 13, backgroundColor: t.lsoft, alignItems: 'center', justifyContent: 'center' }}

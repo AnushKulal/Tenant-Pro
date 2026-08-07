@@ -236,11 +236,20 @@ function deriveVm(s, api) {
       sending: mine && !!th.sending,
       messages: rows.filter(Boolean).map((m) => {
         const own = m.sender_role === myRole;
+        // A status change is an EVENT in the timeline, not somebody talking: it
+        // renders as a centred marker rather than a bubble, so "when did this move
+        // to In Progress" is answerable by reading down the thread.
+        const isEvent = m.kind === 'status';
         return {
           id: m.id,
           body: m.body,
           own,
-          who: m.sender_role === 'owner' ? 'LANDLORD' : 'TENANT',
+          event: isEvent,
+          // Which way it moved, for the event's own wording.
+          from: m.status_from || '',
+          to: m.status_to || '',
+          eventFg: m.status_to === 'Resolved' ? 'pos' : m.status_to === 'In Progress' ? 'amber' : 'fg2',
+          who: m.sender_role === 'owner' ? 'LANDLORD' : m.sender_role === 'system' ? 'TENANTPRO' : 'TENANT',
           time: msgTime(m.created_at),
           bg: own ? 'lsoft' : 'ink3',
           fg: own ? 'fg' : 'fg2',
@@ -267,6 +276,16 @@ function deriveVm(s, api) {
   };
   // Place a real call. Falls back to a toast if the device has no dialler (a
   // tablet, the web preview) rather than failing silently.
+  // A two-letter stand-in for a missing photo: the initial of the first name and of
+  // the last. A single-word name gives its first two letters rather than one lonely
+  // character in a big circle.
+  const initialsOf = (name) => {
+    const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+    if (!parts.length) return '?';
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  };
+
   // "9000000000" → "+91 90000 00000". Ten digits are assumed Indian; anything else
   // is shown as given rather than reshaped into a format it may not be in.
   const fmtPhone = (p) => {
@@ -304,7 +323,13 @@ function deriveVm(s, api) {
     // there is none to show. Return null and let the card fall back to an initial
     // rather than putting a stranger's stock face next to their name.
     img: TLIVE ? null : 'https://randomuser.me/api/portraits/men/32.jpg',
-    initial: String((LANDLORD && LANDLORD.name) || 'L').trim().charAt(0).toUpperCase(),
+    initials: initialsOf((LANDLORD && LANDLORD.name) || 'Demo Landlord'),
+    email: (LANDLORD && LANDLORD.email) || 'demo@gmail.com',
+    // Tapping their picture opens their details — it looked tappable and did
+    // nothing, which is worse than not looking tappable at all.
+    open: () => setState({ overlay: 'landlord' }),
+    copyPhone: () => copyText((LANDLORD && LANDLORD.phone) || '9000000000', 'Number copied'),
+    copyEmail: () => copyText((LANDLORD && LANDLORD.email) || 'demo@gmail.com', 'Email copied'),
     call: () => {
       const n = (LANDLORD && LANDLORD.phone) || (TLIVE ? '' : '9000000000');
       return n ? callNumber(n, (LANDLORD && LANDLORD.name) || 'your landlord')
@@ -325,7 +350,7 @@ function deriveVm(s, api) {
     rentFull: s.rents[whoBase.id] ? `₹${inr(s.rents[whoBase.id])}` : whoBase.rentFull
   };
   const credit = creditOf(who);
-  const owner = ['home', 'units', 'people', 'tenant', 'ledger', 'settings', 'profile', 'property'].includes(s.route);
+  const owner = ['home', 'units', 'people', 'tenant', 'ledger', 'settings', 'profile', 'property', 'support'].includes(s.route);
   const place = PROPS.find((p) => p.id === s.place) || PROPS[0] || EMPTY_PLACE;
   const d = 0.008;
   const bbox = `${(place.lon - d).toFixed(4)},${(place.lat - d * 0.6).toFixed(4)},${(place.lon + d).toFixed(4)},${(place.lat + d * 0.6).toFixed(4)}`;
@@ -520,6 +545,11 @@ function deriveVm(s, api) {
     setState({ ticket: id, overlay: 'ticket', reply: '' });
     if (id != null) api.loadThread(id);
   };
+  // Same, but staying on the Help & support screen rather than opening a sheet.
+  const selectTicket = (id) => {
+    setState({ ticket: id, reply: '' });
+    if (id != null) api.loadThread(id);
+  };
 
   const PAYMENTS = PAYMENTS_SRC.filter((p) => !scoped || unitProp[p.unit] === curProp);
   const EXPENSES = EXPENSES_SRC.filter((e) => !scoped || e.prop === curProp);
@@ -623,6 +653,12 @@ function deriveVm(s, api) {
     isSettings: s.route === 'settings',
     isPortal: s.route === 'portal',
     isOwner: owner,
+    // A signed-in tenant whose own data has not arrived yet. Without this the
+    // portal silently rendered the SEED bundle — a stock landlord photo, invented
+    // request dates, and no reply box — which looks like a working app showing
+    // someone else's tenancy. Same gate the owner side already had.
+    isTenantSession: !!(s.session && s.session.role === 'tenant'),
+    tenantDataReady: !!s.tdata,
     scoped,
     scopeHint: scoped ? scopeProp.name : 'Property, unit or tenant',
     scopeFg: scoped ? 'fg' : 'fg3',
@@ -639,7 +675,7 @@ function deriveVm(s, api) {
     toast: s.toast,
     showSearch: !!mod,
     // Ledger owns its own search and title; People has its own search bar.
-    showHeader: owner && s.route !== 'ledger' && s.route !== 'people',
+    showHeader: owner && !['ledger', 'people', 'support'].includes(s.route),
     showBack: !mod,
     backTitle: { property: 'Properties & units', profile: 'My profile', settings: 'Settings', tenant: 'People' }[s.route] || '',
     // The header's back chevron walks the same trail the phone's back gesture does,
@@ -842,6 +878,7 @@ function deriveVm(s, api) {
     refreshing: s.refreshing,
     refresh: () => api.loadOwnerData({ refresh: true }),
     retryLoad: () => api.loadOwnerData(),
+    retryTenantLoad: () => api.loadTenantData(),
     // True when the account is real but genuinely has nothing yet — the cue for
     // an onboarding empty state rather than a spinner.
     isEmptyAccount: live && !s.dataLoading && (PROPS.length === 0 && TENANTS.length === 0),
@@ -1072,6 +1109,16 @@ function deriveVm(s, api) {
       notStarted: statusOf(openTicket) === 'Open',
       start: () => { api.setRequestStatus(openTicket.id, 'In Progress'); flash(`Opened — ${openTicket.title}`); },
       resolve: () => { api.setRequestStatus(openTicket.id, 'Resolved'); setState({ overlay: null }); flash(`Resolved — ${openTicket.title}`); },
+      // How long this has been waiting. The status says OPEN; the useful question
+      // is how long it has said that.
+      openFor: openTicket.age ? `OPEN ${openTicket.age}` : 'JUST RAISED',
+      // The preview shows the description as raised. Anything longer than a glance
+      // belongs in Help & support, along with the replies and the status history.
+      preview: String(openTicket.body || '').length > 180
+        ? `${String(openTicket.body).slice(0, 180).trimEnd()}…`
+        : (openTicket.body || 'No description was added.'),
+      isTruncated: String(openTicket.body || '').length > 180,
+      readMore: () => setState({ route: 'support', overlay: null, ticket: openTicket.id }),
       // The landlord's half of the conversation, and a real call to the tenant who
       // raised it. Replying needs a live server-side row to hang messages off.
       thread: threadOf(openTicket.id),
@@ -1238,6 +1285,70 @@ function deriveVm(s, api) {
     alertCount: String(ALERTS.length),
     alertsEmptyLine: 'Nothing needs you right now. Rent is on track and no tickets are open.',
 
+    // ── Help & support (owner) ────────────────────────────────────────────────
+    // Where a ticket is actually worked: the whole timeline — every reply and every
+    // status change, in the order they happened — plus the controls to move it
+    // along. The dashboard card deliberately only previews, so the list of things
+    // to do does not turn into a wall of conversation.
+    goSupport: () => setState({ route: 'support', overlay: null }),
+    isSupport: s.route === 'support',
+    support: (() => {
+      // Newest activity first, and unresolved before resolved: what needs doing.
+      const all = TICKETS.slice().sort((a, b) => {
+        const done = (x) => (statusOf(x) === 'Resolved' ? 1 : 0);
+        return done(a) - done(b) || PRIORITY[a.priority].rank - PRIORITY[b.priority].rank;
+      });
+      const sel = all.find((x) => x.id === s.ticket) || all[0] || null;
+      const person = sel ? (TENANTS.find((x) => x.id === sel.who) || { name: sel.name, img: sel.img, phone: sel.phone }) : {};
+      return {
+        empty: all.length === 0,
+        emptyLine: 'No tickets have been raised yet. When a tenant reports something, it lands here.',
+        list: all.map((x) => {
+          const st = statusOf(x);
+          const who = TENANTS.find((y) => y.id === x.who) || { name: x.name, img: x.img };
+          return {
+            id: x.id,
+            title: x.title,
+            who: who.name,
+            img: who.img,
+            initials: initialsOf(who.name),
+            meta: `UNIT ${x.unit} · ${x.cat} · ${x.age}`,
+            status: st.toUpperCase(),
+            statusFg: STATUS_FG[st],
+            priority: x.priority.toUpperCase(),
+            fg: PRIORITY[x.priority].fg,
+            bg: PRIORITY[x.priority].bg,
+            on: !!sel && x.id === sel.id,
+            go: () => selectTicket(x.id)
+          };
+        }),
+        has: !!sel,
+        title: sel ? sel.title : '',
+        who: person.name || '',
+        img: person.img || null,
+        initials: initialsOf(person.name),
+        meta: sel ? `UNIT ${sel.unit} · ${sel.cat}` : '',
+        openFor: sel && sel.age ? `RAISED ${sel.age}` : '',
+        status: sel ? statusOf(sel).toUpperCase() : '',
+        statusFg: sel ? STATUS_FG[statusOf(sel)] : 'fg3',
+        priority: sel ? sel.priority.toUpperCase() : '',
+        pfg: sel ? PRIORITY[sel.priority].fg : 'fg3',
+        pbg: sel ? PRIORITY[sel.priority].bg : 'ink3',
+        body: sel ? (sel.body || 'No description was added.') : '',
+        photos: sel ? (sel.photos || []) : [],
+        hasPhotos: !!(sel && sel.photos && sel.photos.length),
+        thread: threadOf(sel ? sel.id : null),
+        canReply: live && !!sel && sel.id != null,
+        started: sel ? statusOf(sel) !== 'Open' : false,
+        resolved: sel ? statusOf(sel) === 'Resolved' : false,
+        start: () => sel && api.setRequestStatus(sel.id, 'In Progress'),
+        resolve: () => sel && api.setRequestStatus(sel.id, 'Resolved'),
+        call: () => (person.phone
+          ? callNumber(person.phone, person.name || 'this tenant')
+          : flash(`No number on file for ${person.name || 'this tenant'}`))
+      };
+    })(),
+
     openInvite: () => set('overlay', 'invite'),
     isInvite: s.overlay === 'invite',
     invite: {
@@ -1388,6 +1499,7 @@ function deriveVm(s, api) {
         go: () => setState({ overlay: 'paysettings', ps: { upiId: PAY.upiId, upiNumber: PAY.upiNumber, error: '' } }),
         fg: 'fg', bg: 'vsoft', ifg: 'accent'
       },
+      { label: 'Help & support', icon: 'help-buoy-outline', go: () => setState({ route: 'support', overlay: null }), fg: 'fg', bg: 'vsoft', ifg: 'accent' },
       { label: 'Sign out', icon: 'log-out-outline', go: () => set('overlay', 'signout'), fg: 'coral', bg: 'csoft', ifg: 'coral' }
     ],
     isSignOut: s.overlay === 'signout',
@@ -1447,7 +1559,7 @@ function deriveVm(s, api) {
       { label: 'Notifications', icon: 'notifications-outline', meta: 'ON' },
       { label: 'Rent reminders', icon: 'alarm-outline', meta: '3 DAYS' },
       { label: 'Documentation', icon: 'book-outline', meta: '' },
-      { label: 'Help & support', icon: 'help-buoy-outline', meta: '' },
+      { label: 'Help & support', icon: 'help-buoy-outline', meta: TICKETS.length ? `${shownTickets.length} OPEN` : '', go: () => setState({ route: 'support', overlay: null }) },
       { label: 'Terms of service', icon: 'shield-checkmark-outline', meta: '' }
     ].map((r) => ({ ...r, go: r.go || (() => flash(`${r.label} — not built yet`)) })),
 
@@ -1685,14 +1797,24 @@ function deriveVm(s, api) {
       const free = UNITS.filter((u) => u.prop === p.id).reduce((a, u) => a + (u.cap - occupantsOf(u.no).length), 0);
       const spot = UNITS.find((u) => u.prop === p.id && occupantsOf(u.no).length < u.cap);
       const exact = s.jq.trim().toUpperCase() === p.code;
+      // The property this tenant already lives in. Offering to "join" the place you
+      // are already in made no sense — and acting on it would have moved you out of
+      // your own room.
+      const isCurrent = !!(myProp && myProp.id === p.id);
       return {
         name: p.name, code: p.code, loc: p.loc, img: p.img, policy: p.policy,
         policyIcon: p.policyIcon,
+        isCurrent,
         beds: free ? `${free} ${free === 1 ? 'BED' : 'BEDS'} FREE` : 'NO BEDS FREE',
         bedFg: free ? 'pos' : 'coral',
-        cta: exact ? 'Join now' : 'Request to join',
-        bd: exact ? 'accent' : 'line',
+        cta: isCurrent ? 'Current property' : exact ? 'Join now' : 'Request to join',
+        // Reads as a state, not an action, when it is where you already live.
+        ctaBg: isCurrent ? 'lsoft' : 'lime',
+        ctaFg: isCurrent ? 'accent' : 'on',
+        ctaDisabled: isCurrent,
+        bd: isCurrent ? 'accent' : exact ? 'accent' : 'line',
         join: () => {
+          if (isCurrent) { flash(`You already live at ${p.name}`); return; }
           if (!spot) { flash(`${p.name} has no free beds`); return; }
           setState({ roster: { ...s.roster, rahul: spot.no }, jq: '' });
           flash(`Joined ${p.name} · Unit ${spot.no}`);
@@ -1714,6 +1836,7 @@ function deriveVm(s, api) {
 
     // ── The landlord, as the tenant sees them ──
     landlord: landlordCard,
+    isLandlordCard: s.overlay === 'landlord',
 
     // ── How to pay them ──
     // The owner's own UPI details, joined into /tenant-portal/me. The prototype

@@ -230,6 +230,39 @@ export function Face({ uri, size = 34, radius, style }) {
     );
 }
 
+// A two-letter stand-in for a missing photo. Same footprint as <Face>, so a card
+// laid out for an avatar does not reflow when there isn't one — which is the usual
+// case for a landlord, since the API carries their name and number but no picture.
+export function Initials({ text, size = 40, radius, style }) {
+    const t = useT();
+    return (
+        <View
+            style={[
+                {
+                    width: size,
+                    height: size,
+                    borderRadius: radius != null ? radius : Math.round(size * 0.32),
+                    backgroundColor: t.lsoft,
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                },
+                style
+            ]}
+        >
+            <T w={700} s={Math.round(size * 0.38)} c={t.accent} style={{ letterSpacing: 0.2 }}>
+                {text || '?'}
+            </T>
+        </View>
+    );
+}
+
+// <Face> when there is a photo, <Initials> when there isn't. Use this anywhere a
+// person is shown, so the fallback is never forgotten at one of the call sites.
+export function Avatar({ uri, name, initials, size = 40, radius, style }) {
+    if (uri) return <Face uri={uri} size={size} radius={radius} style={style} />;
+    return <Initials text={initials || name} size={size} radius={radius} style={style} />;
+}
+
 // The TP monogram lockup used in the auth screens.
 export function Monogram({ size = 38 }) {
     const t = useT();

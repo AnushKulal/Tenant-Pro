@@ -93,8 +93,24 @@ export default function FindScreen() {
                         </Row>
                         <T mono w={600} s={9} lh={1} ls={0.06} c={t.fg3}>{jr.code}</T>
                         <View style={{ flex: 1 }} />
-                        <Press onPress={jr.join} style={{ paddingVertical: 9, paddingHorizontal: 14, borderRadius: 999, backgroundColor: t.lime }}>
-                            <T w={600} s={11} lh={1} c={t.on}>{jr.cta}</T>
+                        {/* Where you already live reads as a state, not a button. */}
+                        <Press
+                            onPress={jr.join}
+                            disabled={jr.ctaDisabled}
+                            style={{
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                columnGap: 6,
+                                paddingVertical: 9,
+                                paddingHorizontal: 14,
+                                borderRadius: 999,
+                                backgroundColor: col(jr.ctaBg),
+                                borderWidth: jr.ctaDisabled ? 1 : 0,
+                                borderColor: t.accent
+                            }}
+                        >
+                            {jr.isCurrent ? <Glyph name="checkmark-circle" size={12} color={t.accent} /> : null}
+                            <T w={600} s={11} lh={1} c={col(jr.ctaFg)}>{jr.cta}</T>
                         </Press>
                     </Row>
                 </View>

@@ -37,6 +37,7 @@ import PropertyScreen from './screens/PropertyScreen';
 import MyProfileScreen from './screens/MyProfileScreen';
 import LedgerScreen from './screens/LedgerScreen';
 import SettingsScreen from './screens/SettingsScreen';
+import SupportScreen from './screens/SupportScreen';
 import TenantLoginScreen from './screens/TenantLoginScreen';
 import PortalHomeScreen from './screens/PortalHomeScreen';
 import FindScreen from './screens/FindScreen';
@@ -62,6 +63,7 @@ const SCREENS = {
     profile: MyProfileScreen,
     ledger: LedgerScreen,
     settings: SettingsScreen,
+    support: SupportScreen,
     tlogin: TenantLoginScreen,
     portal: PortalHomeScreen,
     tfind: FindScreen,
@@ -162,6 +164,39 @@ function Shell() {
                 <T w={400} s={13} lh={1.5} c={t.fg2} style={{ textAlign: 'center' }}>{vm.dataError}</T>
                 <Press
                     onPress={vm.retryLoad}
+                    style={{ marginTop: 6, paddingVertical: 13, paddingHorizontal: 26, borderRadius: 999, backgroundColor: t.lime }}
+                >
+                    <T w={700} s={14} c={t.on}>Try again</T>
+                </Press>
+                <Press onPress={vm.askSignOut} style={{ paddingVertical: 8 }}>
+                    <T mono w={600} s={9} ls={0.12} c={t.fg3}>SIGN OUT</T>
+                </Press>
+            </View>
+        );
+    }
+
+    // The same protection for a signed-in tenant: state.data still holds the seed
+    // bundle until /tenant-portal/me answers, so rendering the portal here would
+    // show a real tenant a stock landlord and invented request dates — which is
+    // exactly what made a failed load look like a working app.
+    const awaitingTenantData = vm.isTenantSession && !vm.tenantDataReady;
+    if (awaitingTenantData && vm.dataLoading) {
+        return (
+            <View style={{ flex: 1, backgroundColor: t.ink, alignItems: 'center', justifyContent: 'center', rowGap: 18 }}>
+                <Monogram size={54} />
+                <ActivityIndicator color={t.lime} />
+                <T mono w={600} s={9} ls={0.14} c={t.fg3}>LOADING YOUR TENANCY</T>
+            </View>
+        );
+    }
+    if (awaitingTenantData && vm.hasDataError) {
+        return (
+            <View style={{ flex: 1, backgroundColor: t.ink, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32, rowGap: 14 }}>
+                <Glyph name="cloud-offline-outline" size={30} color={t.coral} />
+                <T w={700} s={19} c={t.fg} style={{ letterSpacing: -0.5, textAlign: 'center' }}>Couldn’t load your tenancy</T>
+                <T w={400} s={13} lh={1.5} c={t.fg2} style={{ textAlign: 'center' }}>{vm.dataError}</T>
+                <Press
+                    onPress={vm.retryTenantLoad}
                     style={{ marginTop: 6, paddingVertical: 13, paddingHorizontal: 26, borderRadius: 999, backgroundColor: t.lime }}
                 >
                     <T w={700} s={14} c={t.on}>Try again</T>

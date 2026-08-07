@@ -8,7 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useVm } from './AppContext';
 import { useT } from './ThemeContext';
 import { grotesk } from './theme';
-import { T, Eyebrow, Row, Press, Glyph, Field } from './ui';
+import { T, Eyebrow, Row, Press, Glyph, Field, Avatar } from './ui';
 import { useSheetIn, useFadeIn } from './motion';
 
 // ── The conversation on a maintenance request ────────────────────────────────
@@ -17,7 +17,7 @@ import { useSheetIn, useFadeIn } from './motion';
 // right in the accent tint. `canReply` is false on the seed walk-through (no
 // server-side request to hang a message off), in which case the compose box is
 // left out rather than shown as a box that silently does nothing.
-function Thread({ thread, composer, canReply, t, placeholder }) {
+export function Thread({ thread, composer, canReply, t, placeholder }) {
     const th = thread || { messages: [] };
     const rows = th.messages || [];
 
@@ -48,24 +48,40 @@ function Thread({ thread, composer, canReply, t, placeholder }) {
             ) : null}
 
             {rows.map((m, i) => (
-                <View key={m.id != null ? m.id : i} style={{ alignItems: m.align, marginBottom: 8 }}>
-                    <View
-                        style={{
-                            maxWidth: '86%',
-                            borderRadius: 16,
-                            backgroundColor: col2(m.bg, t),
-                            borderWidth: 1,
-                            borderColor: t.line,
-                            paddingVertical: 11,
-                            paddingHorizontal: 13
-                        }}
-                    >
-                        <T mono w={600} s={8} ls={0.1} c={t.fg3} style={{ marginBottom: 5 }}>
-                            {`${m.who}${m.time ? ` · ${m.time}` : ''}`}
-                        </T>
-                        <T w={400} s={13} lh={1.5} c={col2(m.fg, t)}>{m.body}</T>
+                m.event ? (
+                    // A status change: a marker across the thread, so the moment it
+                    // moved is readable in sequence with what was said around it.
+                    <Row key={m.id != null ? m.id : i} gap={9} style={{ marginBottom: 8, paddingVertical: 2 }}>
+                        <View style={{ flex: 1, height: 1, backgroundColor: t.line }} />
+                        <Row gap={6} style={{ paddingVertical: 5, paddingHorizontal: 10, borderRadius: 999, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line }}>
+                            <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: col2(m.eventFg, t) }} />
+                            <T mono w={600} s={8} ls={0.08} c={col2(m.eventFg, t)}>
+                                {m.to ? String(m.to).toUpperCase() : 'UPDATED'}
+                            </T>
+                            {m.time ? <T mono w={600} s={8} ls={0.08} c={t.fg3}>{m.time}</T> : null}
+                        </Row>
+                        <View style={{ flex: 1, height: 1, backgroundColor: t.line }} />
+                    </Row>
+                ) : (
+                    <View key={m.id != null ? m.id : i} style={{ alignItems: m.align, marginBottom: 8 }}>
+                        <View
+                            style={{
+                                maxWidth: '86%',
+                                borderRadius: 16,
+                                backgroundColor: col2(m.bg, t),
+                                borderWidth: 1,
+                                borderColor: t.line,
+                                paddingVertical: 11,
+                                paddingHorizontal: 13
+                            }}
+                        >
+                            <T mono w={600} s={8} ls={0.1} c={t.fg3} style={{ marginBottom: 5 }}>
+                                {`${m.who}${m.time ? ` · ${m.time}` : ''}`}
+                            </T>
+                            <T w={400} s={13} lh={1.5} c={col2(m.fg, t)}>{m.body}</T>
+                        </View>
                     </View>
-                </View>
+                )
             ))}
 
             {canReply ? (
@@ -382,10 +398,24 @@ export default function Sheets() {
                             </Press>
                         </Row>
 
+                        {/* A preview, not the whole story: what was reported and how
+                            long it has been waiting. Replies and the status history
+                            live in Help & support, one tap away. */}
                         <View style={{ borderRadius: 16, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line, paddingVertical: 14, paddingHorizontal: 16, marginBottom: 10 }}>
-                            <Eyebrow s={9} ls={0.12} style={{ marginBottom: 10 }}>DESCRIPTION</Eyebrow>
-                            <T w={400} s={14} lh={1.55} c={t.fg2}>{vm.ticket.body}</T>
+                            <Row justify="space-between" style={{ marginBottom: 10 }}>
+                                <Eyebrow s={9} ls={0.12}>WHAT THEY REPORTED</Eyebrow>
+                                <Eyebrow s={9} ls={0.1} c={t.amber}>{vm.ticket.openFor}</Eyebrow>
+                            </Row>
+                            <T w={400} s={14} lh={1.55} c={t.fg2}>{vm.ticket.preview}</T>
                         </View>
+
+                        <Press
+                            onPress={vm.ticket.readMore}
+                            style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', columnGap: 7, paddingVertical: 14, borderRadius: 16, backgroundColor: t.vsoft, borderWidth: 1, borderColor: t.line, marginBottom: 12 }}
+                        >
+                            <Glyph name="chatbubbles-outline" size={16} color={t.accent} />
+                            <T w={600} s={13} c={t.accent}>Read more and reply</T>
+                        </Press>
 
                         {vm.ticket.hasPhotos && (
                             <View style={{ marginBottom: 14 }}>
@@ -398,30 +428,18 @@ export default function Sheets() {
                             </View>
                         )}
 
-                        <Thread
-                            thread={vm.ticket.thread}
-                            composer={vm.composer}
-                            canReply={vm.ticket.canReply}
-                            t={t}
-                            placeholder="Reply to your tenant…"
-                        />
-
                         <Row style={{ gap: 7 }}>
-                            {vm.ticket.started && (
-                                <Press onPress={vm.ticket.resolve} style={{ flex: 1, paddingVertical: 15, borderRadius: 999, backgroundColor: t.lime, alignItems: 'center' }}>
-                                    <T w={700} s={14} lh={1} c={t.on}>Mark resolved</T>
+                            {/* "Open ticket" was a verb sitting next to a status that
+                                already read OPEN. Moving a ticket along now reads as
+                                what it does: start work, or resolve it. */}
+                            {vm.ticket.notStarted && (
+                                <Press onPress={vm.ticket.start} style={{ flex: 1, paddingVertical: 15, borderRadius: 999, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line, alignItems: 'center' }}>
+                                    <T w={600} s={13} lh={1} c={t.fg}>Start work</T>
                                 </Press>
                             )}
-                            {vm.ticket.notStarted && (
-                                <>
-                                    <Press onPress={vm.ticket.start} style={{ flex: 1, paddingVertical: 15, borderRadius: 999, backgroundColor: t.lime, alignItems: 'center' }}>
-                                        <T w={700} s={14} lh={1} c={t.on}>Open ticket</T>
-                                    </Press>
-                                    <Press onPress={vm.ticket.resolve} style={{ paddingVertical: 15, paddingHorizontal: 18, borderRadius: 999, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line }}>
-                                        <T w={600} s={13} lh={1} c={t.fg2}>Resolve</T>
-                                    </Press>
-                                </>
-                            )}
+                            <Press onPress={vm.ticket.resolve} style={{ flex: 1, paddingVertical: 15, borderRadius: 999, backgroundColor: t.lime, alignItems: 'center' }}>
+                                <T w={700} s={14} lh={1} c={t.on}>Mark resolved</T>
+                            </Press>
                         </Row>
                     </View>
                 )}
@@ -888,6 +906,58 @@ export default function Sheets() {
                         <Press onPress={vm.closeOverlay} style={{ paddingVertical: 15, borderRadius: 999, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line, alignItems: 'center' }}>
                             <T w={600} s={14} c={t.fg}>Close</T>
                         </Press>
+                    </View>
+                )}
+
+                {/* ── Your landlord (tenant) ──────────────────────────── */}
+                {vm.isLandlordCard && (
+                    <View>
+                        <View style={{ alignItems: 'center', paddingBottom: 18 }}>
+                            <Avatar uri={vm.landlord.img} initials={vm.landlord.initials} size={78} radius={26} />
+                            <T w={700} s={22} lh={1.15} style={{ letterSpacing: -0.8, marginTop: 14, textAlign: 'center' }}>{vm.landlord.name}</T>
+                            <Eyebrow s={9} ls={0.14} c={t.accent} style={{ marginTop: 7 }}>YOUR LANDLORD</Eyebrow>
+                        </View>
+
+                        <Press onPress={vm.landlord.copyPhone}>
+                            <Row gap={13} style={{ padding: 14, borderRadius: 18, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line, marginBottom: 8 }}>
+                                <View style={{ width: 38, height: 38, borderRadius: 12, backgroundColor: t.lsoft, alignItems: 'center', justifyContent: 'center' }}>
+                                    <Glyph name="call-outline" size={17} color={t.pos} />
+                                </View>
+                                <View style={{ flex: 1, minWidth: 0 }}>
+                                    <Eyebrow s={9} ls={0.1}>MOBILE</Eyebrow>
+                                    <T w={600} s={14} lh={1} style={{ marginTop: 6 }}>{vm.landlord.phoneLabel}</T>
+                                </View>
+                                <Glyph name="copy-outline" size={17} color={t.fg3} />
+                            </Row>
+                        </Press>
+
+                        {vm.landlord.email ? (
+                            <Press onPress={vm.landlord.copyEmail}>
+                                <Row gap={13} style={{ padding: 14, borderRadius: 18, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line, marginBottom: 14 }}>
+                                    <View style={{ width: 38, height: 38, borderRadius: 12, backgroundColor: t.vsoft, alignItems: 'center', justifyContent: 'center' }}>
+                                        <Glyph name="mail-outline" size={17} color={t.accent} />
+                                    </View>
+                                    <View style={{ flex: 1, minWidth: 0 }}>
+                                        <Eyebrow s={9} ls={0.1}>EMAIL</Eyebrow>
+                                        <T w={600} s={14} lh={1} numberOfLines={1} style={{ marginTop: 6 }}>{vm.landlord.email}</T>
+                                    </View>
+                                    <Glyph name="copy-outline" size={17} color={t.fg3} />
+                                </Row>
+                            </Press>
+                        ) : null}
+
+                        <Row gap={8}>
+                            <Press onPress={vm.closeOverlay} style={{ paddingVertical: 15, paddingHorizontal: 20, borderRadius: 999, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line }}>
+                                <T w={600} s={13.5} c={t.fg2}>Close</T>
+                            </Press>
+                            <Press
+                                onPress={vm.landlord.call}
+                                style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', columnGap: 8, paddingVertical: 15, borderRadius: 999, backgroundColor: t.lime }}
+                            >
+                                <Glyph name="call" size={16} color={t.on} />
+                                <T w={700} s={14} c={t.on}>{`Call ${String(vm.landlord.name).split(' ')[0]}`}</T>
+                            </Press>
+                        </Row>
                     </View>
                 )}
 
