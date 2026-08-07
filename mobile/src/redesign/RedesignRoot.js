@@ -9,7 +9,7 @@
 // Everything below reads tokens from useT() and data/actions from useVm(); no
 // screen is imported by v1 and this file imports nothing from v1.
 import React from 'react';
-import { View, StatusBar as RNStatusBar, Platform } from 'react-native';
+import { View, Text, ScrollView, StatusBar as RNStatusBar, Platform } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { RedesignThemeProvider, useT } from './ThemeContext';
@@ -110,8 +110,40 @@ function Shell() {
     );
 }
 
+// Catches any render error in the redesign tree (including deriveVm) and shows
+// it on screen instead of letting the app crash-loop ("keeps stopping"). Uses
+// hard-coded colours and the system font so it renders even if the theme or the
+// custom fonts failed to load.
+class ErrorBoundary extends React.Component {
+    constructor(props) {
+        super(props);
+        this.state = { err: null };
+    }
+    static getDerivedStateFromError(err) {
+        return { err };
+    }
+    render() {
+        if (this.state.err) {
+            const e = this.state.err;
+            return (
+                <View style={{ flex: 1, backgroundColor: '#08080A', paddingHorizontal: 22, paddingTop: 72, paddingBottom: 32 }}>
+                    <Text style={{ color: '#C8F751', fontSize: 18, fontWeight: '700', marginBottom: 4 }}>TenantPro hit an error</Text>
+                    <Text style={{ color: '#A5A2B2', fontSize: 13, marginBottom: 16 }}>The redesign failed to render. Details below.</Text>
+                    <ScrollView style={{ flex: 1 }}>
+                        <Text selectable style={{ color: '#F4F3F7', fontSize: 12, lineHeight: 18 }}>
+                            {String((e && (e.stack || e.message)) || e)}
+                        </Text>
+                    </ScrollView>
+                </View>
+            );
+        }
+        return this.props.children;
+    }
+}
+
 export default function RedesignRoot() {
     return (
+        <ErrorBoundary>
         <SafeAreaProvider>
             <RedesignThemeProvider>
                 <AppProvider>
@@ -119,5 +151,6 @@ export default function RedesignRoot() {
                 </AppProvider>
             </RedesignThemeProvider>
         </SafeAreaProvider>
+        </ErrorBoundary>
     );
 }

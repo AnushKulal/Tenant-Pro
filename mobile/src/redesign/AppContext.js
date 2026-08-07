@@ -16,6 +16,16 @@ import {
   creditOf, PAYMENTS as PAYMENTS_SRC, EXPENSES as EXPENSES_SRC
 } from './data';
 
+// Indian-grouped rupee magnitude (e.g. 1234567 -> "12,34,567") WITHOUT
+// Number.prototype.toLocaleString('en-IN'): that relies on Intl, which the
+// native JS engine (Hermes) implements differently than a browser and can throw
+// or mis-format. Callers add the ₹ glyph and any sign, exactly as before.
+const inr = (n) => {
+  const s = String(Math.round(Math.abs(Number(n) || 0)));
+  if (s.length <= 3) return s;
+  return s.slice(0, -3).replace(/\B(?=(\d\d)+$)/g, ',') + ',' + s.slice(-3);
+};
+
 // ── Initial state (ported verbatim from Component.state) ──
 const INITIAL_STATE = {
   route: 'home', overlay: null, filter: 'all', who: 'amit', method: 'UPI', toast: '',
@@ -39,8 +49,8 @@ function deriveVm(s, api) {
   const whoBase = TENANTS.find((t) => t.id === s.who) || TENANTS[0];
   const who = {
     ...whoBase,
-    rent: s.rents[whoBase.id] ? `₹${s.rents[whoBase.id].toLocaleString('en-IN')}` : whoBase.rent,
-    rentFull: s.rents[whoBase.id] ? `₹${s.rents[whoBase.id].toLocaleString('en-IN')}` : whoBase.rentFull
+    rent: s.rents[whoBase.id] ? `₹${inr(s.rents[whoBase.id])}` : whoBase.rent,
+    rentFull: s.rents[whoBase.id] ? `₹${inr(s.rents[whoBase.id])}` : whoBase.rentFull
   };
   const credit = creditOf(who);
   const owner = ['home', 'units', 'people', 'tenant', 'ledger', 'settings', 'profile', 'property'].includes(s.route);
@@ -63,8 +73,8 @@ function deriveVm(s, api) {
     .map((t) => ({
       ...t,
       unit: Object.prototype.hasOwnProperty.call(s.roster, t.id) ? s.roster[t.id] : t.unit,
-      rent: s.rents[t.id] ? `₹${s.rents[t.id].toLocaleString('en-IN')}` : t.rent,
-      rentFull: s.rents[t.id] ? `₹${s.rents[t.id].toLocaleString('en-IN')}` : t.rentFull
+      rent: s.rents[t.id] ? `₹${inr(s.rents[t.id])}` : t.rent,
+      rentFull: s.rents[t.id] ? `₹${inr(s.rents[t.id])}` : t.rentFull
     }));
   const occupantsOf = (no) => ROSTER.filter((t) => t.unit === no);
   const unitList = UNITS.filter((u) => !scoped || u.prop === curProp)
@@ -89,7 +99,7 @@ function deriveVm(s, api) {
   const propName = (id) => (PROPS.find((p) => p.id === id) || {}).name || '';
   const inScope = ROSTER.filter((t) => !scoped || unitProp[t.unit] === curProp);
   const unassignedList = ROSTER.filter((t) => !t.unit);
-  const money = (n) => `₹${n.toLocaleString('en-IN')}`;
+  const money = (n) => `₹${inr(n)}`;
   const num = (t) => Number(t.rent.replace(/[^0-9]/g, ''));
   const expected = inScope.reduce((a, t) => a + num(t), 0);
   const paidList = inScope.filter((t) => t.state === 'paid');
@@ -532,7 +542,7 @@ function deriveVm(s, api) {
       return {
         no: u.no, type: u.type, rent: u.rent,
         prop: propName(u.prop),
-        share: `₹${Math.round(Number(u.rent.replace(/[^0-9]/g, '')) / u.cap).toLocaleString('en-IN')} per bed`,
+        share: `₹${inr(Math.round(Number(u.rent.replace(/[^0-9]/g, '')) / u.cap))} per bed`,
         beds: `${occ.length} of ${u.cap} ${u.cap === 1 ? 'bed' : 'beds'} taken`,
         bedFg: free ? 'amber' : 'pos',
         hasFree: free > 0,
@@ -666,11 +676,11 @@ function deriveVm(s, api) {
     },
     isRent: s.overlay === 'rent',
     openRent: () => setState({ overlay: 'rent', draft: Number(who.rent.replace(/[^0-9]/g, '')) }),
-    rentDraft: `₹${s.draft.toLocaleString('en-IN')}`,
+    rentDraft: `₹${inr(s.draft)}`,
     rentDelta: (() => {
       const rbase = Number(whoBase.rent.replace(/[^0-9]/g, ''));
       const rd = s.draft - rbase;
-      return rd === 0 ? 'NO CHANGE' : `${rd > 0 ? '+' : '−'}₹${Math.abs(rd).toLocaleString('en-IN')} VS NOW`;
+      return rd === 0 ? 'NO CHANGE' : `${rd > 0 ? '+' : '−'}₹${inr(Math.abs(rd))} VS NOW`;
     })(),
     rentDeltaFg: s.draft === Number(whoBase.rent.replace(/[^0-9]/g, '')) ? 'fg3' : s.draft > Number(whoBase.rent.replace(/[^0-9]/g, '')) ? 'pos' : 'coral',
     rentDown: () => set('draft', Math.max(0, s.draft - 500)),
@@ -681,7 +691,7 @@ function deriveVm(s, api) {
     })),
     saveRent: () => {
       setState({ rents: { ...s.rents, [s.who]: s.draft }, overlay: null });
-      flash(`${who.name}'s rent set to ₹${s.draft.toLocaleString('en-IN')}`);
+      flash(`${who.name}'s rent set to ₹${inr(s.draft)}`);
     },
     isDanger: s.overlay === 'danger',
     openDanger: () => set('overlay', 'danger'),
