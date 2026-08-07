@@ -1,12 +1,14 @@
-import React from 'react';
-import { View, ScrollView } from 'react-native';
+import React, { useState } from 'react';
+import { View, ScrollView, TextInput } from 'react-native';
 import { useVm } from '../AppContext';
 import { useT } from '../ThemeContext';
 import { T, Eyebrow, Row, Press, Glyph, Monogram, Divider } from '../ui';
+import { grotesk } from '../theme';
 
 export default function OwnerLoginScreen() {
     const vm = useVm();
     const t = useT();
+    const [show, setShow] = useState(false);
     return (
         <ScrollView
             contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 22, paddingTop: 24, paddingBottom: 28 }}
@@ -25,32 +27,61 @@ export default function OwnerLoginScreen() {
                     <Eyebrow s={10} w={600} ls={0.14} c={t.accent} style={{ marginLeft: 10 }}>OWNER SIGN IN</Eyebrow>
                 </Row>
 
-                <T w={700} s={36} lh={1.02} style={{ letterSpacing: -1.8, marginBottom: 28 }}>Welcome{'\n'}back, Demo.</T>
+                <T w={700} s={36} lh={1.02} style={{ letterSpacing: -1.8, marginBottom: 26 }}>Welcome{'\n'}back.</T>
 
                 <View style={{ borderRadius: 18, backgroundColor: t.ink2, borderWidth: 1, borderColor: t.line, paddingVertical: 14, paddingHorizontal: 16, marginBottom: 10 }}>
-                    <Eyebrow s={9} w={600} ls={0.12} c={t.fg3} style={{ marginBottom: 7 }}>EMAIL</Eyebrow>
+                    <Eyebrow s={9} w={600} ls={0.12} c={t.fg3} style={{ marginBottom: 7 }}>EMAIL OR PHONE</Eyebrow>
                     <Row gap={10}>
                         <Glyph name="mail-outline" size={17} color={t.fg2} />
-                        <T w={500} s={15}>demo@gmail.com</T>
+                        <TextInput
+                            value={vm.authId}
+                            onChangeText={vm.setAuthId}
+                            placeholder="demo@gmail.com"
+                            placeholderTextColor={t.fg3}
+                            autoCapitalize="none"
+                            autoCorrect={false}
+                            keyboardType="email-address"
+                            style={{ flex: 1, padding: 0, fontFamily: grotesk(500), fontSize: 15, color: t.fg }}
+                        />
                     </Row>
                 </View>
 
-                <View style={{ borderRadius: 18, backgroundColor: t.ink2, borderWidth: 1, borderColor: t.accent, paddingVertical: 14, paddingHorizontal: 16, marginBottom: 18 }}>
+                <View style={{ borderRadius: 18, backgroundColor: t.ink2, borderWidth: 1, borderColor: t.accent, paddingVertical: 14, paddingHorizontal: 16, marginBottom: 14 }}>
                     <Eyebrow s={9} w={600} ls={0.12} c={t.accent} style={{ marginBottom: 7 }}>PASSWORD</Eyebrow>
                     <Row gap={10}>
                         <Glyph name="lock-closed-outline" size={17} color={t.fg2} />
-                        <T w={500} s={15} style={{ letterSpacing: 2 }}>••••••••••</T>
-                        <View style={{ flex: 1 }} />
-                        <Glyph name="eye-outline" size={18} color={t.fg3} />
+                        <TextInput
+                            value={vm.authPw}
+                            onChangeText={vm.setAuthPw}
+                            placeholder="Your password"
+                            placeholderTextColor={t.fg3}
+                            secureTextEntry={!show}
+                            autoCapitalize="none"
+                            autoCorrect={false}
+                            onSubmitEditing={vm.submitLogin}
+                            returnKeyType="go"
+                            style={{ flex: 1, padding: 0, fontFamily: grotesk(500), fontSize: 15, color: t.fg }}
+                        />
+                        <Press onPress={() => setShow((v) => !v)} hitSlop={10}>
+                            <Glyph name={show ? 'eye-off-outline' : 'eye-outline'} size={18} color={t.fg3} />
+                        </Press>
                     </Row>
                 </View>
 
+                {vm.hasAuthError ? (
+                    <Row gap={8} align="flex-start" style={{ marginBottom: 12, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 12, backgroundColor: t.csoft }}>
+                        <Glyph name="alert-circle" size={15} color={t.coral} />
+                        <T w={500} s={12} lh={1.4} c={t.coral} style={{ flex: 1 }}>{vm.authError}</T>
+                    </Row>
+                ) : null}
+
                 <Press
-                    onPress={vm.goHome}
-                    style={{ width: '100%', borderRadius: 999, backgroundColor: t.lime, paddingVertical: 17, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', columnGap: 8 }}
+                    onPress={vm.submitLogin}
+                    disabled={vm.authBusy}
+                    style={{ width: '100%', borderRadius: 999, backgroundColor: t.lime, paddingVertical: 17, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', columnGap: 8, opacity: vm.authBusy ? 0.7 : 1 }}
                 >
-                    <T w={700} s={15} c={t.on}>Sign in</T>
-                    <Glyph name="arrow-forward" size={17} color={t.on} />
+                    <T w={700} s={15} c={t.on}>{vm.signInLabel}</T>
+                    {!vm.authBusy ? <Glyph name="arrow-forward" size={17} color={t.on} /> : null}
                 </Press>
 
                 <Row gap={12} style={{ marginVertical: 18 }}>

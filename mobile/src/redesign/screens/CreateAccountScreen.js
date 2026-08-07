@@ -1,12 +1,38 @@
-import React from 'react';
-import { View, ScrollView } from 'react-native';
+import React, { useState } from 'react';
+import { View, ScrollView, TextInput } from 'react-native';
 import { useVm } from '../AppContext';
 import { useT } from '../ThemeContext';
 import { T, Press, Glyph } from '../ui';
+import { grotesk } from '../theme';
+
+function FieldRow({ t, icon, iconColor, label, children }) {
+  return (
+    <View
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        columnGap: 12,
+        paddingVertical: 13,
+        paddingHorizontal: 18,
+        borderTopWidth: 1,
+        borderTopColor: t.line
+      }}
+    >
+      <Glyph name={icon} size={16} color={iconColor} />
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <T mono w={600} s={9} ls={0.1} c={t.fg3}>{label}</T>
+        {children}
+      </View>
+    </View>
+  );
+}
 
 export default function CreateAccountScreen() {
   const vm = useVm();
   const t = useT();
+  const [show, setShow] = useState(false);
+
+  const inputStyle = { padding: 0, marginTop: 6, fontFamily: grotesk(500), fontSize: 14, color: t.fg };
 
   const Field = ({ f, iconColor }) => (
     <View
@@ -105,9 +131,75 @@ export default function CreateAccountScreen() {
           <T mono w={600} s={10} ls={0.12} c={t.fg3} style={{ paddingTop: 16, paddingHorizontal: 18, paddingBottom: 10 }}>
             YOUR DETAILS
           </T>
-          {vm.signupFields.map((sf, i) => (
-            <Field key={i} f={sf} iconColor={t.fg3} />
-          ))}
+
+          <FieldRow t={t} icon="person-outline" iconColor={t.fg3} label="FULL NAME">
+            <TextInput
+              value={vm.authName}
+              onChangeText={vm.setAuthName}
+              placeholder="Your full name"
+              placeholderTextColor={t.fg3}
+              autoCapitalize="words"
+              autoCorrect={false}
+              style={inputStyle}
+            />
+          </FieldRow>
+
+          <FieldRow t={t} icon="mail-outline" iconColor={t.fg3} label="EMAIL">
+            <TextInput
+              value={vm.authId}
+              onChangeText={vm.setAuthId}
+              placeholder="you@gmail.com"
+              placeholderTextColor={t.fg3}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+              style={inputStyle}
+            />
+          </FieldRow>
+
+          <FieldRow t={t} icon="call-outline" iconColor={t.fg3} label="MOBILE">
+            <TextInput
+              value={vm.authPhone}
+              onChangeText={vm.setAuthPhone}
+              placeholder="+91 00000 00000"
+              placeholderTextColor={t.fg3}
+              keyboardType="phone-pad"
+              autoCorrect={false}
+              style={inputStyle}
+            />
+          </FieldRow>
+
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              columnGap: 12,
+              paddingVertical: 13,
+              paddingHorizontal: 18,
+              borderTopWidth: 1,
+              borderTopColor: t.line
+            }}
+          >
+            <Glyph name="lock-closed-outline" size={16} color={t.fg3} />
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <T mono w={600} s={9} ls={0.1} c={t.fg3}>PASSWORD</T>
+              <TextInput
+                value={vm.authPw}
+                onChangeText={vm.setAuthPw}
+                placeholder="Create a password"
+                placeholderTextColor={t.fg3}
+                secureTextEntry={!show}
+                autoCapitalize="none"
+                autoCorrect={false}
+                onSubmitEditing={vm.submitSignup}
+                returnKeyType="go"
+                style={inputStyle}
+              />
+            </View>
+            <Press onPress={() => setShow((v) => !v)} hitSlop={10}>
+              <Glyph name={show ? 'eye-off-outline' : 'eye-outline'} size={18} color={t.fg3} />
+            </Press>
+          </View>
         </View>
 
         {/* Guardian card */}
@@ -132,9 +224,29 @@ export default function CreateAccountScreen() {
           </View>
         )}
 
+        {/* Error */}
+        {vm.hasAuthError ? (
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'flex-start',
+              columnGap: 8,
+              marginTop: 12,
+              paddingVertical: 10,
+              paddingHorizontal: 12,
+              borderRadius: 12,
+              backgroundColor: t.csoft
+            }}
+          >
+            <Glyph name="alert-circle" size={15} color={t.coral} />
+            <T w={500} s={12} lh={1.4} c={t.coral} style={{ flex: 1 }}>{vm.authError}</T>
+          </View>
+        ) : null}
+
         {/* Submit */}
         <Press
           onPress={vm.submitSignup}
+          disabled={vm.authBusy}
           style={{
             width: '100%',
             marginTop: 14,
@@ -142,10 +254,11 @@ export default function CreateAccountScreen() {
             borderRadius: 999,
             backgroundColor: t.lime,
             alignItems: 'center',
-            justifyContent: 'center'
+            justifyContent: 'center',
+            opacity: vm.authBusy ? 0.7 : 1
           }}
         >
-          <T w={700} s={15} lh={1} c={t.on}>{vm.signupCta}</T>
+          <T w={700} s={15} lh={1} c={t.on}>{vm.authBusy ? 'Creating account…' : vm.signupCta}</T>
         </Press>
 
         <T mono w={600} s={9} lh={1.6} ls={0.06} c={t.fg3} style={{ textAlign: 'center', marginTop: 14 }}>

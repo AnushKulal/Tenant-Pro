@@ -16,6 +16,7 @@ import { RedesignThemeProvider, useT } from './ThemeContext';
 import { AppProvider, useVm, useApp } from './AppContext';
 import { useRedesignFonts } from './fonts';
 import { useEnter, useWipe } from './motion';
+import { Monogram } from './ui';
 
 import Header from './Header';
 import DeckDock from './DeckDock';
@@ -83,6 +84,17 @@ function Shell() {
     // Hold the whole app on an ink field until the two typefaces are ready, so
     // nothing renders in a fallback system font and then reflows.
     if (!fontsLoaded) return <View style={{ flex: 1, backgroundColor: t.ink }} />;
+
+    // `boot` = the stored session is still being resolved (AppProvider does this
+    // once on mount). Hold on the brand mark rather than flashing a screen the
+    // user may not be entitled to.
+    if (state.route === 'boot') {
+        return (
+            <View style={{ flex: 1, backgroundColor: t.ink, alignItems: 'center', justifyContent: 'center' }}>
+                <Monogram size={64} />
+            </View>
+        );
+    }
 
     const Screen = SCREENS[state.route] || OverviewScreen;
     const showDock = vm.isOwner || vm.showTenantDock;

@@ -9,17 +9,30 @@
 // the source's colour-resolution block (ACCENTS/SURFACES/EDGES/vars) is dropped.
 
 import React, {
-  createContext, useCallback, useContext, useMemo, useRef, useState
+  createContext, useCallback, useContext, useEffect, useMemo, useRef, useState
 } from 'react';
 import {
   F, PROPS, UNITS, PRIORITY, TICKETS, MOVE_IN, TENANTS, MONTH_LABELS,
   creditOf, PAYMENTS as PAYMENTS_SRC, EXPENSES as EXPENSES_SRC
 } from './data';
+import { auth as apiAuth, setToken } from './api';
+import { loadSession, saveOwnerSession, saveTenantSession, clearSession } from './session';
 
 // Indian-grouped rupee magnitude (e.g. 1234567 -> "12,34,567") WITHOUT
 // Number.prototype.toLocaleString('en-IN'): that relies on Intl, which the
 // native JS engine (Hermes) implements differently than a browser and can throw
 // or mis-format. Callers add the ₹ glyph and any sign, exactly as before.
+// Accept either a raw string (RN TextInput onChangeText) or a DOM-ish event
+// ({target:{value}}), matching how the prototype's setQ/setPq were called.
+// Pull a human-readable message out of an axios error, preferring the API's own
+// { message } body over the generic network text.
+const errText = (e, fallback) =>
+  (e && e.response && e.response.data && (e.response.data.message || e.response.data.error))
+  || (e && e.message === 'Network Error' ? 'Cannot reach the server. Check your connection.' : null)
+  || fallback;
+
+const evStr = (e) => (e && e.target && typeof e.target.value === 'string' ? e.target.value : (typeof e === 'string' ? e : ''));
+
 const inr = (n) => {
   const s = String(Math.round(Math.abs(Number(n) || 0)));
   if (s.length <= 3) return s;
@@ -28,12 +41,26 @@ const inr = (n) => {
 
 // ── Initial state (ported verbatim from Component.state) ──
 const INITIAL_STATE = {
-  route: 'home', overlay: null, filter: 'all', who: 'amit', method: 'UPI', toast: '',
+  route: 'boot', overlay: null, filter: 'all', who: 'amit', method: 'UPI', toast: '',
   theme: null, pref: 'dark', q: '', pq: '', place: 'sunrise', ticket: 1, tstatus: {},
   roster: {}, gone: [], mover: null, invite: 'sunrise', jq: '', rents: {}, draft: 0,
   idmode: 'email', adult: true, jfilter: 'all', paymethod: 'gpay', paid: false,
   unit: '101', fx: '0',
-  scope: { home: 'all', units: 'all', people: 'all' }
+  scope: { home: 'all', units: 'all', people: 'all' },
+
+  // ── Auth / session (Phase 2) ──
+  // `route: 'boot'` holds the app on an ink field while the stored session is
+  // resolved; resolveSession() then routes to home (owner), portal (tenant) or
+  // role (signed out). Login/register form values live here so the screens stay
+  // presentational and bind to vm keys like every other field.
+  session: null,          // { role:'owner'|'tenant', token, user }
+  authId: '',             // email or phone
+  authPw: '',
+  authName: '',           // register only
+  authPhone: '',          // register only
+  authBusy: false,
+  authError: '',
+  signupRole: 'owner'   // which login screen 'Create account' was tapped from
 };
 
 // ── deriveVm: pure translation of renderVals(). `api` carries the state mutators
@@ -310,7 +337,7 @@ function deriveVm(s, api) {
       };
     }),
     tenantIdLabel: s.idmode === 'mobile' ? 'MOBILE NUMBER' : 'EMAIL',
-    tenantIdValue: s.idmode === 'mobile' ? '+91 90000 00001' : 'tenant@gmail.com',
+    tenantIdValue: s.authId,
     // Both endpoints must be the SAME computed type or the transition never starts.
     idThumbX: s.idmode === 'mobile' ? 'calc(50% + 0px)' : 'calc(0% + 4px)',
     setEmailMode: () => set('idmode', 'email'),
@@ -323,7 +350,30 @@ function deriveVm(s, api) {
       { label: 'X', icon: 'logo-twitter' }
     ].map((x) => ({ ...x, go: () => flash(`${x.label} sign-in — not wired in this prototype`) })),
 
-    goSignup: () => go('signup'),
+    // ── Auth form + submission (Phase 2) ──────────────────────────────────────
+    // The login/register screens bind these instead of showing placeholder text.
+    // setAuthId/setAuthPw accept a raw string (TextInput onChangeText) or an
+    // event, matching the setQ/setPq convention already used by the search fields.
+    authId: s.authId,
+    authPw: s.authPw,
+    authName: s.authName,
+    authPhone: s.authPhone,
+    authBusy: s.authBusy,
+    authError: s.authError,
+    hasAuthError: !!s.authError,
+    setAuthId: (e) => set('authId', evStr(e)),
+    setAuthPw: (e) => set('authPw', evStr(e)),
+    setAuthName: (e) => set('authName', evStr(e)),
+    setAuthPhone: (e) => set('authPhone', evStr(e)),
+    // Signs in against the real backend; picks the owner or tenant endpoint from
+    // the current route so one action serves both login screens.
+    submitLogin: () => api.signIn(s.route === 'tlogin' ? 'tenant' : 'owner'),
+    signInLabel: s.authBusy ? 'Signing in…' : 'Sign in',
+    isBooting: s.route === 'boot',
+    session: s.session,
+    signedIn: !!s.session,
+
+    goSignup: () => setState({ signupRole: s.route === 'tlogin' ? 'tenant' : 'owner', route: 'signup', overlay: null }),
     isSignup: s.route === 'signup',
     adult: s.adult,
     minor: !s.adult,
@@ -352,7 +402,7 @@ function deriveVm(s, api) {
     signupNote: s.adult
       ? 'You can sign your own agreement and pay rent directly.'
       : 'A guardian or warden must confirm before the tenancy can start. We will text them a consent link.',
-    submitSignup: () => flash(s.adult ? 'Account created' : 'Consent request sent to your guardian'),
+    submitSignup: () => api.register(),
 
     jfilters: [['ALL', 'all'], ['KORAMANGALA', 'koramangala'], ['HSR LAYOUT', 'hsr layout'], ['SHARING', 'sharing'], ['PRIVATE', 'single']].map(([label, k]) => {
       const on = s.jfilter === k;
@@ -758,7 +808,7 @@ function deriveVm(s, api) {
     ],
     isSignOut: s.overlay === 'signout',
     askSignOut: () => set('overlay', 'signout'),
-    confirmSignOut: () => setState({ route: 'role', overlay: null }),
+    confirmSignOut: () => api.signOut(),
     isProfile: s.route === 'profile',
     profileFields: [
       { label: 'FULL NAME', value: 'Demo Landlord' },
@@ -1002,7 +1052,109 @@ export function AppProvider({ children }) {
     toastRef.current = setTimeout(() => setState({ toast: '' }), 2200);
   }, [setState]);
 
-  const api = useMemo(() => ({ setState, set, go, flash, fxRef }), [setState, set, go, flash]);
+  // ── Auth (Phase 2) ─────────────────────────────────────────────────────────
+  // These are the only async actions in the context. They own the network call,
+  // token persistence and post-login routing; deriveVm just exposes them.
+  // `stateRef` lets them read the latest form values without being re-created on
+  // every keystroke (which would churn the whole view-model).
+  const stateRef = useRef(state);
+  stateRef.current = state;
+
+  // Restore a stored session on launch and route accordingly.
+  const resolveSession = useCallback(async () => {
+    try {
+      const sess = await loadSession();
+      if (sess.role) {
+        setToken(sess.token);
+        setState({ session: sess, route: sess.role === 'owner' ? 'home' : 'portal' });
+      } else {
+        setToken(null);
+        setState({ session: null, route: 'role' });
+      }
+    } catch (e) {
+      setToken(null);
+      setState({ session: null, route: 'role' });
+    }
+  }, [setState]);
+
+  const signIn = useCallback(async (role) => {
+    const { authId, authPw } = stateRef.current;
+    if (!authId.trim() || !authPw) {
+      setState({ authError: 'Enter your email/phone and password.' });
+      return;
+    }
+    setState({ authBusy: true, authError: '' });
+    try {
+      const res = role === 'tenant'
+        ? await apiAuth.loginTenant(authId.trim(), authPw)
+        : await apiAuth.loginOwner(authId.trim(), authPw);
+      const user = res.owner || res.tenant || null;
+      if (role === 'tenant') await saveTenantSession(res.token, user);
+      else await saveOwnerSession(res.token, user);
+      setToken(res.token);
+      setState({
+        session: { role, token: res.token, user },
+        authBusy: false, authPw: '', authError: '',
+        route: role === 'tenant' ? 'portal' : 'home'
+      });
+      flash(`Welcome back${user && user.name ? `, ${String(user.name).split(' ')[0]}` : ''}`);
+    } catch (e) {
+      setState({ authBusy: false, authError: errText(e, 'Sign in failed. Check your details and try again.') });
+    }
+  }, [setState, flash]);
+
+  const register = useCallback(async () => {
+    const { authId, authPw, authName, authPhone, signupRole } = stateRef.current;
+    const asTenant = signupRole === 'tenant';
+    // The backend requires all four for both owner and tenant registration, and
+    // enforces a 6-char minimum password — check here so the user gets a clear
+    // message instead of a 400.
+    if (!authName.trim() || !authId.trim() || !authPhone.trim() || !authPw) {
+      setState({ authError: 'Name, email, mobile and password are all required.' });
+      return;
+    }
+    if (authPw.length < 6) {
+      setState({ authError: 'Password must be at least 6 characters.' });
+      return;
+    }
+    setState({ authBusy: true, authError: '' });
+    try {
+      const payload = { name: authName.trim(), email: authId.trim(), phone: authPhone.trim(), password: authPw };
+      const res = asTenant ? await apiAuth.registerTenant(payload) : await apiAuth.registerOwner(payload);
+      const user = res.owner || res.tenant || null;
+      if (res.token) {
+        if (asTenant) await saveTenantSession(res.token, user);
+        else await saveOwnerSession(res.token, user);
+        setToken(res.token);
+        setState({
+          session: { role: asTenant ? 'tenant' : 'owner', token: res.token, user },
+          authBusy: false, authPw: '', authError: '',
+          route: asTenant ? 'portal' : 'home'
+        });
+        flash('Account created');
+      } else {
+        // Registered but no token returned — send them to sign in.
+        setState({ authBusy: false, authPw: '', route: asTenant ? 'tlogin' : 'login' });
+        flash('Account created — please sign in');
+      }
+    } catch (e) {
+      setState({ authBusy: false, authError: errText(e, 'Could not create the account.') });
+    }
+  }, [setState, flash]);
+
+  const signOut = useCallback(async () => {
+    try { await clearSession(); } catch (e) { /* clearing is best-effort */ }
+    setToken(null);
+    setState({ ...INITIAL_STATE, route: 'role', session: null, theme: stateRef.current.theme });
+  }, [setState]);
+
+  // Resolve the stored session once, on mount.
+  useEffect(() => { resolveSession(); }, [resolveSession]);
+
+  const api = useMemo(
+    () => ({ setState, set, go, flash, fxRef, signIn, register, signOut, resolveSession }),
+    [setState, set, go, flash, signIn, register, signOut, resolveSession]
+  );
 
   const vm = useMemo(() => deriveVm(state, api), [state, api]);
   const app = useMemo(() => ({ state, set, go, flash, setState }), [state, set, go, flash, setState]);
