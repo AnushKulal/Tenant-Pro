@@ -34,6 +34,8 @@ http.interceptors.request.use((cfg) => {
 
 const body = (p) => p.then((r) => r.data);
 const MULTIPART = { headers: { 'Content-Type': 'multipart/form-data' } };
+// FormData is only defined at runtime; guard so this is safe in any environment.
+const isForm = (v) => typeof FormData !== 'undefined' && v instanceof FormData;
 
 // ── Auth (public) ─────────────────────────────────────────────────────────────
 export const auth = {
@@ -49,7 +51,13 @@ export const auth = {
 export const owner = {
     dashboard: (propertyId = 'all') => body(http.get('/owner/dashboard', { params: { property_id: propertyId } })),
     transactions: (propertyId = 'all') => body(http.get('/owner/transactions', { params: { property_id: propertyId } })),
-    updateProfile: (form) => body(http.put('/owner/profile', form, MULTIPART))
+    updateProfile: (form) => body(http.put('/owner/profile', form, MULTIPART)),
+    // The maintenance queue: every request the owner's tenants have raised, with
+    // the tenant/unit/property joined in so a row can be rendered on its own.
+    requests: (propertyId = 'all') => body(http.get('/owner/requests', { params: { property_id: propertyId } })),
+    setRequestStatus: (id, status) => body(http.put(`/owner/requests/${id}/status`, { status })),
+    requestMessages: (id) => body(http.get(`/owner/requests/${id}/messages`)),
+    sendRequestMessage: (id, text) => body(http.post(`/owner/requests/${id}/messages`, { body: text }))
 };
 
 export const properties = {
@@ -92,7 +100,13 @@ export const portal = {
     me: () => body(http.get('/tenant-portal/me')),
     payments: () => body(http.get('/tenant-portal/payments')),
     requests: () => body(http.get('/tenant-portal/requests')),
-    createRequest: (payload) => body(http.post('/tenant-portal/requests', payload))
+    // Accepts either a plain object or a FormData carrying `request_image`; axios
+    // needs the multipart header set explicitly for the latter.
+    createRequest: (payload) => body(
+        http.post('/tenant-portal/requests', payload, isForm(payload) ? MULTIPART : undefined)
+    ),
+    requestMessages: (id) => body(http.get(`/tenant-portal/requests/${id}/messages`)),
+    sendRequestMessage: (id, text) => body(http.post(`/tenant-portal/requests/${id}/messages`, { body: text }))
 };
 
 export default http;

@@ -110,22 +110,25 @@ export default function PortalHomeScreen() {
                         <Row justify="space-between" style={{ marginBottom: 14 }}>
                             <Eyebrow s={9} ls={0.12} c={t.fg3}>REQUESTS</Eyebrow>
                             <Press
-                                onPress={vm.noop}
+                                onPress={vm.openNewRequest}
                                 style={{ flexDirection: 'row', alignItems: 'center', columnGap: 3, paddingVertical: 5, paddingHorizontal: 10, borderRadius: 999, backgroundColor: t.vsoft }}
                             >
                                 <Glyph name="add" size={13} color={t.accent} />
                                 <T mono w={600} s={8} ls={0.08} c={t.accent}>NEW</T>
                             </Press>
                         </Row>
+                        {/* Tappable here too — the same detail sheet the Help tab opens. */}
                         {(vm.requests || []).map((rq, i) => (
-                            <Row key={i} gap={10} style={{ paddingVertical: 9 }}>
-                                <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: t[rq.dot] }} />
-                                <View style={{ flex: 1, minWidth: 0 }}>
-                                    <T w={500} s={13} lh={1.2}>{rq.title}</T>
-                                    <Eyebrow s={9} ls={0.06} c={t.fg3} style={{ marginTop: 3 }}>{rq.sub}</Eyebrow>
-                                </View>
-                                <T mono w={600} s={8} ls={0.08} c={t[rq.dot]}>{rq.status}</T>
-                            </Row>
+                            <Press key={i} onPress={rq.open}>
+                                <Row gap={10} style={{ paddingVertical: 9 }}>
+                                    <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: t[rq.dot] }} />
+                                    <View style={{ flex: 1, minWidth: 0 }}>
+                                        <T w={500} s={13} lh={1.2}>{rq.title}</T>
+                                        <Eyebrow s={9} ls={0.06} c={t.fg3} style={{ marginTop: 3 }}>{rq.sub}</Eyebrow>
+                                    </View>
+                                    <T mono w={600} s={8} ls={0.08} c={t[rq.dot]}>{rq.status}</T>
+                                </Row>
+                            </Press>
                         ))}
                     </Card>
                 </>
@@ -134,13 +137,13 @@ export default function PortalHomeScreen() {
             {/* Linked: landlord contact */}
             {vm.portalLinked && (
                 <Card radius={22} pad={0} style={{ paddingVertical: 16, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', columnGap: 12 }}>
-                    <Face uri="https://randomuser.me/api/portraits/men/32.jpg" size={40} radius={13} style={{ backgroundColor: t.accent }} />
+                    <Face uri={(vm.landlord || {}).img} size={40} radius={13} style={{ backgroundColor: t.accent }} />
                     <View style={{ flex: 1 }}>
-                        <T w={600} s={14} lh={1.2}>Demo Landlord</T>
-                        <Eyebrow s={10} ls={0.08} c={t.fg3} style={{ marginTop: 4 }}>+91 90000 00000</Eyebrow>
+                        <T w={600} s={14} lh={1.2} numberOfLines={1}>{(vm.landlord || {}).name}</T>
+                        <Eyebrow s={10} ls={0.08} c={t.fg3} style={{ marginTop: 4 }}>{(vm.landlord || {}).phoneLabel}</Eyebrow>
                     </View>
                     <Press
-                        onPress={vm.noop}
+                        onPress={(vm.landlord || {}).call}
                         style={{ width: 38, height: 38, borderRadius: 13, backgroundColor: t.lsoft, alignItems: 'center', justifyContent: 'center' }}
                     >
                         <Glyph name="call" size={16} color={t.pos} />

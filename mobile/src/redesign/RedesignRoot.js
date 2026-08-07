@@ -9,10 +9,10 @@
 // Everything below reads tokens from useT() and data/actions from useVm(); no
 // screen is imported by v1 and this file imports nothing from v1.
 import React from 'react';
-import { View, Text, ScrollView, Animated, ActivityIndicator, StatusBar as RNStatusBar, Platform } from 'react-native';
+import { View, Text, ScrollView, Animated, ActivityIndicator, useColorScheme, StatusBar as RNStatusBar, Platform } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { RedesignThemeProvider, useT } from './ThemeContext';
+import { RedesignThemeProvider, useT, useThemeCtl } from './ThemeContext';
 import { AppProvider, useVm, useApp } from './AppContext';
 import { useRedesignFonts } from './fonts';
 import { useEnter, useWipe } from './motion';
@@ -24,6 +24,7 @@ import Sheets from './Sheets';
 import Toast from './Toast';
 import UpdateSheet from './UpdateSheet';
 
+import OnboardingScreen from './screens/OnboardingScreen';
 import RoleScreen from './screens/RoleScreen';
 import OwnerLoginScreen from './screens/OwnerLoginScreen';
 import CreateAccountScreen from './screens/CreateAccountScreen';
@@ -46,6 +47,7 @@ import TenantSettingsScreen from './screens/TenantSettingsScreen';
 
 // route (state.route) → screen component. Mirrors the route flags in deriveVm().
 const SCREENS = {
+    onboarding: OnboardingScreen,
     role: RoleScreen,
     login: OwnerLoginScreen,
     signup: CreateAccountScreen,
@@ -78,9 +80,31 @@ function Shell() {
     const fontsLoaded = useRedesignFonts();
     const t = useT();
     const vm = useVm();
-    const { state } = useApp();
+    const { state, setState } = useApp();
     const insets = useSafeAreaInsets();
     const wipe = useWipe(vm.mode); // flash on theme swap
+
+    // ── Theme bridge ───────────────────────────────────────────────────────────
+    // AppContext holds the user's preference (state.pref = light|dark|system) and
+    // the mode it resolves to (state.theme); the palette every component actually
+    // reads comes from ThemeContext. The two were never wired together, so the
+    // Light/Dark/System control changed state and repainted nothing.
+    //
+    // state.theme stays the single source of truth for "which mode are we in" —
+    // vm.mode/vm.dark are derived from it — so this does two things: keeps it in
+    // step with the OS while the preference is "System", and mirrors it into
+    // ThemeContext so the palette follows.
+    const ctl = useThemeCtl();
+    const osScheme = useColorScheme();
+    const wantMode = state.pref === 'system'
+        ? (osScheme === 'light' ? 'light' : 'dark')
+        : (state.theme || 'dark');
+    React.useEffect(() => {
+        if (state.theme !== wantMode) setState({ theme: wantMode });
+    }, [wantMode, state.theme, setState]);
+    React.useEffect(() => {
+        if (ctl && ctl.mode !== wantMode) ctl.setMode(wantMode);
+    }, [ctl, wantMode]);
 
     // Hold the whole app on an ink field until the two typefaces are ready, so
     // nothing renders in a fallback system font and then reflows.

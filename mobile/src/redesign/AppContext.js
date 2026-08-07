@@ -11,15 +11,16 @@
 import React, {
   createContext, useCallback, useContext, useEffect, useMemo, useRef, useState
 } from 'react';
+import { Appearance, Linking } from 'react-native';
 import {
   PRIORITY, MOVE_IN, MONTH_LABELS, creditOf, SEED
 } from './data';
 import {
   auth as apiAuth, owner as apiOwner, properties as apiProps,
-  units as apiUnits, tenants as apiTenants, setToken, mediaUrl
+  units as apiUnits, tenants as apiTenants, portal as apiPortal, setToken, mediaUrl
 } from './api';
-import { mapOwnerData } from './mapping';
-import { loadSession, saveOwnerSession, saveTenantSession, clearSession } from './session';
+import { mapOwnerData, mapPortalRequest } from './mapping';
+import { loadSession, saveOwnerSession, saveTenantSession, clearSession, hasOnboarded, setOnboarded } from './session';
 
 // Indian-grouped rupee magnitude (e.g. 1234567 -> "12,34,567") WITHOUT
 // Number.prototype.toLocaleString('en-IN'): that relies on Intl, which the
@@ -73,8 +74,31 @@ const INITIAL_STATE = {
   live: false,
   dataLoading: false,
   dataError: '',
-  refreshing: false
+  refreshing: false,
+
+  // ── Tenant portal ──
+  // The signed-in tenant's own bundle (/tenant-portal/me + /requests), kept apart
+  // from `data` because it is a different account's view of the world, not a
+  // subset of the landlord's. Null until a tenant signs in.
+  tdata: null,
+
+  // ── Maintenance-request conversation ──
+  // The thread of whichever request is open, loaded on demand. `id` is what it
+  // belongs to, so a stale response for a request the user has already closed can
+  // be discarded instead of painted into the wrong sheet.
+  thread: { id: null, messages: [], loading: false, error: '', sending: false },
+  reply: '', // the draft in the thread's compose box
+
+  // The "raise a request" form. `photo` is an expo-image-picker asset, uploaded as
+  // `request_image` when present.
+  nr: { category: 'Plumbing', title: '', body: '', priority: 'Medium', photo: null, busy: false, error: '' }
 };
+
+// Same list v1's tenant portal offers, so a request raised in either UI is filed
+// under the same categories.
+const REQUEST_CATEGORIES = ['Plumbing', 'Electrical', 'Appliance', 'Cleaning', 'General'];
+const REQUEST_PRIORITIES = ['Low', 'Medium', 'High'];
+const BLANK_REQUEST = { category: 'Plumbing', title: '', body: '', priority: 'Medium', photo: null, busy: false, error: '' };
 
 // ── deriveVm: pure translation of renderVals(). `api` carries the state mutators
 //    (setState / set / go / flash) and the fx timer ref. ──
@@ -111,9 +135,21 @@ function deriveVm(s, api) {
   const EXPENSES_SRC = D.expenses || [];
   const live = !!s.live;
   const u = (s.session && s.session.user) || null;
+  // ── Tenant portal's own data ───────────────────────────────────────────────
+  // A signed-in tenant reads their tenancy from /tenant-portal/me and their own
+  // maintenance requests from /tenant-portal/requests. Until that arrives (or for
+  // the seed/demo walk-through) the shapes below stand in.
+  const TD = s.tdata || null;
+  const TLIVE = !!TD;
+  // The landlord on the other end of this tenancy — the person the tenant needs to
+  // reach about a request.
+  const LANDLORD = (TD && TD.me && TD.me.owner) || null;
+
   // Shape mirrors the tenant-portal /requests payload (category, title,
-  // description, priority, status, created_at) so Phase 5 can swap in live rows.
-  const REQUESTS = (D.requests && D.requests.length) ? D.requests : [
+  // description, priority, status, created_at), mapped by mapping.js when live.
+  const REQUESTS = TLIVE
+    ? (TD.requests || []).map(mapPortalRequest)
+    : (D.requests && D.requests.length) ? D.requests : [
     { title: 'Leaking tap in bathroom', sub: 'PLUMBING · 28 JUL', status: 'IN PROGRESS', dot: 'amber',
       category: 'Plumbing', priority: 'High', raised: '28 Jul 2026',
       body: 'The cold-water tap drips constantly, even when fully closed. It is wasting water and the sound carries at night.' },
@@ -124,6 +160,89 @@ function deriveVm(s, api) {
       category: 'Appliance', priority: 'Low', raised: '12 Jul 2026',
       body: 'The water took much longer to heat than it used to. Descaled and serviced.' }
   ];
+
+  // ── Maintenance-request conversations ──────────────────────────────────────
+  // Both sides of a request read the same thread, so the formatting lives once
+  // here and the owner's ticket sheet and the tenant's request sheet share it.
+  const MSG_MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const msgTime = (iso) => {
+    const d = iso ? new Date(iso) : null;
+    if (!d || isNaN(d.getTime())) return '';
+    const h = d.getHours();
+    const min = String(d.getMinutes()).padStart(2, '0');
+    const am = h < 12 ? 'AM' : 'PM';
+    return `${d.getDate()} ${MSG_MON[d.getMonth()]} · ${((h + 11) % 12) + 1}:${min} ${am}`;
+  };
+  const myRole = s.session && s.session.role === 'tenant' ? 'tenant' : 'owner';
+  // The thread only belongs to the sheet whose request id it was loaded for — a
+  // response that arrives after the user moved on is ignored, not shown.
+  const threadOf = (requestId) => {
+    const th = s.thread || {};
+    const mine = th.id != null && requestId != null && String(th.id) === String(requestId);
+    const rows = mine ? (th.messages || []) : [];
+    return {
+      loading: mine && !!th.loading,
+      error: mine ? (th.error || '') : '',
+      sending: mine && !!th.sending,
+      messages: rows.filter(Boolean).map((m) => {
+        const own = m.sender_role === myRole;
+        return {
+          id: m.id,
+          body: m.body,
+          own,
+          who: m.sender_role === 'owner' ? 'LANDLORD' : 'TENANT',
+          time: msgTime(m.created_at),
+          bg: own ? 'lsoft' : 'ink3',
+          fg: own ? 'fg' : 'fg2',
+          align: own ? 'flex-end' : 'flex-start'
+        };
+      }),
+      empty: mine && !th.loading && !th.error && rows.length === 0
+    };
+  };
+  // The compose box. `send` is a no-op while a send is in flight or the box is
+  // empty, so a double tap cannot post the same message twice.
+  const reply = s.reply || '';
+  const composer = {
+    value: reply,
+    set: (e) => set('reply', e && e.target ? e.target.value : e),
+    send: () => api.sendReply(),
+    canSend: !!reply.trim() && !(s.thread && s.thread.sending),
+    sending: !!(s.thread && s.thread.sending)
+  };
+  // Opening a request detail: remember which one, then fetch its conversation.
+  const openRequest = (index, requestId) => {
+    setState({ req: index, overlay: 'request', reply: '' });
+    if (requestId != null) api.loadThread(requestId);
+  };
+  // Place a real call. Falls back to a toast if the device has no dialler (a
+  // tablet, the web preview) rather than failing silently.
+  // "9000000000" → "+91 90000 00000". Ten digits are assumed Indian; anything else
+  // is shown as given rather than reshaped into a format it may not be in.
+  const fmtPhone = (p) => {
+    const d = String(p || '').replace(/[^0-9]/g, '');
+    return d.length === 10 ? `+91 ${d.slice(0, 5)} ${d.slice(5)}` : String(p || '');
+  };
+  const callNumber = (phone, label) => {
+    const url = `tel:${String(phone).replace(/[^0-9+]/g, '')}`;
+    Linking.openURL(url).catch(() => flash(`Could not start a call to ${label}`));
+  };
+
+  // The landlord contact, resolved once: from /tenant-portal/me when the tenancy is
+  // live, otherwise the seed's demo landlord so the walk-through still shows a
+  // person. Both the Help screen's card and every request sheet read this, so they
+  // can never name different people.
+  const landlordCard = {
+    name: (LANDLORD && LANDLORD.name) || 'Demo Landlord',
+    phone: (LANDLORD && LANDLORD.phone) || '9000000000',
+    phoneLabel: fmtPhone((LANDLORD && LANDLORD.phone) || '9000000000'),
+    img: (LANDLORD && mediaUrl(LANDLORD.profile_pic)) || 'https://randomuser.me/api/portraits/men/32.jpg',
+    call: () => {
+      const n = (LANDLORD && LANDLORD.phone) || (TLIVE ? '' : '9000000000');
+      return n ? callNumber(n, (LANDLORD && LANDLORD.name) || 'your landlord')
+        : flash('No number on file for your landlord');
+    }
+  };
 
   const mode = s.theme || 'dark';
   const dark = mode === 'dark';
@@ -231,7 +350,10 @@ function deriveVm(s, api) {
     .sort((a, b) => PRIORITY[a.priority].rank - PRIORITY[b.priority].rank);
   const card = (t) => {
     const p = PRIORITY[t.priority];
-    const person = TENANTS.find((x) => x.id === t.who) || {};
+    // A live ticket carries the raiser's own name/photo, so it still reads as
+    // coming from a person even if that tenant has since been moved out and no
+    // longer appears in the roster.
+    const person = TENANTS.find((x) => x.id === t.who) || { name: t.name, img: t.img };
     const st = statusOf(t);
     return {
       title: t.title,
@@ -243,9 +365,9 @@ function deriveVm(s, api) {
       bg: p.bg,
       status: st.toUpperCase(),
       statusFg: STATUS_FG[st],
-      read: () => setState({ ticket: t.id, overlay: 'ticket' }),
-      start: () => { setState({ tstatus: { ...s.tstatus, [t.id]: 'In progress' } }); flash(`Opened — ${t.title}`); },
-      resolve: () => { setState({ tstatus: { ...s.tstatus, [t.id]: 'Resolved' }, overlay: null }); flash(`Resolved — ${t.title}`); },
+      read: () => openTicketSheet(t.id),
+      start: () => { api.setRequestStatus(t.id, 'In Progress'); flash(`Opened — ${t.title}`); },
+      resolve: () => { api.setRequestStatus(t.id, 'Resolved'); setState({ overlay: null }); flash(`Resolved — ${t.title}`); },
       started: st !== 'Open',
       notStarted: st === 'Open'
     };
@@ -260,7 +382,14 @@ function deriveVm(s, api) {
     bg: PRIORITY[k].bg
   })).filter((c) => c.n !== '0');
   const openTicket = TICKETS.find((t) => t.id === s.ticket) || TICKETS[0] || EMPTY_TICKET;
-  const openPerson = TENANTS.find((x) => x.id === openTicket.who) || {};
+  const openPerson = TENANTS.find((x) => x.id === openTicket.who)
+    || { name: openTicket.name, img: openTicket.img, phone: openTicket.phone };
+  // Opening a ticket also pulls its conversation, so the landlord sees the replies
+  // already on it rather than an empty box.
+  const openTicketSheet = (id) => {
+    setState({ ticket: id, overlay: 'ticket', reply: '' });
+    if (id != null) api.loadThread(id);
+  };
 
   const PAYMENTS = PAYMENTS_SRC.filter((p) => !scoped || unitProp[p.unit] === curProp);
   const EXPENSES = EXPENSES_SRC.filter((e) => !scoped || e.prop === curProp);
@@ -387,6 +516,9 @@ function deriveVm(s, api) {
     addProperty: () => flash('Add property — not wired in this prototype'),
     addUnit: () => flash('Add unit — not wired in this prototype'),
 
+    isOnboarding: s.route === 'onboarding',
+    // Marks the intro as seen (persisted) and hands off to the role picker.
+    finishOnboarding: () => { setOnboarded(); go('role'); },
     goRole: () => go('role'),
     goLogin: () => go('login'),
     goHome: () => go('home'),
@@ -626,9 +758,15 @@ function deriveVm(s, api) {
       photoCount: `${openTicket.photos.length} ${openTicket.photos.length === 1 ? 'PHOTO' : 'PHOTOS'} ATTACHED`,
       started: statusOf(openTicket) !== 'Open',
       notStarted: statusOf(openTicket) === 'Open',
-      start: () => { setState({ tstatus: { ...s.tstatus, [openTicket.id]: 'In progress' } }); flash(`Opened — ${openTicket.title}`); },
-      resolve: () => { setState({ tstatus: { ...s.tstatus, [openTicket.id]: 'Resolved' }, overlay: null }); flash(`Resolved — ${openTicket.title}`); },
-      call: () => flash(`Calling ${openPerson.name}`)
+      start: () => { api.setRequestStatus(openTicket.id, 'In Progress'); flash(`Opened — ${openTicket.title}`); },
+      resolve: () => { api.setRequestStatus(openTicket.id, 'Resolved'); setState({ overlay: null }); flash(`Resolved — ${openTicket.title}`); },
+      // The landlord's half of the conversation, and a real call to the tenant who
+      // raised it. Replying needs a live server-side row to hang messages off.
+      thread: threadOf(openTicket.id),
+      canReply: live && openTicket.id != null,
+      call: () => (openPerson.phone
+        ? callNumber(openPerson.phone, openPerson.name || 'this tenant')
+        : flash(`No number on file for ${openPerson.name || 'this tenant'}`))
     },
 
     recent: PAYMENTS.slice(0, 4).map((p) => ({
@@ -919,7 +1057,12 @@ function deriveVm(s, api) {
         fg: on ? 'ink' : 'fg2',
         bd: on ? 'fg' : 'line',
         go: () => {
-          const next = k === 'system' ? 'dark' : k;
+          // "System" resolves to whatever the OS is set to right now; RedesignRoot
+          // keeps it in step from then on. It used to hard-code dark, which is why
+          // picking System on a light phone still gave you a dark app.
+          const next = k === 'system'
+            ? (Appearance.getColorScheme() === 'light' ? 'light' : 'dark')
+            : k;
           if (next === mode) { setState({ pref: k }); return; }
           setState({ fx: '1' });
           clearTimeout(fxRef.current);
@@ -1122,8 +1265,49 @@ function deriveVm(s, api) {
       // Tapping a request opens its detail sheet. This previously pointed at
       // openRecord — the record-a-payment overlay — so tapping a ticket showed a
       // payment sheet.
-      open: () => setState({ req: i, overlay: 'request' })
+      open: () => openRequest(i, r.id)
     })),
+
+    // The reply box, shared by the landlord's ticket sheet and the tenant's
+    // request sheet — whichever is open posts into that request's thread.
+    composer,
+
+    // ── The landlord, as the tenant sees them ──
+    landlord: landlordCard,
+
+    // ── Raise a request ──
+    openNewRequest: () => setState({ overlay: 'newrequest', nr: { ...BLANK_REQUEST } }),
+    isNewRequest: s.overlay === 'newrequest',
+    newRequest: (() => {
+      const nr = s.nr || BLANK_REQUEST;
+      const put = (patch) => setState({ nr: { ...nr, ...patch, error: '' } });
+      return {
+        categories: REQUEST_CATEGORIES.map((c) => ({
+          label: c,
+          on: nr.category === c,
+          go: () => put({ category: c })
+        })),
+        priorities: REQUEST_PRIORITIES.map((p) => ({
+          label: p,
+          on: nr.priority === p,
+          go: () => put({ priority: p })
+        })),
+        title: nr.title,
+        setTitle: (e) => put({ title: e && e.target ? e.target.value : e }),
+        body: nr.body,
+        setBody: (e) => put({ body: e && e.target ? e.target.value : e }),
+        photo: nr.photo ? nr.photo.uri : null,
+        hasPhoto: !!nr.photo,
+        pickPhoto: () => api.pickRequestPhoto(),
+        clearPhoto: () => put({ photo: null }),
+        busy: !!nr.busy,
+        error: nr.error || '',
+        canSubmit: !!String(nr.title || '').trim() && !nr.busy,
+        // Only a linked, live tenancy has a landlord to file this against.
+        canSubmitAtAll: TLIVE,
+        submit: () => api.createRequest()
+      };
+    })(),
 
     // ── Tenant request detail (opened from Help) ──
     isRequest: s.overlay === 'request',
@@ -1134,6 +1318,7 @@ function deriveVm(s, api) {
       // this request currently sits.
       const STEPS = ['OPEN', 'IN PROGRESS', 'RESOLVED'];
       const at = Math.max(0, STEPS.indexOf(r.status));
+      const photos = r.photos || [];
       return {
         ...r,
         steps: STEPS.map((label, i) => ({
@@ -1142,11 +1327,15 @@ function deriveVm(s, api) {
           current: i === at,
           fg: i <= at ? (i === at ? r.dot : 'pos') : 'fg3'
         })),
-        // The backend stores no attachments or replies for a request yet (see
-        // maintenance_requests: no photo column, no comments table), so the sheet
-        // says so rather than pretending.
-        hasPhotos: false,
-        canReply: false
+        photos,
+        hasPhotos: photos.length > 0,
+        // Replying needs a real server-side request to hang the message off, so
+        // the compose box only appears on live rows — never on the walk-through.
+        canReply: TLIVE && r.id != null,
+        thread: threadOf(r.id),
+        // The landlord, reachable from the request itself. Same resolution as the
+        // Help screen's contact card, so the two never disagree about who to ring.
+        landlord: landlordCard
       };
     })()
   };
@@ -1189,19 +1378,24 @@ export function AppProvider({ children }) {
   const loadOwnerData = useCallback(async ({ refresh = false } = {}) => {
     setState(refresh ? { refreshing: true, dataError: '' } : { dataLoading: true, dataError: '' });
     try {
-      const [dashboard, propsRes, unitsRes, tenantsRes, txRes] = await Promise.all([
+      const [dashboard, propsRes, unitsRes, tenantsRes, txRes, reqRes] = await Promise.all([
         apiOwner.dashboard('all'),
         apiProps.list(),
         apiUnits.list('all'),
         apiTenants.list(),
-        apiOwner.transactions('all')
+        apiOwner.transactions('all'),
+        // The maintenance queue is newer than the rest of the API, so a backend
+        // that predates it must not take the whole dashboard down with it — an
+        // empty queue is a correct answer, a blank screen is not.
+        apiOwner.requests('all').catch(() => ({ requests: [] }))
       ]);
       const data = mapOwnerData({
         dashboard,
         properties: propsRes.properties,
         units: unitsRes.units,
         tenants: tenantsRes.tenants,
-        transactions: txRes.transactions
+        transactions: txRes.transactions,
+        requests: reqRes.requests
       });
       setState({
         data,
@@ -1223,6 +1417,163 @@ export function AppProvider({ children }) {
     }
   }, [setState]);
 
+  // The tenant portal's own bundle. Kept deliberately forgiving: a tenant whose
+  // landlord has not linked them to a unit yet gets `linked: false` from /me,
+  // which the portal renders as its "ask your landlord" state — that is a valid
+  // answer, not an error.
+  const loadTenantData = useCallback(async ({ refresh = false } = {}) => {
+    setState(refresh ? { refreshing: true, dataError: '' } : { dataLoading: true, dataError: '' });
+    try {
+      const [meRes, reqRes] = await Promise.all([
+        apiPortal.me(),
+        apiPortal.requests().catch(() => ({ requests: [] }))
+      ]);
+      setState({
+        tdata: { me: meRes, requests: reqRes.requests || [] },
+        dataLoading: false,
+        refreshing: false,
+        dataError: ''
+      });
+    } catch (e) {
+      setState({
+        dataLoading: false,
+        refreshing: false,
+        dataError: errText(e, 'Could not load your tenancy. Pull down to retry.')
+      });
+    }
+  }, [setState]);
+
+  // Load one request's conversation. Which endpoint serves it depends on which
+  // side of the thread the caller is standing on; the rows are the same either way.
+  const loadThread = useCallback(async (requestId) => {
+    if (requestId == null) return;
+    const role = (stateRef.current.session && stateRef.current.session.role) || 'owner';
+    setState({ thread: { id: requestId, messages: [], loading: true, error: '', sending: false } });
+    try {
+      const res = role === 'tenant'
+        ? await apiPortal.requestMessages(requestId)
+        : await apiOwner.requestMessages(requestId);
+      // Discard a late response for a request the user has already navigated away
+      // from, so an old thread can never appear under a new title.
+      if (stateRef.current.thread.id !== requestId) return;
+      setState({ thread: { id: requestId, messages: res.messages || [], loading: false, error: '', sending: false } });
+    } catch (e) {
+      if (stateRef.current.thread.id !== requestId) return;
+      setState({
+        thread: {
+          id: requestId,
+          messages: [],
+          loading: false,
+          error: errText(e, 'Could not load the conversation.'),
+          sending: false
+        }
+      });
+    }
+  }, [setState]);
+
+  // Post the compose box's contents to the open thread and append what the server
+  // stored (rather than what we typed), so the bubble carries the real timestamp.
+  const sendReply = useCallback(async () => {
+    const { reply, thread, session } = stateRef.current;
+    const text = String(reply || '').trim();
+    if (!text || thread.id == null || thread.sending) return;
+    const role = (session && session.role) || 'owner';
+    setState({ thread: { ...thread, sending: true, error: '' } });
+    try {
+      const res = role === 'tenant'
+        ? await apiPortal.sendRequestMessage(thread.id, text)
+        : await apiOwner.sendRequestMessage(thread.id, text);
+      const cur = stateRef.current.thread;
+      if (cur.id !== thread.id) return;
+      setState({
+        reply: '',
+        thread: { ...cur, messages: [...cur.messages, res.item], sending: false, error: '' }
+      });
+    } catch (e) {
+      const cur = stateRef.current.thread;
+      if (cur.id !== thread.id) return;
+      setState({ thread: { ...cur, sending: false, error: errText(e, 'Message not sent. Try again.') } });
+    }
+  }, [setState]);
+
+  // Attach a photo of the problem. expo-image-picker is loaded lazily so the
+  // module is only pulled in when a tenant actually reaches for the camera roll.
+  const pickRequestPhoto = useCallback(async () => {
+    try {
+      const picker = require('expo-image-picker');
+      const perm = await picker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) { flash('Photo access is needed to attach a picture'); return; }
+      const res = await picker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.7 });
+      if (res.canceled || !res.assets || !res.assets[0]) return;
+      const a = res.assets[0];
+      setState({ nr: { ...stateRef.current.nr, photo: a, error: '' } });
+    } catch (e) {
+      flash('Could not open your photos');
+    }
+  }, [setState, flash]);
+
+  // Raise a maintenance request. Sent as multipart only when a photo is attached,
+  // so the common case stays a plain JSON post.
+  const createRequest = useCallback(async () => {
+    const nr = stateRef.current.nr || BLANK_REQUEST;
+    const title = String(nr.title || '').trim();
+    if (!title) { setState({ nr: { ...nr, error: 'Add a short title so your landlord knows what this is.' } }); return; }
+    if (nr.busy) return;
+    setState({ nr: { ...nr, busy: true, error: '' } });
+    try {
+      let payload;
+      if (nr.photo) {
+        payload = new FormData();
+        payload.append('title', title);
+        payload.append('description', String(nr.body || '').trim());
+        payload.append('category', nr.category);
+        payload.append('priority', nr.priority);
+        payload.append('request_image', {
+          uri: nr.photo.uri,
+          name: nr.photo.fileName || 'request.jpg',
+          type: nr.photo.mimeType || 'image/jpeg'
+        });
+      } else {
+        payload = { title, description: String(nr.body || '').trim(), category: nr.category, priority: nr.priority };
+      }
+      const res = await apiPortal.createRequest(payload);
+      // Put the new request straight at the top of the list rather than re-fetching
+      // — the server already told us exactly what it stored.
+      const cur = stateRef.current.tdata;
+      setState({
+        nr: { ...BLANK_REQUEST },
+        overlay: null,
+        tdata: cur ? { ...cur, requests: [res.request, ...(cur.requests || [])] } : cur
+      });
+      flash('Request raised — your landlord can see it now');
+    } catch (e) {
+      setState({
+        nr: {
+          ...stateRef.current.nr,
+          busy: false,
+          error: errText(e, 'Could not submit your request. Please try again.')
+        }
+      });
+    }
+  }, [setState, flash]);
+
+  // Move a request along the queue. The local `tstatus` override paints instantly
+  // and the API call makes it stick; if the call fails the override is rolled back
+  // so the screen never claims a change the backend rejected.
+  const setRequestStatus = useCallback(async (requestId, status) => {
+    if (requestId == null) return;
+    const label = status === 'In Progress' ? 'In progress' : status;
+    const before = stateRef.current.tstatus;
+    setState({ tstatus: { ...before, [requestId]: label } });
+    if (!stateRef.current.live) return; // seed/demo data has no server row to update
+    try {
+      await apiOwner.setRequestStatus(requestId, status);
+    } catch (e) {
+      setState({ tstatus: before });
+      flash(errText(e, 'Could not update the request.'));
+    }
+  }, [setState, flash]);
+
   // Restore a stored session on launch and route accordingly.
   const resolveSession = useCallback(async () => {
     try {
@@ -1231,15 +1582,19 @@ export function AppProvider({ children }) {
         setToken(sess.token);
         setState({ session: sess, route: sess.role === 'owner' ? 'home' : 'portal' });
         if (sess.role === 'owner') loadOwnerData();
+        else loadTenantData();
       } else {
         setToken(null);
-        setState({ session: null, route: 'role' });
+        // Signed out: first-time users get the intro; everyone else goes straight
+        // to the role picker.
+        const seen = await hasOnboarded();
+        setState({ session: null, route: seen ? 'role' : 'onboarding' });
       }
     } catch (e) {
       setToken(null);
       setState({ session: null, route: 'role' });
     }
-  }, [setState, loadOwnerData]);
+  }, [setState, loadOwnerData, loadTenantData]);
 
   const signIn = useCallback(async (role) => {
     const { authId, authPw } = stateRef.current;
@@ -1263,10 +1618,11 @@ export function AppProvider({ children }) {
       });
       flash(`Welcome back${user && user.name ? `, ${String(user.name).split(' ')[0]}` : ''}`);
       if (role === 'owner') loadOwnerData();
+      else loadTenantData();
     } catch (e) {
       setState({ authBusy: false, authError: errText(e, 'Sign in failed. Check your details and try again.') });
     }
-  }, [setState, flash, loadOwnerData]);
+  }, [setState, flash, loadOwnerData, loadTenantData]);
 
   const register = useCallback(async () => {
     const { authId, authPw, authName, authPhone, signupRole } = stateRef.current;
@@ -1318,8 +1674,16 @@ export function AppProvider({ children }) {
   useEffect(() => { resolveSession(); }, [resolveSession]);
 
   const api = useMemo(
-    () => ({ setState, set, go, flash, fxRef, signIn, register, signOut, resolveSession, loadOwnerData }),
-    [setState, set, go, flash, signIn, register, signOut, resolveSession, loadOwnerData]
+    () => ({
+      setState, set, go, flash, fxRef, signIn, register, signOut, resolveSession,
+      loadOwnerData, loadTenantData, loadThread, sendReply, setRequestStatus,
+      pickRequestPhoto, createRequest
+    }),
+    [
+      setState, set, go, flash, signIn, register, signOut, resolveSession,
+      loadOwnerData, loadTenantData, loadThread, sendReply, setRequestStatus,
+      pickRequestPhoto, createRequest
+    ]
   );
 
   const vm = useMemo(() => deriveVm(state, api), [state, api]);

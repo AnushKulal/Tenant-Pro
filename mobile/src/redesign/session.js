@@ -10,7 +10,12 @@ const K = {
     ownerToken: 'userToken',
     ownerData: 'ownerData',
     tenantToken: 'tenantToken',
-    tenantData: 'tenantData'
+    tenantData: 'tenantData',
+    // v2-only: the redesign's first-run intro. Namespaced so it never collides
+    // with anything v1 stores, and deliberately NOT cleared on sign-out — the
+    // intro explains the product, so a returning user should not sit through it
+    // again just because they signed out.
+    onboarded: 'v2_onboarded'
 };
 
 export async function saveOwnerSession(token, owner) {
@@ -38,6 +43,14 @@ export async function clearSession() {
     await AsyncStorage.multiRemove([
         K.ownerToken, K.ownerData, K.tenantToken, K.tenantData, 'guestId', 'selectedProperty'
     ]);
+}
+
+export async function hasOnboarded() {
+    try { return (await AsyncStorage.getItem(K.onboarded)) === '1'; } catch (e) { return false; }
+}
+
+export async function setOnboarded() {
+    try { await AsyncStorage.setItem(K.onboarded, '1'); } catch (e) { /* best effort */ }
 }
 
 function safeParse(s) {

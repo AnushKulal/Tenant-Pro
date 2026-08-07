@@ -7,9 +7,8 @@
 //
 // Fields the design has but the backend does not model are given neutral
 // defaults (empty amenities, blank policy/rating…) rather than being faked, so
-// the UI simply shows less instead of inventing facts. Notably the backend has
-// no owner-side maintenance-requests route and no expenses route, so `tickets`
-// and `expenses` come back empty for a live account.
+// the UI simply shows less instead of inventing facts. The backend still has no
+// expenses route, so `expenses` comes back empty for a live account.
 import { mediaUrl } from './api';
 
 const inr = (n) => {
@@ -65,6 +64,82 @@ export function mapUnit(u) {
         type: String(u.room_type || '').toUpperCase(),
         rent: `₹${inr(u.base_rent)}`,
         cap: Math.max(1, Number(u.capacity) || 1)
+    };
+}
+
+// A relative age in the design's voice: "2H AGO" / "3D AGO" / "2W AGO". The
+// maintenance queue is read as "how long has this been waiting", never as a date.
+const ageLabel = (from, now) => {
+    if (!from) return '';
+    const mins = Math.max(0, Math.round((now - from) / 60000));
+    if (mins < 60) return `${Math.max(1, mins)}M AGO`;
+    const hours = Math.round(mins / 60);
+    if (hours < 24) return `${hours}H AGO`;
+    const days = Math.round(hours / 24);
+    if (days < 7) return `${days}D AGO`;
+    const weeks = Math.round(days / 7);
+    if (weeks < 5) return `${weeks}W AGO`;
+    return `${Math.round(days / 30)}MO AGO`;
+};
+
+// The backend's status enum has four values; the design's ticket list only knows
+// three states. 'Closed' is a resolved request that has been filed away, so it
+// reads as Resolved (which is also what keeps it out of the open queue).
+const TICKET_STATUS = { Open: 'Open', 'In Progress': 'In progress', Resolved: 'Resolved', Closed: 'Resolved' };
+// The design ranks a 'Critical' band the backend's enum does not have; a High
+// request maps to High and nothing is invented above it.
+const TICKET_PRIORITY = { High: 'High', Medium: 'Medium', Low: 'Low' };
+
+// /owner/requests rows → the ticket shape deriveVm reads (data.js TICKETS).
+// `who` is the vm tenant id so a ticket resolves to the person who raised it —
+// that link is the whole point of the landlord's queue.
+export function mapRequest(r, now) {
+    const created = asDate(r.created_at);
+    return {
+        id: r.id,
+        who: r.tenant_id != null ? String(r.tenant_id) : null,
+        name: r.tenant_name || '',
+        img: mediaUrl(r.tenant_image),
+        unit: r.unit_number ? String(r.unit_number) : '—',
+        prop: r.property_name || '',
+        title: r.title || 'Request',
+        cat: String(r.category || 'GENERAL').toUpperCase(),
+        priority: TICKET_PRIORITY[r.priority] || 'Medium',
+        status: TICKET_STATUS[r.status] || 'Open',
+        age: ageLabel(created, now),
+        body: r.description || '',
+        // One optional photo of the problem; the design's ticket sheet renders a
+        // list, so it arrives as a list of nought or one.
+        photos: r.image_url ? [mediaUrl(r.image_url)] : []
+    };
+}
+
+const MON_TITLE = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+// The tone the tenant portal shows a request's state in. Same three-state view as
+// the landlord's queue, so 'Closed' reads as resolved on both sides.
+const REQ_DOT = { Open: 'fg2', 'In Progress': 'amber', Resolved: 'pos', Closed: 'pos' };
+
+// /tenant-portal/requests rows → the shape the Help screen and the request-detail
+// sheet read. This is the tenant's own view of a request: no tenant identity (it
+// is theirs), but the raised date and the photo they attached.
+export function mapPortalRequest(r) {
+    const d = asDate(r.created_at);
+    const cat = String(r.category || 'General');
+    const display = TICKET_STATUS[r.status] || 'Open';
+    return {
+        id: r.id,
+        title: r.title || 'Request',
+        category: cat,
+        priority: r.priority || 'Medium',
+        body: r.description || '',
+        sub: `${cat.toUpperCase()} · ${d ? `${d.getDate()} ${MON[d.getMonth()]}` : ''}`.replace(/ · $/, ''),
+        // The sheet's status ladder matches on these, so they stay upper-case and
+        // in the backend's own vocabulary.
+        status: display.toUpperCase(),
+        dot: REQ_DOT[r.status] || 'fg2',
+        raised: d ? `${d.getDate()} ${MON_TITLE[d.getMonth()]} ${d.getFullYear()}` : '',
+        photos: r.image_url ? [mediaUrl(r.image_url)] : []
     };
 }
 
@@ -129,7 +204,7 @@ export function mapPayment(row, tenantsByName, now) {
 
 // Build the whole `state.data` bundle from the five owner endpoints.
 // `now` is injected so the result is deterministic and testable.
-export function mapOwnerData({ dashboard, properties, units, tenants, transactions }, now = new Date()) {
+export function mapOwnerData({ dashboard, properties, units, tenants, transactions, requests }, now = new Date()) {
     const props = (properties || []).map(mapProperty);
     const us = (units || []).map(mapUnit);
 
@@ -151,8 +226,8 @@ export function mapOwnerData({ dashboard, properties, units, tenants, transactio
         units: us,
         tenants: ts,
         payments: pays,
-        // No owner-side endpoint exists for either of these yet.
-        tickets: [],
+        tickets: (requests || []).map((r) => mapRequest(r, now)),
+        // No owner-side endpoint exists for expenses yet.
         expenses: [],
         // Backend-authoritative figures, preferred by deriveVm when live.
         stats: {

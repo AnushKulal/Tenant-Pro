@@ -3,13 +3,122 @@
 // that RedesignRoot stacks above every screen. Which sheet body renders is chosen
 // by whichever overlay flag on the vm is true. Translated from Sheets.html.
 import React from 'react';
-import { View, ScrollView, Image, TextInput, Animated, Dimensions } from 'react-native';
+import { View, ScrollView, Image, TextInput, Animated, Dimensions, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useVm } from './AppContext';
 import { useT } from './ThemeContext';
 import { grotesk } from './theme';
 import { T, Eyebrow, Row, Press, Glyph } from './ui';
 import { useSheetIn, useFadeIn } from './motion';
+
+// ── The conversation on a maintenance request ────────────────────────────────
+// One component, both sides: the landlord's ticket sheet and the tenant's request
+// sheet render the same thread from the same rows, with "own" messages aligned
+// right in the accent tint. `canReply` is false on the seed walk-through (no
+// server-side request to hang a message off), in which case the compose box is
+// left out rather than shown as a box that silently does nothing.
+function Thread({ thread, composer, canReply, t, placeholder }) {
+    const th = thread || { messages: [] };
+    const rows = th.messages || [];
+
+    return (
+        <View style={{ marginBottom: 14 }}>
+            <Eyebrow s={9} ls={0.12} c={t.fg3} style={{ marginBottom: 10 }}>
+                {rows.length ? `CONVERSATION · ${rows.length}` : 'CONVERSATION'}
+            </Eyebrow>
+
+            {th.loading ? (
+                <Row gap={9} style={{ paddingVertical: 12 }}>
+                    <ActivityIndicator size="small" color={t.accent} />
+                    <T mono w={600} s={9} ls={0.12} c={t.fg3}>LOADING MESSAGES</T>
+                </Row>
+            ) : null}
+
+            {th.error ? (
+                <Row gap={9} align="flex-start" style={{ paddingVertical: 11, paddingHorizontal: 13, borderRadius: 14, backgroundColor: t.csoft, marginBottom: 10 }}>
+                    <Glyph name="alert-circle-outline" size={15} color={t.coral} />
+                    <T w={500} s={12} lh={1.45} c={t.coral} style={{ flex: 1 }}>{th.error}</T>
+                </Row>
+            ) : null}
+
+            {!th.loading && !th.error && rows.length === 0 ? (
+                <T w={400} s={12.5} lh={1.5} c={t.fg3} style={{ paddingBottom: 4 }}>
+                    No messages yet. {canReply ? 'Add one below.' : ''}
+                </T>
+            ) : null}
+
+            {rows.map((m, i) => (
+                <View key={m.id != null ? m.id : i} style={{ alignItems: m.align, marginBottom: 8 }}>
+                    <View
+                        style={{
+                            maxWidth: '86%',
+                            borderRadius: 16,
+                            backgroundColor: col2(m.bg, t),
+                            borderWidth: 1,
+                            borderColor: t.line,
+                            paddingVertical: 11,
+                            paddingHorizontal: 13
+                        }}
+                    >
+                        <T mono w={600} s={8} ls={0.1} c={t.fg3} style={{ marginBottom: 5 }}>
+                            {`${m.who}${m.time ? ` · ${m.time}` : ''}`}
+                        </T>
+                        <T w={400} s={13} lh={1.5} c={col2(m.fg, t)}>{m.body}</T>
+                    </View>
+                </View>
+            ))}
+
+            {canReply ? (
+                <Row gap={8} align="flex-end" style={{ marginTop: 6 }}>
+                    <TextInput
+                        value={composer.value}
+                        onChangeText={composer.set}
+                        placeholder={placeholder}
+                        placeholderTextColor={t.fg3}
+                        multiline
+                        editable={!composer.sending}
+                        style={{
+                            flex: 1,
+                            minHeight: 46,
+                            maxHeight: 110,
+                            borderRadius: 16,
+                            backgroundColor: t.ink3,
+                            borderWidth: 1,
+                            borderColor: t.line,
+                            paddingHorizontal: 14,
+                            paddingTop: 13,
+                            paddingBottom: 13,
+                            color: t.fg,
+                            fontFamily: grotesk(400),
+                            fontSize: 13.5
+                        }}
+                    />
+                    <Press
+                        onPress={composer.send}
+                        disabled={!composer.canSend}
+                        style={{
+                            width: 46,
+                            height: 46,
+                            borderRadius: 16,
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            backgroundColor: composer.canSend ? t.lime : t.ink3,
+                            borderWidth: 1,
+                            borderColor: composer.canSend ? t.lime : t.line
+                        }}
+                    >
+                        {composer.sending
+                            ? <ActivityIndicator size="small" color={t.fg2} />
+                            : <Glyph name="send" size={17} color={composer.canSend ? t.on : t.fg3} />}
+                    </Press>
+                </Row>
+            ) : null}
+        </View>
+    );
+}
+
+// Same token resolution as the sheet body's `col`, needed outside its closure.
+const col2 = (v, t) => (v && (v[0] === '#' || v.startsWith('rgb')) ? v : t[v]);
 
 export default function Sheets() {
     const vm = useVm();
@@ -213,6 +322,14 @@ export default function Sheets() {
                                 </ScrollView>
                             </View>
                         )}
+
+                        <Thread
+                            thread={vm.ticket.thread}
+                            composer={vm.composer}
+                            canReply={vm.ticket.canReply}
+                            t={t}
+                            placeholder="Reply to your tenant…"
+                        />
 
                         <Row style={{ gap: 7 }}>
                             {vm.ticket.started && (
@@ -629,17 +746,150 @@ export default function Sheets() {
                             </View>
                         </Row>
 
-                        {/* Attachments and replies are not stored by the backend yet. */}
-                        <Row gap={9} align="flex-start" style={{ paddingVertical: 12, paddingHorizontal: 13, borderRadius: 14, backgroundColor: t.asoft, marginBottom: 16 }}>
-                            <Glyph name="information-circle-outline" size={15} color={t.amber} />
-                            <T w={500} s={12} lh={1.45} c={t.amber} style={{ flex: 1 }}>
-                                Photos and replies aren’t supported yet — your landlord can see this request and its status.
-                            </T>
-                        </Row>
+                        {vm.request.hasPhotos && (
+                            <View style={{ marginBottom: 14 }}>
+                                <Eyebrow s={9} ls={0.12} c={t.fg3} style={{ marginBottom: 10 }}>ATTACHED</Eyebrow>
+                                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingHorizontal: 18, paddingBottom: 2 }} style={{ marginHorizontal: -18 }}>
+                                    {(vm.request.photos || []).map((ph, i) => (
+                                        <Image key={i} source={{ uri: ph }} style={{ width: 168, height: 126, borderRadius: 14, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line }} resizeMode="cover" />
+                                    ))}
+                                </ScrollView>
+                            </View>
+                        )}
+
+                        <Thread
+                            thread={vm.request.thread}
+                            composer={vm.composer}
+                            canReply={vm.request.canReply}
+                            t={t}
+                            placeholder="Message your landlord…"
+                        />
+
+                        {/* The landlord, reachable from the request itself — the point
+                            of a request is usually to get hold of them. */}
+                        {vm.request.landlord ? (
+                            <Row gap={8} style={{ marginBottom: 10 }}>
+                                <Press
+                                    onPress={vm.request.landlord.call}
+                                    style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', columnGap: 8, paddingVertical: 15, borderRadius: 999, backgroundColor: t.lsoft, borderWidth: 1, borderColor: t.line }}
+                                >
+                                    <Glyph name="call" size={16} color={t.pos} />
+                                    <T w={600} s={13.5} c={t.fg} numberOfLines={1}>{`Call ${String(vm.request.landlord.name).split(' ')[0]}`}</T>
+                                </Press>
+                            </Row>
+                        ) : null}
 
                         <Press onPress={vm.closeOverlay} style={{ paddingVertical: 15, borderRadius: 999, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line, alignItems: 'center' }}>
                             <T w={600} s={14} c={t.fg}>Close</T>
                         </Press>
+                    </View>
+                )}
+
+                {/* ── Raise a request (tenant) ────────────────────────── */}
+                {vm.isNewRequest && vm.newRequest && (
+                    <View>
+                        <T w={700} s={21} lh={1.1} style={{ letterSpacing: -0.7 }}>Raise a request</T>
+                        <Eyebrow s={10} ls={0.08} style={{ marginTop: 7, marginBottom: 16 }}>
+                            REPORT AN ISSUE TO YOUR LANDLORD
+                        </Eyebrow>
+
+                        {vm.newRequest.error ? (
+                            <Row gap={9} align="flex-start" style={{ paddingVertical: 11, paddingHorizontal: 13, borderRadius: 14, backgroundColor: t.csoft, marginBottom: 12 }}>
+                                <Glyph name="alert-circle-outline" size={15} color={t.coral} />
+                                <T w={500} s={12} lh={1.45} c={t.coral} style={{ flex: 1 }}>{vm.newRequest.error}</T>
+                            </Row>
+                        ) : null}
+
+                        <Eyebrow s={9} ls={0.12} c={t.fg3} style={{ marginBottom: 9 }}>CATEGORY</Eyebrow>
+                        <Row gap={7} wrap style={{ marginBottom: 14 }}>
+                            {vm.newRequest.categories.map((c) => (
+                                <Press
+                                    key={c.label}
+                                    onPress={c.go}
+                                    style={{ paddingVertical: 9, paddingHorizontal: 13, borderRadius: 999, backgroundColor: c.on ? t.lsoft : t.ink3, borderWidth: 1, borderColor: c.on ? t.accent : t.line }}
+                                >
+                                    <T w={600} s={12} lh={1} c={c.on ? t.accent : t.fg2}>{c.label}</T>
+                                </Press>
+                            ))}
+                        </Row>
+
+                        <TextInput
+                            value={vm.newRequest.title}
+                            onChangeText={vm.newRequest.setTitle}
+                            placeholder="Title (e.g. Leaking tap)"
+                            placeholderTextColor={t.fg3}
+                            editable={!vm.newRequest.busy}
+                            style={{ height: 50, borderRadius: 16, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line, paddingHorizontal: 15, color: t.fg, fontFamily: grotesk(500), fontSize: 14, marginBottom: 9 }}
+                        />
+                        <TextInput
+                            value={vm.newRequest.body}
+                            onChangeText={vm.newRequest.setBody}
+                            placeholder="Describe the issue (optional)"
+                            placeholderTextColor={t.fg3}
+                            multiline
+                            editable={!vm.newRequest.busy}
+                            style={{ minHeight: 88, maxHeight: 150, borderRadius: 16, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line, paddingHorizontal: 15, paddingTop: 14, paddingBottom: 14, color: t.fg, fontFamily: grotesk(400), fontSize: 13.5, marginBottom: 14 }}
+                        />
+
+                        <Eyebrow s={9} ls={0.12} c={t.fg3} style={{ marginBottom: 9 }}>PRIORITY</Eyebrow>
+                        <Row gap={7} style={{ marginBottom: 14 }}>
+                            {vm.newRequest.priorities.map((p) => (
+                                <Press
+                                    key={p.label}
+                                    onPress={p.go}
+                                    style={{ flex: 1, alignItems: 'center', paddingVertical: 11, borderRadius: 14, backgroundColor: p.on ? t.fg : t.ink3, borderWidth: 1, borderColor: p.on ? t.fg : t.line }}
+                                >
+                                    <T w={600} s={12.5} lh={1} c={p.on ? t.ink : t.fg2}>{p.label}</T>
+                                </Press>
+                            ))}
+                        </Row>
+
+                        {/* A photo of the problem — one tap, and the landlord can see
+                            what you are describing. */}
+                        {vm.newRequest.hasPhoto ? (
+                            <Row gap={10} style={{ marginBottom: 14 }}>
+                                <Image source={{ uri: vm.newRequest.photo }} style={{ width: 76, height: 76, borderRadius: 16, backgroundColor: t.ink3 }} resizeMode="cover" />
+                                <View style={{ flex: 1 }}>
+                                    <T w={600} s={13} lh={1.2} c={t.fg}>Photo attached</T>
+                                    <Press onPress={vm.newRequest.clearPhoto} style={{ marginTop: 7 }}>
+                                        <T mono w={600} s={9} ls={0.12} c={t.coral}>REMOVE</T>
+                                    </Press>
+                                </View>
+                            </Row>
+                        ) : (
+                            <Press
+                                onPress={vm.newRequest.pickPhoto}
+                                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', columnGap: 8, paddingVertical: 14, borderRadius: 16, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line, marginBottom: 14 }}
+                            >
+                                <Glyph name="camera-outline" size={17} color={t.fg2} />
+                                <T w={600} s={13} c={t.fg2}>Attach a photo</T>
+                            </Press>
+                        )}
+
+                        {!vm.newRequest.canSubmitAtAll ? (
+                            <Row gap={9} align="flex-start" style={{ paddingVertical: 12, paddingHorizontal: 13, borderRadius: 14, backgroundColor: t.asoft, marginBottom: 12 }}>
+                                <Glyph name="information-circle-outline" size={15} color={t.amber} />
+                                <T w={500} s={12} lh={1.45} c={t.amber} style={{ flex: 1 }}>
+                                    This is the walk-through — sign in to your tenancy to raise a real request.
+                                </T>
+                            </Row>
+                        ) : null}
+
+                        <Row gap={8}>
+                            <Press onPress={vm.closeOverlay} style={{ paddingVertical: 15, paddingHorizontal: 20, borderRadius: 999, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line }}>
+                                <T w={600} s={13.5} c={t.fg2}>Cancel</T>
+                            </Press>
+                            <Press
+                                onPress={vm.newRequest.submit}
+                                disabled={!vm.newRequest.canSubmit || !vm.newRequest.canSubmitAtAll}
+                                style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', columnGap: 8, paddingVertical: 15, borderRadius: 999, backgroundColor: (vm.newRequest.canSubmit && vm.newRequest.canSubmitAtAll) ? t.lime : t.ink3, borderWidth: 1, borderColor: (vm.newRequest.canSubmit && vm.newRequest.canSubmitAtAll) ? t.lime : t.line }}
+                            >
+                                {vm.newRequest.busy ? <ActivityIndicator size="small" color={t.on} /> : null}
+                                <T w={700} s={14} c={(vm.newRequest.canSubmit && vm.newRequest.canSubmitAtAll) ? t.on : t.fg3}>
+                                    {vm.newRequest.busy ? 'Submitting…' : 'Submit request'}
+                                </T>
+                            </Press>
+                        </Row>
                     </View>
                 )}
 

@@ -8,6 +8,10 @@
 // Auth: the `protect` middleware attaches req.user = { id, email, role }. `id` is
 // the tenant_users row id; the linked landlord `tenants.id` is resolved here.
 const db = require('../config/db');
+const { getFileUrl } = require('../middleware/uploadMiddleware');
+// Message reads/writes are shared with the owner side so a thread behaves
+// identically whichever end of it you are standing at.
+const { fetchThread, insertMessage, cleanBody } = require('./requestController');
 
 // Resolves the logged-in tenant_users account to its linked landlord tenant row,
 // with the unit, property and the owner's UPI settings joined in. Returns null if
@@ -153,7 +157,7 @@ const getRequests = async (req, res) => {
         if (!ctx?.tenant_id) return res.status(200).json({ requests: [] });
 
         const [requests] = await db.query(
-            `SELECT id, category, title, description, priority, status, created_at
+            `SELECT id, category, title, description, priority, status, image_url, created_at
              FROM maintenance_requests WHERE tenant_id = ?
              ORDER BY created_at DESC LIMIT 50`,
             [ctx.tenant_id]
@@ -183,12 +187,15 @@ const createRequest = async (req, res) => {
         const allowedPriority = ['Low', 'Medium', 'High'];
         const prio = allowedPriority.includes(priority) ? priority : 'Medium';
 
+        // An optional photo of the problem, uploaded as `request_image`.
+        const imageUrl = getFileUrl(req.file);
+
         // owner_id is denormalised onto the request so the landlord's queue can be
         // read without re-joining through the tenant every time.
         const [result] = await db.query(
-            `INSERT INTO maintenance_requests (tenant_id, owner_id, category, title, description, priority, status)
-             VALUES (?, ?, ?, ?, ?, ?, 'Open')`,
-            [ctx.tenant_id, ctx.owner_id, (category || 'General').slice(0, 50), title.trim().slice(0, 150), (description || '').trim() || null, prio]
+            `INSERT INTO maintenance_requests (tenant_id, owner_id, category, title, description, priority, status, image_url)
+             VALUES (?, ?, ?, ?, ?, ?, 'Open', ?)`,
+            [ctx.tenant_id, ctx.owner_id, (category || 'General').slice(0, 50), title.trim().slice(0, 150), (description || '').trim() || null, prio, imageUrl]
         );
 
         res.status(201).json({
@@ -200,6 +207,7 @@ const createRequest = async (req, res) => {
                 description: (description || '').trim() || null,
                 priority: prio,
                 status: 'Open',
+                image_url: imageUrl,
                 created_at: new Date().toISOString()
             }
         });
@@ -209,4 +217,65 @@ const createRequest = async (req, res) => {
     }
 };
 
-module.exports = { getMe, getPayments, getRequests, createRequest };
+// Confirms a request id belongs to THIS tenant. Matching on tenant_id as well as
+// id is the entire authorisation check: someone else's request simply does not
+// exist as far as this caller is concerned, so guessing ids reveals nothing.
+const ownsRequest = async (requestId, tenantId) => {
+    const [rows] = await db.query(
+        'SELECT id FROM maintenance_requests WHERE id = ? AND tenant_id = ?',
+        [requestId, tenantId]
+    );
+    return rows.length > 0;
+};
+
+// GET /api/tenant-portal/requests/:id/messages — the conversation on one of the
+// tenant's own requests.
+const getRequestMessages = async (req, res) => {
+    try {
+        if (req.user?.role !== 'tenant') {
+            return res.status(403).json({ message: 'Tenant access only.' });
+        }
+        const ctx = await loadTenantContext(req.user.id);
+        if (!ctx?.tenant_id || !(await ownsRequest(req.params.id, ctx.tenant_id))) {
+            return res.status(404).json({ message: 'Request not found.' });
+        }
+
+        res.status(200).json({ messages: await fetchThread(req.params.id) });
+    } catch (err) {
+        console.error('Tenant portal getRequestMessages error:', err.message);
+        res.status(500).json({ message: 'Could not load the conversation.' });
+    }
+};
+
+// POST /api/tenant-portal/requests/:id/messages — reply on your own request.
+const createRequestMessage = async (req, res) => {
+    try {
+        if (req.user?.role !== 'tenant') {
+            return res.status(403).json({ message: 'Tenant access only.' });
+        }
+        const text = cleanBody(req.body?.body);
+        if (!text) {
+            return res.status(400).json({ message: 'A message cannot be empty.' });
+        }
+        const ctx = await loadTenantContext(req.user.id);
+        if (!ctx?.tenant_id || !(await ownsRequest(req.params.id, ctx.tenant_id))) {
+            return res.status(404).json({ message: 'Request not found.' });
+        }
+
+        const item = await insertMessage(req.params.id, 'tenant', text);
+
+        res.status(201).json({ message: 'Message sent.', item });
+    } catch (err) {
+        console.error('Tenant portal createRequestMessage error:', err.message);
+        res.status(500).json({ message: 'Could not send your message.' });
+    }
+};
+
+module.exports = {
+    getMe,
+    getPayments,
+    getRequests,
+    createRequest,
+    getRequestMessages,
+    createRequestMessage
+};

@@ -9,6 +9,7 @@ export default function HelpScreen() {
     const t = useT();
     const col = (v) => (v && (v[0] === '#' || v.startsWith('rgb')) ? v : t[v]);
     const requests = vm.requests || [];
+    const landlord = vm.landlord || {};
 
     return (
         <ScrollView
@@ -18,7 +19,7 @@ export default function HelpScreen() {
             <Row align="flex-start" justify="space-between" gap={12} style={{ marginBottom: 4 }}>
                 <T w={700} s={32} lh={1.02} style={{ letterSpacing: -1.6, flexShrink: 1 }}>Help</T>
                 <Press
-                    onPress={vm.noop}
+                    onPress={vm.openNewRequest}
                     style={{
                         flexShrink: 0,
                         flexDirection: 'row',
@@ -72,18 +73,18 @@ export default function HelpScreen() {
                 }}
             >
                 <Image
-                    source={{ uri: 'https://randomuser.me/api/portraits/men/32.jpg' }}
+                    source={{ uri: landlord.img }}
                     style={{ width: 40, height: 40, borderRadius: 13, backgroundColor: t.ink3 }}
                     resizeMode="cover"
                 />
                 <View style={{ flex: 1 }}>
-                    <T w={600} s={14} lh={1.2}>Demo Landlord</T>
+                    <T w={600} s={14} lh={1.2} numberOfLines={1}>{landlord.name}</T>
                     <T mono w={600} s={10} lh={1.4} ls={0.08} c={t.fg3} style={{ marginTop: 4 }}>
-                        +91 90000 00000
+                        {landlord.phoneLabel}
                     </T>
                 </View>
                 <Press
-                    onPress={vm.noop}
+                    onPress={landlord.call}
                     style={{
                         width: 38,
                         height: 38,
