@@ -9,7 +9,7 @@
 // Everything below reads tokens from useT() and data/actions from useVm(); no
 // screen is imported by v1 and this file imports nothing from v1.
 import React from 'react';
-import { View, Text, ScrollView, Animated, ActivityIndicator, useColorScheme, StatusBar as RNStatusBar, Platform } from 'react-native';
+import { View, Text, ScrollView, Animated, ActivityIndicator, useColorScheme, BackHandler, StatusBar as RNStatusBar, Platform } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { RedesignThemeProvider, useT, useThemeCtl } from './ThemeContext';
@@ -40,6 +40,7 @@ import SettingsScreen from './screens/SettingsScreen';
 import TenantLoginScreen from './screens/TenantLoginScreen';
 import PortalHomeScreen from './screens/PortalHomeScreen';
 import FindScreen from './screens/FindScreen';
+import ScanQrScreen from './screens/ScanQrScreen';
 import CheckoutScreen from './screens/CheckoutScreen';
 import HelpScreen from './screens/HelpScreen';
 import MyPlaceScreen from './screens/MyPlaceScreen';
@@ -64,6 +65,7 @@ const SCREENS = {
     tlogin: TenantLoginScreen,
     portal: PortalHomeScreen,
     tfind: FindScreen,
+    scan: ScanQrScreen,
     tcheckout: CheckoutScreen,
     thelp: HelpScreen,
     tstay: MyPlaceScreen,
@@ -107,6 +109,20 @@ function Shell() {
     React.useEffect(() => {
         if (ctl && ctl.mode !== wantMode) ctl.setMode(wantMode);
     }, [ctl, wantMode]);
+
+    // ── The phone's back gesture ───────────────────────────────────────────────
+    // v2 routes by state rather than a navigator, so Android's back button had
+    // nothing listening and closed the app from wherever you were. It now steps
+    // back through where you actually went: a sheet closes first, then one screen
+    // at a time, and only at the very top does it fall through to the OS and leave
+    // the app — which is what a user expects there.
+    //
+    // Returning false is what hands the press to the OS; returning true says we
+    // dealt with it. The subscription is added once and removed on unmount.
+    React.useEffect(() => {
+        const sub = BackHandler.addEventListener('hardwareBackPress', () => vm.goBackOneStep());
+        return () => sub.remove();
+    }, [vm.goBackOneStep]);
 
     // Hold the whole app on an ink field until the two typefaces are ready, so
     // nothing renders in a fallback system font and then reflows.

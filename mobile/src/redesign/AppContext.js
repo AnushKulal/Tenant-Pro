@@ -53,6 +53,16 @@ const INITIAL_STATE = {
   unit: '101', fx: '0',
   scope: { home: 'all', units: 'all', people: 'all' },
 
+  // The QR scanner's manually-typed fallback code.
+  scanCode: '',
+
+  // ── Navigation history ──
+  // Every route change pushes the route being left, so the phone's back gesture
+  // can walk back through wherever the user actually went rather than guessing
+  // from a fixed parent map. In memory only: it is where you have been this
+  // session, which is not worth persisting across launches.
+  history: [],
+
   // ── Auth / session (Phase 2) ──
   // `route: 'boot'` holds the app on an ink field while the stored session is
   // resolved; resolveSession() then routes to home (owner), portal (tenant) or
@@ -302,6 +312,7 @@ function deriveVm(s, api) {
     }
   };
 
+
   const mode = s.theme || 'dark';
   const dark = mode === 'dark';
   // NOTE: colour resolution (ACCENTS/SURFACES/EDGES/vars) is owned by
@@ -439,6 +450,67 @@ function deriveVm(s, api) {
     fg: PRIORITY[k].fg,
     bg: PRIORITY[k].bg
   })).filter((c) => c.n !== '0');
+  // What actually needs the landlord's attention, built from data already on
+  // hand: no new endpoint and no polling. Derived once so the bell's dot and the
+  // sheet's contents are the same list.
+  const ALERTS = (() => {
+      const rows = [];
+      const late = inScope.filter((t) => t.state === 'overdue');
+      if (late.length) {
+        // Worst first — the longest overdue is the one to ring today.
+        const worst = late.slice().sort((a, b) => b.days - a.days)[0];
+        rows.push({
+          icon: 'alert-circle',
+          tone: 'coral',
+          title: `${late.length} ${late.length === 1 ? 'tenant is' : 'tenants are'} overdue`,
+          sub: `${money(late.reduce((a, t) => a + num(t), 0))} outstanding · ${worst.name} is ${worst.days}d late`,
+          go: () => setState({ filter: 'overdue', route: 'people', overlay: null })
+        });
+      }
+      const openTickets = shownTickets.length;
+      if (openTickets) {
+        const urgentCount = shownTickets.filter((x) => x.priority === 'High' || x.priority === 'Critical').length;
+        rows.push({
+          icon: 'construct',
+          tone: urgentCount ? 'amber' : 'fg2',
+          title: `${openTickets} open ${openTickets === 1 ? 'ticket' : 'tickets'}`,
+          sub: urgentCount ? `${urgentCount} marked high priority` : 'Nothing urgent',
+          go: () => setState({ overlay: 'tickets' })
+        });
+      }
+      const unassignedCount = unassignedList.length;
+      if (unassignedCount) {
+        rows.push({
+          icon: 'person',
+          tone: 'amber',
+          title: `${unassignedCount} ${unassignedCount === 1 ? 'tenant has' : 'tenants have'} no room`,
+          sub: 'Assign them a room to start their rent cycle',
+          go: () => setState({ filter: 'unassigned', route: 'people', overlay: null })
+        });
+      }
+      if (vacantCount) {
+        rows.push({
+          icon: 'key',
+          tone: 'amber',
+          title: `${vacantCount} vacant ${vacantCount === 1 ? 'room' : 'rooms'}`,
+          sub: `${kShort(vacantList.reduce((a, u) => a + Number(String(u.rent).replace(/[^0-9]/g, '')), 0))}/mo not being earned`,
+          go: () => setState({ overlay: 'vacant' })
+        });
+      }
+      // Without UPI details a tenant literally cannot pay through the app, which
+      // is worth saying out loud rather than leaving them to discover it.
+      if (live && !PAY.upiId && !PAY.upiNumber) {
+        rows.push({
+          icon: 'card',
+          tone: 'coral',
+          title: 'Your tenants cannot pay you yet',
+          sub: 'Add your UPI details so rent can be paid in the app',
+          go: () => setState({ overlay: 'paysettings', ps: { upiId: '', upiNumber: '', error: '' } })
+        });
+      }
+    return rows;
+  })();
+
   const openTicket = TICKETS.find((t) => t.id === s.ticket) || TICKETS[0] || EMPTY_TICKET;
   const openPerson = TENANTS.find((x) => x.id === openTicket.who)
     || { name: openTicket.name, img: openTicket.img, phone: openTicket.phone };
@@ -570,7 +642,17 @@ function deriveVm(s, api) {
     showHeader: owner && s.route !== 'ledger' && s.route !== 'people',
     showBack: !mod,
     backTitle: { property: 'Properties & units', profile: 'My profile', settings: 'Settings', tenant: 'People' }[s.route] || '',
-    goBack: () => go({ property: 'units', profile: 'settings', settings: 'home', tenant: 'people' }[s.route] || 'home'),
+    // The header's back chevron walks the same trail the phone's back gesture does,
+    // so the two never disagree. The parent map is the fallback for a screen
+    // arrived at without a trail (a deep link, or the first screen after login).
+    goBack: () => {
+      if (api.goBackOneStep()) return;
+      go({ property: 'units', profile: 'settings', settings: 'home', tenant: 'people' }[s.route] || 'home');
+    },
+    canGoBack: (s.history || []).length > 0,
+    // Handed to RedesignRoot's hardwareBackPress listener. Returns true when it
+    // consumed the press; false lets Android close the app.
+    goBackOneStep: () => api.goBackOneStep(),
     // ── Create a property / unit / tenant ─────────────────────────────────────
     // A new landlord lands on an empty app, so these are what make it usable
     // rather than a viewer for data entered somewhere else. Each is a sheet, each
@@ -1124,13 +1206,37 @@ function deriveVm(s, api) {
         img: t.img,
         rent: free ? '—' : t.rent,
         sub: free ? 'NO ROOM ASSIGNED' : `${propName(unitProp[t.unit]).toUpperCase()} · UNIT ${t.unit}`,
-        edge: free ? 'fg3' : t.state === 'overdue' ? 'coral' : 'lime',
+        // Unassigned reads AMBER, the same tone a vacant room uses elsewhere —
+        // it was grey, which made the one row actually needing attention the
+        // faintest thing on the screen.
+        edge: free ? 'amber' : t.state === 'overdue' ? 'coral' : 'lime',
         chip: free ? 'UNASSIGNED' : t.state === 'overdue' ? `${t.days}D LATE` : `IN ${t.days}D`,
-        chipBg: free ? 'ink3' : t.state === 'overdue' ? 'csoft' : 'lsoft',
-        chipFg: free ? 'fg2' : t.state === 'overdue' ? 'coral' : 'pos',
+        chipBg: free ? 'asoft' : t.state === 'overdue' ? 'csoft' : 'lsoft',
+        chipFg: free ? 'amber' : t.state === 'overdue' ? 'coral' : 'pos',
+        // Tints the whole card, so an unassigned tenant is findable in a long list
+        // without reading every row.
+        cardBg: free ? 'asoft' : 'ink2',
+        subFg: free ? 'amber' : 'fg3',
         open: () => setState({ who: t.id, route: 'tenant' })
       };
     }),
+
+    // ── Notifications ─────────────────────────────────────────────────────────
+    // The bell opened the account menu, so it was indistinguishable from tapping
+    // your own avatar, and its red dot was painted on unconditionally — it claimed
+    // an alert even when there was nothing to report.
+    //
+    // It now shows what actually needs the landlord's attention, built from data
+    // already on hand: no new endpoint, no polling, and every row taps through to
+    // the screen where the thing can be dealt with.
+    openAlerts: () => set('overlay', 'alerts'),
+    isAlerts: s.overlay === 'alerts',
+    alerts: ALERTS,
+    // The bell's dot is the count, so it can never claim an alert the sheet does
+    // not have — it used to be painted on unconditionally.
+    hasAlerts: ALERTS.length > 0,
+    alertCount: String(ALERTS.length),
+    alertsEmptyLine: 'Nothing needs you right now. Rent is on track and no tickets are open.',
 
     openInvite: () => set('overlay', 'invite'),
     isInvite: s.overlay === 'invite',
@@ -1538,7 +1644,43 @@ function deriveVm(s, api) {
     jq: s.jq,
     setJq: (e) => set('jq', e && e.target ? e.target.value : e),
     joinQuery: s.jq.trim(),
-    scanQr: () => { set('jq', 'TP-SUN-8412'); flash('QR scanned — Sunrise PG found'); },
+    // ── Scan an invite QR ─────────────────────────────────────────────────────
+    // "Join with an invite QR" used to drop you straight into the portal without
+    // scanning anything, and Find's scan button faked a result. Both now open the
+    // camera.
+    goScanQr: () => setState({ route: 'scan', overlay: null, scanCode: '' }),
+    isScan: s.route === 'scan',
+    scan: (() => {
+      const raw = String(s.scanCode || '');
+      // An invite QR carries the join link (https://tenantpro.app/join/TP-SUN-8412),
+      // but a landlord might equally read the code out loud, so accept either and
+      // keep only the code itself.
+      const codeOf = (v) => {
+        // Drop any query string or fragment FIRST, then take the last path
+        // segment: splitting on all three at once made "?ref=x" the last piece and
+        // read it as the code.
+        const text = String(v || '').trim().split('#')[0].split('?')[0];
+        const tail = text.split('/').filter(Boolean).pop() || text;
+        return tail.toUpperCase().replace(/[^A-Z0-9-]/g, '');
+      };
+      const find = (code) => {
+        if (!code) return;
+        setState({ jq: code, route: 'tfind', scanCode: '', keepHistory: true });
+        flash(`Looking for ${code}`);
+      };
+      return {
+        code: raw,
+        setCode: (e) => set('scanCode', evStr(e).toUpperCase()),
+        canSubmit: !!codeOf(raw),
+        submitCode: () => find(codeOf(raw)),
+        // Called from the camera on every frame that sees a QR; the screen
+        // de-duplicates so this only lands once.
+        found: (value) => find(codeOf(value)),
+        typeInstead: () => flash('Type the code in the box below the camera'),
+        close: () => api.goBackOneStep() || go('tlogin')
+      };
+    })(),
+    scanQr: () => setState({ route: 'scan', overlay: null, scanCode: '' }),
     joinResults: joinMatches.map((p) => {
       const free = UNITS.filter((u) => u.prop === p.id).reduce((a, u) => a + (u.cap - occupantsOf(u.no).length), 0);
       const spot = UNITS.find((u) => u.prop === p.id && occupantsOf(u.no).length < u.cap);
@@ -1684,12 +1826,51 @@ export function AppProvider({ children }) {
   const fxRef = useRef(null);
 
   // Partial-merge setState, mirroring the prototype's this.setState({ ... }).
+  // Routes that begin a session rather than continue one. Landing on one of these
+  // is a fresh start, so the trail behind it is dropped — the phone's back gesture
+  // must never walk a signed-out user back into somebody's dashboard.
+  const ENTRY_ROUTES = ['boot', 'onboarding', 'role', 'login', 'tlogin', 'signup', 'forgot'];
+  const HISTORY_CAP = 24; // a session's worth; bounded so it cannot grow forever
+
+  // Partial-merge setState, mirroring the prototype's this.setState({ ... }).
+  //
+  // It also maintains the navigation history. Doing it here rather than in `go()`
+  // is deliberate: plenty of navigation happens as `setState({ route, who })` — a
+  // tenant row, a ticket, a property — and those must be walk-back-able too.
+  // Pass `keepHistory: true` to move without recording (a back step itself).
   const setState = useCallback((partial) => {
-    setStateRaw((prev) => ({ ...prev, ...partial }));
+    setStateRaw((prev) => {
+      const next = { ...prev, ...partial };
+      const moving = partial && partial.route != null && partial.route !== prev.route;
+      if (moving && !partial.keepHistory && !partial.history) {
+        next.history = ENTRY_ROUTES.includes(partial.route)
+          ? []
+          : [...prev.history, prev.route].filter((r) => r && r !== 'boot').slice(-HISTORY_CAP);
+      }
+      delete next.keepHistory;
+      return next;
+    });
   }, []);
 
   const set = useCallback((k, v) => { setState({ [k]: v }); }, [setState]);
   const go = useCallback((route) => { setState({ route, overlay: null }); }, [setState]);
+
+  // One step back. Returns true if it handled the press, false to let the OS have
+  // it (which on Android means leaving the app — correct only at the very top).
+  //
+  // Order matters: a sheet is the most recent thing the user opened, so it closes
+  // first; only then does back mean "leave this screen".
+  const goBackOneStep = useCallback(() => {
+    const st = stateRef.current;
+    if (st.overlay) { setState({ overlay: null }); return true; }
+    if (st.history.length) {
+      const history = st.history.slice(0, -1);
+      const route = st.history[st.history.length - 1];
+      setState({ route, overlay: null, history, keepHistory: true });
+      return true;
+    }
+    return false;
+  }, [setState]);
   const flash = useCallback((msg) => {
     setState({ toast: msg });
     clearTimeout(toastRef.current);
@@ -2268,14 +2449,14 @@ export function AppProvider({ children }) {
       loadOwnerData, loadTenantData, loadThread, sendReply, setRequestStatus,
       pickRequestPhoto, createRequest, requestResetCode, submitNewPassword,
       recordPayment, saveTenantRent, assignTenant, moveTenantOut, deleteTenant, savePaymentSettings,
-      pickPhotoFor, createProperty, createUnit, createTenantRecord
+      pickPhotoFor, createProperty, createUnit, createTenantRecord, goBackOneStep
     }),
     [
       setState, set, go, flash, signIn, register, signOut, resolveSession,
       loadOwnerData, loadTenantData, loadThread, sendReply, setRequestStatus,
       pickRequestPhoto, createRequest, requestResetCode, submitNewPassword,
       recordPayment, saveTenantRent, assignTenant, moveTenantOut, deleteTenant, savePaymentSettings,
-      pickPhotoFor, createProperty, createUnit, createTenantRecord
+      pickPhotoFor, createProperty, createUnit, createTenantRecord, goBackOneStep
     ]
   );
 

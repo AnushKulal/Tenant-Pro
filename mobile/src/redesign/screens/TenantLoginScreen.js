@@ -93,7 +93,7 @@ export default function TenantLoginScreen() {
                 </Row>
 
                 <Press
-                    onPress={vm.goPortal}
+                    onPress={vm.goScanQr}
                     style={{ width: '100%', borderRadius: 999, backgroundColor: t.ink2, borderWidth: 1, borderColor: t.line, paddingVertical: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', columnGap: 8 }}
                 >
                     <Glyph name="qr-code" size={17} color={t.accent} />

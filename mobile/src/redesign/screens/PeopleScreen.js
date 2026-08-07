@@ -108,19 +108,21 @@ export default function PeopleScreen() {
                             style={{
                                 width: '100%',
                                 borderRadius: 20,
-                                backgroundColor: t.ink2,
+                                backgroundColor: col(p.cardBg, t),
                                 borderWidth: 1,
-                                borderColor: t.line,
+                                borderColor: col(p.edge, t) === t.amber ? t.amber : t.line,
                                 paddingVertical: 13,
                                 paddingHorizontal: 15,
                                 overflow: 'hidden'
                             }}
                         >
-                            <View style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, backgroundColor: col(p.edge, t) }} />
+                            {/* A wider rail on an unassigned tenant, so the row that
+                                needs action is the one that catches the eye. */}
+                            <View style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: col(p.edge, t) === t.amber ? 4 : 3, backgroundColor: col(p.edge, t) }} />
                             <Face uri={p.img} size={44} radius={14} />
                             <View style={{ flex: 1, minWidth: 0 }}>
                                 <T w={600} s={15} lh={1.2} c={t.fg} numberOfLines={1}>{p.name}</T>
-                                <T mono w={600} s={10} lh={1.4} ls={0.08} c={t.fg3} numberOfLines={1} style={{ marginTop: 4 }}>{p.sub}</T>
+                                <T mono w={600} s={10} lh={1.4} ls={0.08} c={col(p.subFg, t)} numberOfLines={1} style={{ marginTop: 4 }}>{p.sub}</T>
                             </View>
                             <View style={{ alignItems: 'flex-end' }}>
                                 <T w={700} s={15} lh={1} c={t.fg}>{p.rent}</T>

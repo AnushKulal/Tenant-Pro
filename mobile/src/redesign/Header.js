@@ -66,21 +66,26 @@ export default function Header() {
                 </Press>
             )}
 
-            <Press onPress={vm.openMenu} style={{ ...BTN, borderWidth: 1, borderColor: t.line }}>
-                <Glyph name="notifications-outline" size={18} color={t.fg} />
-                <View
-                    style={{
-                        position: 'absolute',
-                        top: 8,
-                        right: 9,
-                        width: 7,
-                        height: 7,
-                        borderRadius: 4,
-                        backgroundColor: t.coral,
-                        borderWidth: 1.5,
-                        borderColor: t.ink
-                    }}
-                />
+            {/* The bell used to open the account menu, making it a duplicate of
+                tapping your own avatar. It now opens the alerts sheet, and its dot
+                only appears when there is genuinely something to see. */}
+            <Press onPress={vm.openAlerts} style={{ ...BTN, borderWidth: 1, borderColor: t.line }}>
+                <Glyph name={vm.hasAlerts ? 'notifications' : 'notifications-outline'} size={18} color={vm.hasAlerts ? t.fg : t.fg2} />
+                {vm.hasAlerts && (
+                    <View
+                        style={{
+                            position: 'absolute',
+                            top: 8,
+                            right: 9,
+                            width: 7,
+                            height: 7,
+                            borderRadius: 4,
+                            backgroundColor: t.coral,
+                            borderWidth: 1.5,
+                            borderColor: t.ink
+                        }}
+                    />
+                )}
             </Press>
         </Row>
     );
