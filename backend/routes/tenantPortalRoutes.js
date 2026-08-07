@@ -5,11 +5,14 @@
 const express = require('express');
 const router = express.Router();
 const { protect } = require('../middleware/authMiddleware');
+const upload = require('../middleware/uploadMiddleware');
 const {
     getMe,
     getPayments,
     getRequests,
-    createRequest
+    createRequest,
+    getRequestMessages,
+    createRequestMessage
 } = require('../controllers/tenantPortalController');
 
 router.use(protect);
@@ -17,6 +20,13 @@ router.use(protect);
 router.get('/me', getMe);
 router.get('/payments', getPayments);
 router.get('/requests', getRequests);
-router.post('/requests', createRequest);
+// `request_image` is optional — multer's .single() passes a request with no file
+// straight through, so a JSON body still works exactly as before.
+router.post('/requests', upload.single('request_image'), createRequest);
+
+// The tenant's half of a request's conversation — the same rows the landlord
+// reads at /api/owner/requests/:id/messages.
+router.get('/requests/:id/messages', getRequestMessages);
+router.post('/requests/:id/messages', createRequestMessage);
 
 module.exports = router;

@@ -210,6 +210,9 @@ CREATE TABLE IF NOT EXISTS `maintenance_requests` (
   `description` text DEFAULT NULL,
   `priority` enum('Low','Medium','High') DEFAULT 'Medium',
   `status` enum('Open','In Progress','Resolved','Closed') DEFAULT 'Open',
+  -- One optional photo of the problem, uploaded with the request. A picture of
+  -- the leak settles what three messages of description cannot.
+  `image_url` varchar(500) DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   PRIMARY KEY (`id`),
@@ -217,4 +220,22 @@ CREATE TABLE IF NOT EXISTS `maintenance_requests` (
   KEY `owner_id` (`owner_id`),
   CONSTRAINT `maintenance_requests_ibfk_1` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`) ON DELETE CASCADE,
   CONSTRAINT `maintenance_requests_ibfk_2` FOREIGN KEY (`owner_id`) REFERENCES `owners` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- 13. maintenance_messages (the back-and-forth on one request -> maintenance_requests)
+-- Turns a request from a one-way report into a conversation: the tenant can add
+-- detail and the landlord can reply without either side phoning the other.
+-- The sender is stored as a ROLE, not a user id, because the two participants of
+-- a thread are already fixed by maintenance_requests.tenant_id / owner_id — so a
+-- role is all the client needs to place a bubble left or right, and the thread
+-- stays readable even if the tenant's login account is later re-created.
+CREATE TABLE IF NOT EXISTS `maintenance_messages` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `request_id` int(11) NOT NULL,
+  `sender_role` enum('tenant','owner') NOT NULL,
+  `body` text NOT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `request_id` (`request_id`),
+  CONSTRAINT `maintenance_messages_ibfk_1` FOREIGN KEY (`request_id`) REFERENCES `maintenance_requests` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;

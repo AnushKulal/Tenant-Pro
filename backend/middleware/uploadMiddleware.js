@@ -28,6 +28,7 @@ const folderFor = (fieldname) => {
     if (fieldname === 'document') return 'documents';
     if (fieldname === 'room_image') return 'rooms';
     if (fieldname === 'qr_code') return 'payments';
+    if (fieldname === 'request_image') return 'requests';
     return 'misc';
 };
 
@@ -39,6 +40,7 @@ const prefixFor = (fieldname) => {
     if (fieldname === 'room_image') return 'room-';
     if (fieldname === 'tenant_image') return 'tenant-';
     if (fieldname === 'qr_code') return 'qr-';
+    if (fieldname === 'request_image') return 'request-';
     return 'file-';
 };
 

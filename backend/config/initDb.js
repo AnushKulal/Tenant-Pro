@@ -51,6 +51,11 @@ const initDb = async () => {
         // need the column added rather than the table recreated.
         await ensureColumn(conn, 'password_resets', 'role', "varchar(10) NOT NULL DEFAULT 'owner'");
 
+        // Maintenance requests gained an optional photo of the problem. The table
+        // already exists on every deployed database, so CREATE TABLE IF NOT EXISTS
+        // will not add the column — this will.
+        await ensureColumn(conn, 'maintenance_requests', 'image_url', 'varchar(500) DEFAULT NULL');
+
         console.log('✅ Database schema is up to date.');
     } finally {
         await conn.end();
