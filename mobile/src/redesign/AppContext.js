@@ -100,6 +100,13 @@ const INITIAL_STATE = {
   // The payment-settings form, seeded from the saved values when the sheet opens.
   ps: { upiId: '', upiNumber: '', error: '' },
 
+  // ── Creation forms ──
+  // A brand-new landlord starts with nothing, so these three are what make the
+  // app usable at all rather than a viewer for data entered elsewhere.
+  np: { name: '', type: 'PG', address: '', locality: '', city: '', pincode: '', photo: null, busy: false, error: '' },
+  nu: { propertyId: null, number: '', roomType: 'Standard', rent: '', capacity: '1', photo: null, busy: false, error: '' },
+  nt: { name: '', phone: '', email: '', company: '', deposit: '', rent: '', unitId: null, photo: null, busy: false, error: '' },
+
   // ── Password recovery ──
   // Two requests over three panes: 'ask' emails a 6-digit code, 'reset' spends it,
   // 'done' confirms. `role` decides which account table the backend looks in —
@@ -110,6 +117,12 @@ const INITIAL_STATE = {
     busy: false, error: '', sentTo: ''
   }
 };
+
+const PROPERTY_TYPES = ['PG', 'Apartment', 'Independent House', 'Hostel'];
+const ROOM_TYPES = ['Standard', 'Single', 'Double', 'Triple', 'Studio', '1BHK', '2BHK'];
+const BLANK_PROPERTY = { name: '', type: 'PG', address: '', locality: '', city: '', pincode: '', photo: null, busy: false, error: '' };
+const BLANK_UNIT = { propertyId: null, number: '', roomType: 'Standard', rent: '', capacity: '1', photo: null, busy: false, error: '' };
+const BLANK_TENANT = { name: '', phone: '', email: '', company: '', deposit: '', rent: '', unitId: null, photo: null, busy: false, error: '' };
 
 const BLANK_FP = {
   step: 'ask', role: 'owner', id: '', code: '', pw: '', pw2: '',
@@ -558,8 +571,122 @@ function deriveVm(s, api) {
     showBack: !mod,
     backTitle: { property: 'Properties & units', profile: 'My profile', settings: 'Settings', tenant: 'People' }[s.route] || '',
     goBack: () => go({ property: 'units', profile: 'settings', settings: 'home', tenant: 'people' }[s.route] || 'home'),
-    addProperty: () => flash('Add property — not wired in this prototype'),
-    addUnit: () => flash('Add unit — not wired in this prototype'),
+    // ── Create a property / unit / tenant ─────────────────────────────────────
+    // A new landlord lands on an empty app, so these are what make it usable
+    // rather than a viewer for data entered somewhere else. Each is a sheet, each
+    // validates the fields its endpoint actually requires, and each takes an
+    // optional photo.
+    addProperty: () => setState({ overlay: 'newproperty', np: { ...BLANK_PROPERTY } }),
+    isNewProperty: s.overlay === 'newproperty',
+    newProperty: (() => {
+      const np = s.np || BLANK_PROPERTY;
+      const put = (patch) => setState({ np: { ...np, ...patch, error: '' } });
+      return {
+        name: np.name, setName: (e) => put({ name: evStr(e) }),
+        address: np.address, setAddress: (e) => put({ address: evStr(e) }),
+        locality: np.locality, setLocality: (e) => put({ locality: evStr(e) }),
+        city: np.city, setCity: (e) => put({ city: evStr(e) }),
+        pincode: np.pincode, setPincode: (e) => put({ pincode: evStr(e).replace(/[^0-9]/g, '') }),
+        types: PROPERTY_TYPES.map((k) => ({ label: k, on: np.type === k, go: () => put({ type: k }) })),
+        photo: np.photo ? np.photo.uri : null,
+        hasPhoto: !!np.photo,
+        pickPhoto: () => api.pickPhotoFor('np'),
+        clearPhoto: () => put({ photo: null }),
+        busy: !!np.busy,
+        error: np.error || '',
+        hasError: !!np.error,
+        canSubmit: !!np.name.trim() && !np.busy,
+        submit: () => {
+          // The columns the table declares NOT NULL, checked here so the failure
+          // names the field instead of arriving as a 500.
+          if (!np.name.trim()) { setState({ np: { ...np, error: 'Give the property a name.' } }); return; }
+          if (!np.city.trim()) { setState({ np: { ...np, error: 'Which city is it in?' } }); return; }
+          if (np.pincode && np.pincode.length !== 6) { setState({ np: { ...np, error: 'A pincode is 6 digits.' } }); return; }
+          api.createProperty();
+        }
+      };
+    })(),
+
+    // Add a unit. Defaults to whichever property the user is looking at, so the
+    // common case needs no choosing.
+    addUnit: () => setState({
+      overlay: 'newunit',
+      nu: { ...BLANK_UNIT, propertyId: (scoped ? curProp : null) || (PROPS[0] && PROPS[0].id) || null }
+    }),
+    isNewUnit: s.overlay === 'newunit',
+    newUnit: (() => {
+      const nu = s.nu || BLANK_UNIT;
+      const put = (patch) => setState({ nu: { ...nu, ...patch, error: '' } });
+      const prop = PROPS.find((p) => p.id === nu.propertyId) || PROPS[0] || null;
+      return {
+        // Nothing to add a unit to yet — say so instead of offering an empty picker.
+        noProperties: PROPS.length === 0,
+        properties: PROPS.map((p) => ({
+          label: p.name, on: nu.propertyId === p.id, go: () => put({ propertyId: p.id })
+        })),
+        propertyName: prop ? prop.name : '',
+        number: nu.number, setNumber: (e) => put({ number: evStr(e) }),
+        roomTypes: ROOM_TYPES.map((k) => ({ label: k, on: nu.roomType === k, go: () => put({ roomType: k }) })),
+        rent: nu.rent, setRent: (e) => put({ rent: evStr(e).replace(/[^0-9]/g, '') }),
+        capacity: nu.capacity, setCapacity: (e) => put({ capacity: evStr(e).replace(/[^0-9]/g, '') }),
+        photo: nu.photo ? nu.photo.uri : null,
+        hasPhoto: !!nu.photo,
+        pickPhoto: () => api.pickPhotoFor('nu'),
+        clearPhoto: () => put({ photo: null }),
+        busy: !!nu.busy,
+        error: nu.error || '',
+        hasError: !!nu.error,
+        canSubmit: !!nu.number.trim() && !!nu.propertyId && !nu.busy,
+        submit: () => {
+          if (!nu.propertyId) { setState({ nu: { ...nu, error: 'Pick which property this room is in.' } }); return; }
+          if (!nu.number.trim()) { setState({ nu: { ...nu, error: 'Give the room a number or name.' } }); return; }
+          if (!Number(nu.rent)) { setState({ nu: { ...nu, error: 'What is the monthly rent?' } }); return; }
+          api.createUnit();
+        }
+      };
+    })(),
+
+    // Add a tenant. The room is optional — a person can be on the books before
+    // they have somewhere to sleep, and assigned later.
+    openAddTenant: () => setState({ overlay: 'newtenant', nt: { ...BLANK_TENANT } }),
+    isNewTenant: s.overlay === 'newtenant',
+    newTenant: (() => {
+      const nt = s.nt || BLANK_TENANT;
+      const put = (patch) => setState({ nt: { ...nt, ...patch, error: '' } });
+      // Only rooms with a free bed can take someone new.
+      const openRooms = UNITS.filter((u) => occupantsOf(u.no).length < u.cap);
+      return {
+        name: nt.name, setName: (e) => put({ name: evStr(e) }),
+        phone: nt.phone, setPhone: (e) => put({ phone: evStr(e).replace(/[^0-9]/g, '') }),
+        email: nt.email, setEmail: (e) => put({ email: evStr(e) }),
+        company: nt.company, setCompany: (e) => put({ company: evStr(e) }),
+        rent: nt.rent, setRent: (e) => put({ rent: evStr(e).replace(/[^0-9]/g, '') }),
+        deposit: nt.deposit, setDeposit: (e) => put({ deposit: evStr(e).replace(/[^0-9]/g, '') }),
+        rooms: openRooms.map((u) => ({
+          label: `${propName(u.prop)} · ${u.no}`,
+          on: nt.unitId === u.id,
+          // Tapping the chosen room again clears it, so "no room yet" stays reachable.
+          go: () => put({ unitId: nt.unitId === u.id ? null : u.id, rent: nt.rent || String(Number(String(u.rent).replace(/[^0-9]/g, '')) || '') })
+        })),
+        hasRooms: openRooms.length > 0,
+        unassigned: nt.unitId == null,
+        photo: nt.photo ? nt.photo.uri : null,
+        hasPhoto: !!nt.photo,
+        pickPhoto: () => api.pickPhotoFor('nt'),
+        clearPhoto: () => put({ photo: null }),
+        busy: !!nt.busy,
+        error: nt.error || '',
+        hasError: !!nt.error,
+        canSubmit: !!nt.name.trim() && !!nt.phone.trim() && !nt.busy,
+        submit: () => {
+          // Name and phone are what the endpoint requires; the phone also has to
+          // be unique, which only the server can tell us.
+          if (!nt.name.trim()) { setState({ nt: { ...nt, error: 'What is their name?' } }); return; }
+          if (nt.phone.trim().length !== 10) { setState({ nt: { ...nt, error: 'A mobile number is 10 digits.' } }); return; }
+          api.createTenantRecord();
+        }
+      };
+    })(),
 
     isOnboarding: s.route === 'onboarding',
     // Marks the intro as seen (persisted) and hands off to the role picker.
@@ -937,7 +1064,7 @@ function deriveVm(s, api) {
           open: () => setState({ who: t.id, route: 'tenant', overlay: null })
         })),
         addExisting: () => set('overlay', 'assign'),
-        addNew: () => { setState({ overlay: null }); flash('Add tenant manually — not wired in this prototype'); }
+        addNew: () => setState({ overlay: 'newtenant', nt: { ...BLANK_TENANT, unitId: (UNITS.find((u) => u.no === s.unit) || {}).id || null } })
       };
     })(),
     isAssign: s.overlay === 'assign',
@@ -1022,7 +1149,7 @@ function deriveVm(s, api) {
         };
       }),
       share: () => flash('Invite link copied'),
-      manual: () => { setState({ overlay: null }); flash('Add manually — not wired in this prototype'); }
+      manual: () => setState({ overlay: 'newtenant', nt: { ...BLANK_TENANT } })
     },
 
     isMove: s.overlay === 'move',
@@ -1864,6 +1991,100 @@ export function AppProvider({ children }) {
     );
   }, [ownerWrite]);
 
+  // ── Creating things ────────────────────────────────────────────────────────
+  // All three go out as multipart because each endpoint also accepts a photo.
+  // A blank string is appended rather than omitted for optional text so the
+  // column is written as empty instead of the literal "undefined".
+  const put = (form, k, v) => form.append(k, v == null ? '' : String(v));
+
+  // Pick a photo for one of the creation forms. Same lazy require as the
+  // request-photo picker; `slot` says which form's state to drop it into.
+  const pickPhotoFor = useCallback(async (slot) => {
+    try {
+      const picker = require('expo-image-picker');
+      const perm = await picker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) { flash('Photo access is needed to add a picture'); return; }
+      const res = await picker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.7 });
+      if (res.canceled || !res.assets || !res.assets[0]) return;
+      setState({ [slot]: { ...stateRef.current[slot], photo: res.assets[0], error: '' } });
+    } catch (e) {
+      flash('Could not open your photos');
+    }
+  }, [setState, flash]);
+
+  // A picked asset as the multipart file part RN's fetch understands.
+  const filePart = (asset, fallback) => ({
+    uri: asset.uri,
+    name: asset.fileName || fallback,
+    type: asset.mimeType || 'image/jpeg'
+  });
+
+  const createProperty = useCallback(async () => {
+    const np = stateRef.current.np;
+    if (np.busy) return;
+    const form = new FormData();
+    put(form, 'name', np.name.trim());
+    put(form, 'property_type', np.type);
+    put(form, 'address', np.address.trim());
+    put(form, 'locality', np.locality.trim());
+    put(form, 'city', np.city.trim());
+    put(form, 'pincode', np.pincode.trim());
+    if (np.photo) form.append('property_image', filePart(np.photo, 'property.jpg'));
+    setState({ np: { ...np, busy: true, error: '' } });
+    const ok = await ownerWrite(() => apiProps.add(form), {
+      done: `${np.name.trim()} added`, failed: 'Could not add that property.'
+    });
+    setState(ok
+      ? { np: { ...BLANK_PROPERTY }, overlay: null }
+      : { np: { ...stateRef.current.np, busy: false } });
+  }, [setState, ownerWrite]);
+
+  const createUnit = useCallback(async () => {
+    const nu = stateRef.current.nu;
+    if (nu.busy) return;
+    const form = new FormData();
+    put(form, 'property_id', nu.propertyId);
+    put(form, 'unit_number', nu.number.trim());
+    put(form, 'room_type', nu.roomType);
+    put(form, 'base_rent', Number(nu.rent) || 0);
+    put(form, 'capacity', Math.max(1, Number(nu.capacity) || 1));
+    if (nu.photo) form.append('room_image', filePart(nu.photo, 'room.jpg'));
+    setState({ nu: { ...nu, busy: true, error: '' } });
+    const ok = await ownerWrite(() => apiUnits.add(form), {
+      done: `Unit ${nu.number.trim()} added`, failed: 'Could not add that unit.'
+    });
+    setState(ok
+      ? { nu: { ...BLANK_UNIT }, overlay: null }
+      : { nu: { ...stateRef.current.nu, busy: false } });
+  }, [setState, ownerWrite]);
+
+  const createTenantRecord = useCallback(async () => {
+    const nt = stateRef.current.nt;
+    if (nt.busy) return;
+    const d = new Date();
+    const form = new FormData();
+    put(form, 'name', nt.name.trim());
+    put(form, 'phone', nt.phone.trim());
+    put(form, 'email', nt.email.trim());
+    put(form, 'company', nt.company.trim());
+    put(form, 'deposit', Number(nt.deposit) || 0);
+    put(form, 'rent_share', Number(nt.rent) || 0);
+    // A room is optional — a tenant can exist unassigned and be placed later.
+    if (nt.unitId != null) put(form, 'unit_id', nt.unitId);
+    // Moving in today unless told otherwise; the backend derives the first rent
+    // due date from this, so it must not be left blank when a room is given.
+    put(form, 'move_in_date', `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
+    put(form, 'billing_cycle', 'Anniversary');
+    if (nt.photo) form.append('tenant_image', filePart(nt.photo, 'tenant.jpg'));
+    setState({ nt: { ...nt, busy: true, error: '' } });
+    const ok = await ownerWrite(() => apiTenants.add(form), {
+      done: `${nt.name.trim()} added`, failed: 'Could not add that tenant.'
+    });
+    setState(ok
+      ? { nt: { ...BLANK_TENANT }, overlay: null }
+      : { nt: { ...stateRef.current.nt, busy: false } });
+  }, [setState, ownerWrite]);
+
   // Attach a photo of the problem. expo-image-picker is loaded lazily so the
   // module is only pulled in when a tenant actually reaches for the camera roll.
   const pickRequestPhoto = useCallback(async () => {
@@ -2046,13 +2267,15 @@ export function AppProvider({ children }) {
       setState, set, go, flash, fxRef, signIn, register, signOut, resolveSession,
       loadOwnerData, loadTenantData, loadThread, sendReply, setRequestStatus,
       pickRequestPhoto, createRequest, requestResetCode, submitNewPassword,
-      recordPayment, saveTenantRent, assignTenant, moveTenantOut, deleteTenant, savePaymentSettings
+      recordPayment, saveTenantRent, assignTenant, moveTenantOut, deleteTenant, savePaymentSettings,
+      pickPhotoFor, createProperty, createUnit, createTenantRecord
     }),
     [
       setState, set, go, flash, signIn, register, signOut, resolveSession,
       loadOwnerData, loadTenantData, loadThread, sendReply, setRequestStatus,
       pickRequestPhoto, createRequest, requestResetCode, submitNewPassword,
-      recordPayment, saveTenantRent, assignTenant, moveTenantOut, deleteTenant, savePaymentSettings
+      recordPayment, saveTenantRent, assignTenant, moveTenantOut, deleteTenant, savePaymentSettings,
+      pickPhotoFor, createProperty, createUnit, createTenantRecord
     ]
   );
 

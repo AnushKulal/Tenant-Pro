@@ -117,6 +117,81 @@ function Thread({ thread, composer, canReply, t, placeholder }) {
     );
 }
 
+// A row of pick-one chips. Every creation sheet needs the same control, and the
+// selected chip reads as selected in both themes because it uses the foreground
+// token rather than a hand-picked colour.
+function Chips({ items, t, wrap = true }) {
+    return (
+        <Row gap={7} wrap={wrap} style={{ marginBottom: 12 }}>
+            {(items || []).map((c) => (
+                <Press
+                    key={c.label}
+                    onPress={c.go}
+                    style={{ paddingVertical: 9, paddingHorizontal: 13, borderRadius: 999, backgroundColor: c.on ? t.lsoft : t.ink3, borderWidth: 1, borderColor: c.on ? t.accent : t.line }}
+                >
+                    <T w={600} s={12} lh={1} c={c.on ? t.accent : t.fg2}>{c.label}</T>
+                </Press>
+            ))}
+        </Row>
+    );
+}
+
+// Attach-a-photo, or the thumbnail once one is attached.
+function PhotoPick({ form, t, label = 'Add a photo' }) {
+    if (form.hasPhoto) {
+        return (
+            <Row gap={10} style={{ marginBottom: 12 }}>
+                <Image source={{ uri: form.photo }} style={{ width: 72, height: 72, borderRadius: 16, backgroundColor: t.ink3 }} resizeMode="cover" />
+                <View style={{ flex: 1 }}>
+                    <T w={600} s={13} lh={1.2} c={t.fg}>Photo attached</T>
+                    <Press onPress={form.clearPhoto} style={{ marginTop: 7 }}>
+                        <T mono w={600} s={9} ls={0.12} c={t.coral}>REMOVE</T>
+                    </Press>
+                </View>
+            </Row>
+        );
+    }
+    return (
+        <Press
+            onPress={form.pickPhoto}
+            style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', columnGap: 8, paddingVertical: 14, borderRadius: 16, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line, marginBottom: 12 }}
+        >
+            <Glyph name="image-outline" size={17} color={t.fg2} />
+            <T w={600} s={13} c={t.fg2}>{label}</T>
+        </Press>
+    );
+}
+
+// The error banner and the Cancel/Save pair every creation sheet ends with.
+function FormError({ form, t }) {
+    if (!form.hasError) return null;
+    return (
+        <Row gap={9} align="flex-start" style={{ paddingVertical: 11, paddingHorizontal: 13, borderRadius: 14, backgroundColor: t.csoft, marginBottom: 12 }}>
+            <Glyph name="alert-circle-outline" size={15} color={t.coral} />
+            <T w={500} s={12} lh={1.45} c={t.coral} style={{ flex: 1 }}>{form.error}</T>
+        </Row>
+    );
+}
+
+function FormActions({ form, onCancel, label, t }) {
+    const live = form.canSubmit;
+    return (
+        <Row gap={8}>
+            <Press onPress={onCancel} style={{ paddingVertical: 15, paddingHorizontal: 20, borderRadius: 999, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line }}>
+                <T w={600} s={13.5} c={t.fg2}>Cancel</T>
+            </Press>
+            <Press
+                onPress={form.submit}
+                disabled={!live}
+                style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', columnGap: 8, paddingVertical: 15, borderRadius: 999, backgroundColor: live ? t.lime : t.ink3, borderWidth: 1, borderColor: live ? t.lime : t.line }}
+            >
+                {form.busy ? <ActivityIndicator size="small" color={t.on} /> : null}
+                <T w={700} s={14} c={live ? t.on : t.fg3}>{form.busy ? 'Saving…' : label}</T>
+            </Press>
+        </Row>
+    );
+}
+
 // Same token resolution as the sheet body's `col`, needed outside its closure.
 const col2 = (v, t) => (v && (v[0] === '#' || v.startsWith('rgb')) ? v : t[v]);
 
@@ -813,6 +888,103 @@ export default function Sheets() {
                         <Press onPress={vm.closeOverlay} style={{ paddingVertical: 15, borderRadius: 999, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line, alignItems: 'center' }}>
                             <T w={600} s={14} c={t.fg}>Close</T>
                         </Press>
+                    </View>
+                )}
+
+                {/* ── Add a property ──────────────────────────────────── */}
+                {vm.isNewProperty && vm.newProperty && (
+                    <View>
+                        <T w={700} s={20} lh={1} style={{ letterSpacing: -0.8 }}>Add a property</T>
+                        <Eyebrow s={10} ls={0.08} style={{ marginTop: 7, marginBottom: 16 }}>A BUILDING, PG OR FLAT YOU LET OUT</Eyebrow>
+
+                        <FormError form={vm.newProperty} t={t} />
+
+                        <Field label="NAME" icon="business-outline" value={vm.newProperty.name} onChangeText={vm.newProperty.setName} placeholder="Sunrise PG" autoCapitalize="words" editable={!vm.newProperty.busy} style={{ marginBottom: 12 }} />
+
+                        <Eyebrow s={9} ls={0.12} c={t.fg3} style={{ marginBottom: 9 }}>TYPE</Eyebrow>
+                        <Chips items={vm.newProperty.types} t={t} />
+
+                        <Field label="ADDRESS" icon="location-outline" value={vm.newProperty.address} onChangeText={vm.newProperty.setAddress} placeholder="12, 5th Cross" autoCapitalize="words" editable={!vm.newProperty.busy} style={{ marginBottom: 10 }} />
+                        <Field label="LOCALITY" icon="map-outline" value={vm.newProperty.locality} onChangeText={vm.newProperty.setLocality} placeholder="Koramangala" autoCapitalize="words" editable={!vm.newProperty.busy} style={{ marginBottom: 10 }} />
+                        <Field label="CITY" icon="business-outline" value={vm.newProperty.city} onChangeText={vm.newProperty.setCity} placeholder="Bengaluru" autoCapitalize="words" editable={!vm.newProperty.busy} style={{ marginBottom: 10 }} />
+                        <Field label="PINCODE" icon="mail-outline" value={vm.newProperty.pincode} onChangeText={vm.newProperty.setPincode} placeholder="560034" keyboardType="number-pad" maxLength={6} editable={!vm.newProperty.busy} style={{ marginBottom: 12 }} />
+
+                        <PhotoPick form={vm.newProperty} t={t} label="Add a photo of the building" />
+                        <FormActions form={vm.newProperty} onCancel={vm.closeOverlay} label="Add property" t={t} />
+                    </View>
+                )}
+
+                {/* ── Add a unit ──────────────────────────────────────── */}
+                {vm.isNewUnit && vm.newUnit && (
+                    <View>
+                        <T w={700} s={20} lh={1} style={{ letterSpacing: -0.8 }}>Add a room</T>
+                        <Eyebrow s={10} ls={0.08} style={{ marginTop: 7, marginBottom: 16 }}>
+                            {vm.newUnit.noProperties ? 'ADD A PROPERTY FIRST' : `IN ${String(vm.newUnit.propertyName).toUpperCase()}`}
+                        </Eyebrow>
+
+                        <FormError form={vm.newUnit} t={t} />
+
+                        {vm.newUnit.noProperties ? (
+                            <>
+                                <Row gap={9} align="flex-start" style={{ paddingVertical: 12, paddingHorizontal: 13, borderRadius: 14, backgroundColor: t.asoft, marginBottom: 14 }}>
+                                    <Glyph name="information-circle-outline" size={15} color={t.amber} />
+                                    <T w={500} s={12} lh={1.45} c={t.amber} style={{ flex: 1 }}>
+                                        A room has to belong to a property. Add one first, then come back.
+                                    </T>
+                                </Row>
+                                <Press onPress={vm.addProperty} style={{ paddingVertical: 15, borderRadius: 999, backgroundColor: t.lime, alignItems: 'center' }}>
+                                    <T w={700} s={14} c={t.on}>Add a property</T>
+                                </Press>
+                            </>
+                        ) : (
+                            <>
+                                <Eyebrow s={9} ls={0.12} c={t.fg3} style={{ marginBottom: 9 }}>PROPERTY</Eyebrow>
+                                <Chips items={vm.newUnit.properties} t={t} />
+
+                                <Field label="ROOM NUMBER" icon="grid-outline" value={vm.newUnit.number} onChangeText={vm.newUnit.setNumber} placeholder="101" autoCapitalize="characters" editable={!vm.newUnit.busy} style={{ marginBottom: 12 }} />
+
+                                <Eyebrow s={9} ls={0.12} c={t.fg3} style={{ marginBottom: 9 }}>ROOM TYPE</Eyebrow>
+                                <Chips items={vm.newUnit.roomTypes} t={t} />
+
+                                <Field label="MONTHLY RENT" icon="cash-outline" value={vm.newUnit.rent} onChangeText={vm.newUnit.setRent} placeholder="16000" keyboardType="number-pad" editable={!vm.newUnit.busy} style={{ marginBottom: 10 }} />
+                                <Field label="BEDS" icon="bed-outline" value={vm.newUnit.capacity} onChangeText={vm.newUnit.setCapacity} placeholder="1" keyboardType="number-pad" maxLength={2} editable={!vm.newUnit.busy} style={{ marginBottom: 12 }} />
+
+                                <PhotoPick form={vm.newUnit} t={t} label="Add a photo of the room" />
+                                <FormActions form={vm.newUnit} onCancel={vm.closeOverlay} label="Add room" t={t} />
+                            </>
+                        )}
+                    </View>
+                )}
+
+                {/* ── Add a tenant ────────────────────────────────────── */}
+                {vm.isNewTenant && vm.newTenant && (
+                    <View>
+                        <T w={700} s={20} lh={1} style={{ letterSpacing: -0.8 }}>Add a tenant</T>
+                        <Eyebrow s={10} ls={0.08} style={{ marginTop: 7, marginBottom: 16 }}>NAME AND MOBILE ARE ENOUGH TO START</Eyebrow>
+
+                        <FormError form={vm.newTenant} t={t} />
+
+                        <Field label="FULL NAME" icon="person-outline" value={vm.newTenant.name} onChangeText={vm.newTenant.setName} placeholder="Rahul Sharma" autoCapitalize="words" editable={!vm.newTenant.busy} style={{ marginBottom: 10 }} />
+                        <Field label="MOBILE" icon="call-outline" value={vm.newTenant.phone} onChangeText={vm.newTenant.setPhone} placeholder="98123 45670" keyboardType="phone-pad" maxLength={10} editable={!vm.newTenant.busy} style={{ marginBottom: 10 }} />
+                        <Field label="EMAIL" icon="mail-outline" value={vm.newTenant.email} onChangeText={vm.newTenant.setEmail} placeholder="Optional" keyboardType="email-address" editable={!vm.newTenant.busy} style={{ marginBottom: 10 }} />
+                        <Field label="COMPANY" icon="briefcase-outline" value={vm.newTenant.company} onChangeText={vm.newTenant.setCompany} placeholder="Optional" autoCapitalize="words" editable={!vm.newTenant.busy} style={{ marginBottom: 12 }} />
+
+                        {vm.newTenant.hasRooms ? (
+                            <>
+                                <Eyebrow s={9} ls={0.12} c={t.fg3} style={{ marginBottom: 9 }}>
+                                    {vm.newTenant.unassigned ? 'ROOM — OPTIONAL, CAN BE SET LATER' : 'ROOM'}
+                                </Eyebrow>
+                                <Chips items={vm.newTenant.rooms} t={t} />
+                            </>
+                        ) : null}
+
+                        <Row gap={10} style={{ marginBottom: 12 }}>
+                            <Field label="RENT" icon="cash-outline" value={vm.newTenant.rent} onChangeText={vm.newTenant.setRent} placeholder="16000" keyboardType="number-pad" editable={!vm.newTenant.busy} style={{ flex: 1 }} />
+                            <Field label="DEPOSIT" icon="lock-closed-outline" value={vm.newTenant.deposit} onChangeText={vm.newTenant.setDeposit} placeholder="8000" keyboardType="number-pad" editable={!vm.newTenant.busy} style={{ flex: 1 }} />
+                        </Row>
+
+                        <PhotoPick form={vm.newTenant} t={t} label="Add their photo" />
+                        <FormActions form={vm.newTenant} onCancel={vm.closeOverlay} label="Add tenant" t={t} />
                     </View>
                 )}
 
