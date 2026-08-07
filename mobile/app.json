@@ -9,7 +9,7 @@
     "userInterfaceStyle": "automatic",
     "runtimeVersion": "1.0.0",
     "updates": {
-      "enabled": true,
+      "enabled": false,
       "url": "https://u.expo.dev/3b258101-bef2-412f-8be0-53af8b224dfb",
       "checkAutomatically": "ON_ERROR_RECOVERY",
       "fallbackToCacheTimeout": 0
