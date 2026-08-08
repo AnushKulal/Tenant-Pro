@@ -102,12 +102,16 @@ export default function TenantLoginScreen() {
                     <Divider style={{ flex: 1 }} />
                 </Row>
 
+                {/* One entry point, which then offers scanning OR typing the code.
+                    "Join with an invite QR" promised a camera — a dead end on a build
+                    without one, and a dead end for anyone with no account, since the
+                    scan was thrown away at the sign-in wall. */}
                 <Press
-                    onPress={vm.goScanQr}
+                    onPress={vm.goGuest}
                     style={{ width: '100%', borderRadius: 999, backgroundColor: t.ink2, borderWidth: 1, borderColor: t.line, paddingVertical: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', columnGap: 8 }}
                 >
-                    <Glyph name="qr-code" size={17} color={t.accent} />
-                    <T w={600} s={14} c={t.fg}>Join with an invite QR</T>
+                    <Glyph name="enter-outline" size={17} color={t.accent} />
+                    <T w={600} s={14} c={t.fg}>Join as a guest</T>
                 </Press>
 
                 <Row gap={12} style={{ marginVertical: 18 }}>

@@ -147,6 +147,13 @@ const INITIAL_STATE = {
   // point at which "I have forgotten it" becomes likelier than a typo.
   authFails: 0,
   signupRole: 'owner',  // which login screen 'Create account' was tapped from
+  // "Join as a guest": the code someone carries in from the sign-in screen before
+  // they have an account. Held until registration finishes, then the join request
+  // is sent for them — so the code they scanned is not lost on the way through
+  // signing up, which is the whole point of letting them start without an account.
+  pendingJoin: '',
+  // The typed half of the guest chooser.
+  guestCode: '',
   req: null,            // index of the tenant request opened from Help
 
   // ── Data (Phase 3) ──
@@ -1305,6 +1312,35 @@ function deriveVm(s, api) {
       ? mediaUrl(s.session.user.profile_pic) : null,
 
     goSignup: () => setState({ signupRole: s.route === 'tlogin' ? 'tenant' : 'owner', route: 'signup', overlay: null }),
+
+    // ── Join as a guest ───────────────────────────────────────────────────────
+    // The sign-in screen used to offer "Join with an invite QR", which was a dead
+    // end for the people it was aimed at: scanning needs no account, but ASKING to
+    // join does, so a new arrival scanned a code and got told to sign in — with the
+    // code thrown away. One entry point now, which offers the two ways of carrying a
+    // code in, and holds it through registration so the request goes out by itself.
+    goGuest: () => setState({ route: 'guest', guestCode: '', authError: '' }),
+    isGuest: s.route === 'guest',
+    guest: (() => {
+      const typed = codeOf(s.guestCode);
+      return {
+        code: s.guestCode,
+        setCode: (e) => set('guestCode', evStr(e).toUpperCase()),
+        canSubmit: !!typed,
+        // Scanning and typing land in exactly the same place, so neither is a
+        // second-class fallback — which matters on a build where the camera is not
+        // available at all.
+        scan: () => setState({ route: 'scan', scanCode: '', overlay: null }),
+        submitCode: () => { if (typed) api.holdJoinCode(typed); },
+        line: 'Scan the QR your landlord shared, or type the property code they gave you. You will need an account to send the request — we will keep the code while you make one.',
+        // Shown once a code is carried in from a scan.
+        held: s.pendingJoin,
+        hasHeld: !!s.pendingJoin
+      };
+    })(),
+    // What the sign-up screen says when a code is waiting.
+    joiningCode: s.pendingJoin,
+    isJoiningWithCode: !!s.pendingJoin,
     isSignup: s.route === 'signup',
 
     // ── Password recovery ──
@@ -2730,9 +2766,10 @@ function deriveVm(s, api) {
       // property matches", which is what "the invite QR doesn't work" was.
       const find = (code) => {
         if (!code) return;
-        setState({ jq: code, route: 'tfind', scanCode: '', keepHistory: true });
-        if (TLIVE) api.lookupProperty(code);
-        else flash(`Looking for ${code}`);
+        // Signed out, holdJoinCode carries it into sign-up instead of showing a find
+        // screen that can only search the walk-through catalogue. Signed in, it
+        // resolves the code on the server as before.
+        api.holdJoinCode(code);
       };
       return {
         code: raw,
@@ -2743,7 +2780,7 @@ function deriveVm(s, api) {
         // de-duplicates so this only lands once.
         found: (value) => find(codeOf(value)),
         typeInstead: () => flash('Type the code in the box below the camera'),
-        close: () => api.goBackOneStep() || go('tlogin')
+        close: () => api.goBackOneStep() || go('guest')
       };
     })(),
     scanQr: () => setState({ route: 'scan', overlay: null, scanCode: '' }),
@@ -3413,6 +3450,29 @@ export function AppProvider({ children }) {
     }
   }, [setState]);
 
+  // Carry a code into sign-up. Signed IN, there is no reason to detour through
+  // registration — resolve it and show the property as usual.
+  const holdJoinCode = useCallback((code) => {
+    const wanted = String(code || '').trim().toUpperCase();
+    if (!wanted) return;
+    const st = stateRef.current;
+    const signedInTenant = !!(st.session && st.session.role === 'tenant');
+    if (signedInTenant) {
+      setState({ jq: wanted, route: 'tfind', scanCode: '', guestCode: '' });
+      lookupProperty(wanted);
+      return;
+    }
+    setState({
+      pendingJoin: wanted,
+      guestCode: '',
+      scanCode: '',
+      signupRole: 'tenant',
+      route: 'signup',
+      authError: ''
+    });
+    flash(`We will ask to join ${wanted} once your account is ready`);
+  }, [setState, flash, lookupProperty]);
+
   // ── ID documents ───────────────────────────────────────────────────────────
   // Read on demand, never bundled into the dashboard: a government ID is the most
   // sensitive thing here, so it travels only when somebody has opened the screen
@@ -3960,6 +4020,16 @@ export function AppProvider({ children }) {
           route: asTenant ? 'tdocs' : 'home'
         });
         flash('Account created');
+        // A code carried in from "Join as a guest" is spent here, the moment there is
+        // an account to attribute the request to. Sent BEFORE the ID step rather than
+        // after: the landlord sees it straight away with a "NO ID ON FILE" badge,
+        // which is the honest signal, and the tenant is not left thinking their scan
+        // was thrown away while they photograph a card.
+        const held = stateRef.current.pendingJoin;
+        if (asTenant && held) {
+          setState({ pendingJoin: '' });
+          requestToJoin({ code: held, name: 'the landlord' });
+        }
       } else {
         // Registered but no token returned — send them to sign in.
         setState({ authBusy: false, authPw: '', route: asTenant ? 'tlogin' : 'login' });
@@ -3968,7 +4038,7 @@ export function AppProvider({ children }) {
     } catch (e) {
       setState({ authBusy: false, authError: errText(e, 'Could not create the account.') });
     }
-  }, [setState, flash]);
+  }, [setState, flash, requestToJoin]);
 
 
   const signOut = useCallback(async () => {
@@ -3987,7 +4057,7 @@ export function AppProvider({ children }) {
       pickRequestPhoto, createRequest, requestResetCode, submitNewPassword,
       recordPayment, saveTenantRent, assignTenant, moveTenantOut, deleteTenant, savePaymentSettings,
       pickPhotoFor, createProperty, saveProperty, deleteProperty, createUnit, createTenantRecord, goBackOneStep,
-      decideJoin, requestToJoin, askPermission, finishPermits,
+      decideJoin, requestToJoin, holdJoinCode, askPermission, finishPermits,
       loadDocs, decideDoc, loadMyDocs, pickDocPhoto, addMyDoc, removeMyDoc,
       lookupProperty
     }),
@@ -3997,7 +4067,7 @@ export function AppProvider({ children }) {
       pickRequestPhoto, createRequest, requestResetCode, submitNewPassword,
       recordPayment, saveTenantRent, assignTenant, moveTenantOut, deleteTenant, savePaymentSettings,
       pickPhotoFor, createProperty, saveProperty, deleteProperty, createUnit, createTenantRecord, goBackOneStep,
-      decideJoin, requestToJoin, askPermission, finishPermits,
+      decideJoin, requestToJoin, holdJoinCode, askPermission, finishPermits,
       loadDocs, decideDoc, loadMyDocs, pickDocPhoto, addMyDoc, removeMyDoc,
       lookupProperty
     ]

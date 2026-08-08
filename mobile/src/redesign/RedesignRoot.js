@@ -44,6 +44,7 @@ import TenantLoginScreen from './screens/TenantLoginScreen';
 import PortalHomeScreen from './screens/PortalHomeScreen';
 import FindScreen from './screens/FindScreen';
 import ScanQrScreen from './screens/ScanQrScreen';
+import GuestJoinScreen from './screens/GuestJoinScreen';
 import CheckoutScreen from './screens/CheckoutScreen';
 import HelpScreen from './screens/HelpScreen';
 import MyPlaceScreen from './screens/MyPlaceScreen';
@@ -73,6 +74,7 @@ const SCREENS = {
     portal: PortalHomeScreen,
     tfind: FindScreen,
     scan: ScanQrScreen,
+    guest: GuestJoinScreen,
     tcheckout: CheckoutScreen,
     thelp: HelpScreen,
     tstay: MyPlaceScreen,
