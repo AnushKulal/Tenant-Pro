@@ -363,3 +363,21 @@ CREATE TABLE IF NOT EXISTS `tenant_documents` (
   CONSTRAINT `tenant_documents_ibfk_1` FOREIGN KEY (`tenant_user_id`) REFERENCES `tenant_users` (`id`) ON DELETE CASCADE,
   CONSTRAINT `tenant_documents_ibfk_2` FOREIGN KEY (`verified_by`) REFERENCES `owners` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- 17. demo_state (-> owners)
+-- One row, id = 1. Records when the demo account's data was last rebuilt, so the app
+-- can say "last reset 3 days ago" and so a landlord can tell a stale demo from a
+-- fresh one before they put it in front of a client.
+--
+-- Deliberately NOT a flag that boot reads to decide whether to reseed: boot decides
+-- that by looking at whether the account has any properties, which cannot get out of
+-- step with reality the way a stored flag can.
+CREATE TABLE IF NOT EXISTS `demo_state` (
+  `id` tinyint(4) NOT NULL DEFAULT 1,
+  `owner_id` int(11) DEFAULT NULL,
+  `last_reset_at` timestamp NULL DEFAULT NULL,
+  `reset_count` int(11) NOT NULL DEFAULT 0,
+  PRIMARY KEY (`id`),
+  KEY `owner_id` (`owner_id`),
+  CONSTRAINT `demo_state_ibfk_1` FOREIGN KEY (`owner_id`) REFERENCES `owners` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;

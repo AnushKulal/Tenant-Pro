@@ -60,7 +60,7 @@ const tenantPortalRoutes = require('./routes/tenantPortalRoutes');
 const { protect, requireOwner } = require('./middleware/authMiddleware');
 const { initCronJobs, checkAndSendRentReminders } = require('./services/cronService');
 const initDb = require('./config/initDb');
-const seedDemo = require('./config/seedDemo');
+const { ensureDemoAccount } = require('./config/seedDemo');
 const { mailProvider, isMailConfigured, verifyMail } = require('./config/mailer');
 
 // --- Mount Routes ---
@@ -157,7 +157,10 @@ app.listen(PORT, () => {
         console.error('❌ Database schema init failed:', err.message);
     }
     try {
-        await seedDemo();
+        // Only ever CREATES the demo account, never rebuilds it. An account with data
+        // in it is left alone, so a restart in the middle of a demo is invisible —
+        // rebuilding it is POST /api/owner/demo/reset, on request.
+        await ensureDemoAccount();
     } catch (err) {
         console.error('❌ Demo seed failed:', err.message);
     }
