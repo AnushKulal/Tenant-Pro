@@ -2,7 +2,7 @@ import React from 'react';
 import { View, ScrollView, Image, RefreshControl } from 'react-native';
 import { useVm } from '../AppContext';
 import { useT } from '../ThemeContext';
-import { T, Row, Press, Glyph, Face } from '../ui';
+import { T, Row, Press, Glyph, Face, Avatar } from '../ui';
 
 // Literal-passthrough resolver: badgeBg/badgeFg are raw rgba/hex; everything
 // else is a token key resolved against the theme.
@@ -193,12 +193,13 @@ export default function UnitsScreen() {
                             </View>
                             <View style={{ flexDirection: 'row-reverse' }}>
                                 {u.faces.map((fa, j) => (
-                                    <Face
+                                    <Avatar
                                         key={j}
-                                        uri={fa}
+                                        uri={fa.uri}
+                                        name={fa.name}
                                         size={22}
                                         radius={11}
-                                        style={{ borderWidth: 2, borderColor: t.ink2, marginRight: -7, backgroundColor: t.accent }}
+                                        style={{ borderWidth: 2, borderColor: t.ink2, marginRight: -7 }}
                                     />
                                 ))}
                             </View>

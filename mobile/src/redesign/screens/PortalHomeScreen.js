@@ -16,7 +16,7 @@ export default function PortalHomeScreen() {
         >
             {/* Welcome header */}
             <Row gap={12} style={{ marginBottom: 20 }}>
-                <Face uri={me.img} size={42} radius={14} style={{ backgroundColor: t.accent }} />
+                <Avatar uri={me.img} name={vm.meFullName} size={42} radius={14} />
                 <View style={{ flex: 1 }}>
                     <Eyebrow s={9} ls={0.1} c={t.fg3}>WELCOME BACK</Eyebrow>
                     <T w={700} s={20} lh={1.1} style={{ letterSpacing: -0.8, marginTop: 5 }}>

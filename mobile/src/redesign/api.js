@@ -39,11 +39,14 @@ const isForm = (v) => typeof FormData !== 'undefined' && v instanceof FormData;
 
 // ── Auth (public) ─────────────────────────────────────────────────────────────
 export const auth = {
-    loginOwner: (identifier, password) => body(http.post('/auth/login', { identifier, password })),
+    // `mode` is which side of the EMAIL/MOBILE switch the user chose. The server
+    // scopes its lookup to that column, so picking MOBILE and typing an email
+    // address cannot sign you in. Omitted (older server) → matches either.
+    loginOwner: (identifier, password, mode) => body(http.post('/auth/login', { identifier, password, ...(mode ? { mode } : {}) })),
     registerOwner: (payload) => body(http.post('/auth/register', payload)),
     forgotPassword: (payload) => body(http.post('/auth/forgot-password', payload)),
     resetPassword: (payload) => body(http.post('/auth/reset-password', payload)),
-    loginTenant: (identifier, password) => body(http.post('/tenant-auth/login', { identifier, password })),
+    loginTenant: (identifier, password, mode) => body(http.post('/tenant-auth/login', { identifier, password, ...(mode ? { mode } : {}) })),
     registerTenant: (payload) => body(http.post('/tenant-auth/register', payload))
 };
 

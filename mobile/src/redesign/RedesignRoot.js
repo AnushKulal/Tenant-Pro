@@ -48,6 +48,7 @@ import HelpScreen from './screens/HelpScreen';
 import MyPlaceScreen from './screens/MyPlaceScreen';
 import MeScreen from './screens/MeScreen';
 import DocumentsScreen from './screens/DocumentsScreen';
+import AgreementScreen from './screens/AgreementScreen';
 import TenantSettingsScreen from './screens/TenantSettingsScreen';
 
 // route (state.route) → screen component. Mirrors the route flags in deriveVm().
@@ -76,6 +77,7 @@ const SCREENS = {
     tstay: MyPlaceScreen,
     tme: MeScreen,
     tdocs: DocumentsScreen,
+    tagreement: AgreementScreen,
     tsettings: TenantSettingsScreen
 };
 

@@ -2,7 +2,7 @@ import React from 'react';
 import { View, ScrollView, Image, RefreshControl } from 'react-native';
 import { useVm } from '../AppContext';
 import { useT } from '../ThemeContext';
-import { T, Eyebrow, Card, Row, Press, Glyph, IconChip, Face } from '../ui';
+import { T, Eyebrow, Card, Row, Press, Glyph, IconChip, Face, Avatar } from '../ui';
 
 export default function OverviewScreen() {
     const vm = useVm();
@@ -83,9 +83,10 @@ export default function OverviewScreen() {
                     </View>
                     <View style={{ flexDirection: 'row-reverse' }}>
                         {vm.paidFaces.map((f, i) => (
-                            <Face
+                            <Avatar
                                 key={i}
-                                uri={f}
+                                uri={f.uri}
+                                name={f.name}
                                 size={26}
                                 radius={13}
                                 style={{ borderWidth: 2, borderColor: t.ink2, marginRight: -8 }}

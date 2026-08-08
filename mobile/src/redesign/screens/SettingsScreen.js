@@ -2,7 +2,7 @@ import React from 'react';
 import { View, ScrollView } from 'react-native';
 import { useVm } from '../AppContext';
 import { useT } from '../ThemeContext';
-import { T, Eyebrow, Row, Press, Glyph, Face } from '../ui';
+import { T, Eyebrow, Row, Press, Glyph, Face, Avatar } from '../ui';
 
 export default function SettingsScreen() {
   const vm = useVm();
@@ -17,7 +17,7 @@ export default function SettingsScreen() {
         style={{ width: '100%', borderRadius: 24, backgroundColor: t.ink2, borderWidth: 1, borderColor: t.line, padding: 18, marginBottom: 8 }}
       >
         <Row gap={14}>
-          <Face uri="https://randomuser.me/api/portraits/men/32.jpg" size={56} radius={18} />
+          <Avatar uri={vm.ownerImg} name={vm.ownerName} size={56} radius={18} />
           <View style={{ flex: 1, minWidth: 0 }}>
             <T w={600} s={17} lh={1.2} c={t.fg}>Demo Landlord</T>
             <Eyebrow s={10} ls={0.08} c={t.fg3} style={{ marginTop: 5 }}>DEMO@GMAIL.COM</Eyebrow>

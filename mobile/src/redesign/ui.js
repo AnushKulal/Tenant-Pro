@@ -230,9 +230,23 @@ export function Face({ uri, size = 34, radius, style }) {
     );
 }
 
-// A two-letter stand-in for a missing photo. Same footprint as <Face>, so a card
-// laid out for an avatar does not reflow when there isn't one — which is the usual
-// case for a landlord, since the API carries their name and number but no picture.
+// "Anush Kulal" → AK, "Nihar Kulal" → NK, "Anush" → A. Derived HERE as well as in
+// the view-model, because <Initials> accepts a name and a caller that passes one
+// must not end up rendering the whole name inside a 40px circle.
+export function initialsFrom(v) {
+    const raw = String(v || '').trim();
+    if (!raw) return '';
+    // Already initials (1-2 letters, no spaces) — leave them alone.
+    if (/^[A-Za-z]{1,2}$/.test(raw)) return raw.toUpperCase();
+    const parts = raw.split(/\s+/).filter(Boolean);
+    if (parts.length === 1) return parts[0][0].toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+// A stand-in for a missing photo: one or two letters from the person's name. Same
+// footprint as <Face>, so a card laid out for an avatar does not reflow when there
+// isn't one — which is the usual case, since the API carries a name and a number
+// but often no picture.
 export function Initials({ text, size = 40, radius, style }) {
     const t = useT();
     return (
@@ -250,7 +264,7 @@ export function Initials({ text, size = 40, radius, style }) {
             ]}
         >
             <T w={700} s={Math.round(size * 0.38)} c={t.accent} style={{ letterSpacing: 0.2 }}>
-                {text || '?'}
+                {initialsFrom(text) || '?'}
             </T>
         </View>
     );

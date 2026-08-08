@@ -2,7 +2,7 @@ import React from 'react';
 import { View, ScrollView, TextInput, RefreshControl } from 'react-native';
 import { useVm } from '../AppContext';
 import { useT } from '../ThemeContext';
-import { T, Row, Press, Glyph, Face } from '../ui';
+import { T, Row, Press, Glyph, Face, Avatar } from '../ui';
 import { grotesk } from '../theme';
 
 const col = (v, t) => (v && (v[0] === '#' || v.startsWith('rgb')) ? v : t[v]);
@@ -119,7 +119,7 @@ export default function PeopleScreen() {
                             {/* A wider rail on an unassigned tenant, so the row that
                                 needs action is the one that catches the eye. */}
                             <View style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: col(p.edge, t) === t.amber ? 4 : 3, backgroundColor: col(p.edge, t) }} />
-                            <Face uri={p.img} size={44} radius={14} />
+                            <Avatar uri={p.img} name={p.name} size={44} radius={14} />
                             <View style={{ flex: 1, minWidth: 0 }}>
                                 <T w={600} s={15} lh={1.2} c={t.fg} numberOfLines={1}>{p.name}</T>
                                 <T mono w={600} s={10} lh={1.4} ls={0.08} c={col(p.subFg, t)} numberOfLines={1} style={{ marginTop: 4 }}>{p.sub}</T>

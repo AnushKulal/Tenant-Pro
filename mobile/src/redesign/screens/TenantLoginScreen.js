@@ -26,7 +26,10 @@ export default function TenantLoginScreen() {
                     <Eyebrow s={10} w={600} ls={0.14} c={t.accent} style={{ marginLeft: 10 }}>TENANT SIGN IN</Eyebrow>
                 </Row>
 
-                <T w={700} s={36} lh={1.02} style={{ letterSpacing: -1.8, marginBottom: 26 }}>Hello again,{'\n'}Rahul.</T>
+                {/* Nobody is signed in yet, so there is no name to greet. The
+                    prototype hard-coded "Rahul", which welcomed every visitor by
+                    a stranger's name before they had typed anything. */}
+                <T w={700} s={36} lh={1.02} style={{ letterSpacing: -1.8, marginBottom: 26 }}>Hello{'\n'}again.</T>
 
                 <IdToggle
                     thumbX={vm.idThumbX}

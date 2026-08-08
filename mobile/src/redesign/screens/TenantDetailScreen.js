@@ -2,7 +2,7 @@ import React from 'react';
 import { View, ScrollView } from 'react-native';
 import { useVm } from '../AppContext';
 import { useT } from '../ThemeContext';
-import { T, Eyebrow, Card, Row, Press, Glyph, Face } from '../ui';
+import { T, Eyebrow, Card, Row, Press, Glyph, Face, Avatar } from '../ui';
 
 export default function TenantDetailScreen() {
     const vm = useVm();
@@ -20,7 +20,7 @@ export default function TenantDetailScreen() {
             <Card radius={26} pad={20} style={{ marginBottom: 8 }}>
                 <View style={{ position: 'absolute', right: -40, top: -40, width: 150, height: 150, borderRadius: 75, backgroundColor: col(who.halo) }} />
                 <Row gap={14}>
-                    <Face uri={who.img} size={64} radius={20} />
+                    <Avatar uri={who.img} name={who.name} size={64} radius={20} />
                     <View style={{ flex: 1, minWidth: 0 }}>
                         <T w={700} s={24} lh={1.05} style={{ letterSpacing: -1 }} numberOfLines={1}>{who.name}</T>
                         <Eyebrow s={10} ls={0.08} c={t.fg3} style={{ marginTop: 6 }}>{who.sub}</Eyebrow>

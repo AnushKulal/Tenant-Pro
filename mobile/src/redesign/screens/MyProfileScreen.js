@@ -2,7 +2,7 @@ import React from 'react';
 import { View, ScrollView } from 'react-native';
 import { useVm } from '../AppContext';
 import { useT } from '../ThemeContext';
-import { T, Eyebrow, Face, Glyph, Press } from '../ui';
+import { T, Eyebrow, Face, Glyph, Press, Avatar } from '../ui';
 
 export default function MyProfileScreen() {
     const vm = useVm();
@@ -25,7 +25,7 @@ export default function MyProfileScreen() {
                 }}
             >
                 <View style={{ position: 'relative' }}>
-                    <Face uri={vm.ownerImg} size={88} radius={28} />
+                    <Avatar uri={vm.ownerImg} name={vm.ownerName} size={88} radius={28} />
                     <Press
                         onPress={vm.noop}
                         style={{

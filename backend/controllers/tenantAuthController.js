@@ -75,17 +75,24 @@ const loginTenant = async (req, res) => {
     try {
         // Email OR mobile number, same as the landlord side. `email` still accepted
         // so an older build keeps working.
-        const { email, identifier, password } = req.body;
+        const { email, identifier, password, mode } = req.body;
         const login = String(identifier ?? email ?? '').trim();
 
         if (!login || !password) {
             return res.status(400).json({ message: 'Enter your email or mobile number and your password.' });
         }
 
-        const [rows] = await db.query(
-            'SELECT * FROM tenant_users WHERE email = ? OR phone = ?',
-            [login, login]
-        );
+        // Same as the landlord side: honour the EMAIL/MOBILE switch, so choosing
+        // MOBILE and typing an email address does not quietly sign you in. Optional,
+        // so an older build that sends no mode behaves exactly as before.
+        const want = String(mode || '').trim().toLowerCase();
+        const sql = want === 'mobile'
+            ? 'SELECT * FROM tenant_users WHERE phone = ?'
+            : want === 'email'
+                ? 'SELECT * FROM tenant_users WHERE email = ?'
+                : 'SELECT * FROM tenant_users WHERE email = ? OR phone = ?';
+        const params = want === 'mobile' || want === 'email' ? [login] : [login, login];
+        const [rows] = await db.query(sql, params);
         const user = rows[0];
 
         // Distinguished on purpose — see the note in authController.loginOwner for

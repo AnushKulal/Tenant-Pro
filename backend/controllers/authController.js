@@ -72,17 +72,26 @@ const loginOwner = async (req, res) => {
     try {
         // Sign-in accepts an email OR a mobile number. `identifier` is what the app
         // sends now; `email` is still honoured so an older build keeps working.
-        const { email, identifier, password } = req.body;
+        const { email, identifier, password, mode } = req.body;
         const login = String(identifier ?? email ?? '').trim();
 
         if (!login || !password) {
             return res.status(400).json({ message: 'Enter your email or mobile number and your password.' });
         }
 
-        // One query for both: phone is unique per owner, so matching either column
-        // cannot return someone else's account.
-        const sql = `SELECT * FROM owners WHERE email = ? OR phone = ?`;
-        const [rows] = await db.execute(sql, [login, login]);
+        // `mode` says which KIND of identifier the user chose on the EMAIL/MOBILE
+        // switch. Without it this matched either column, so picking MOBILE and then
+        // typing an email address signed you in anyway — the switch looked like it
+        // meant something and did not. Optional, so an older build that sends no
+        // mode keeps its previous behaviour rather than breaking.
+        const want = String(mode || '').trim().toLowerCase();
+        const sql = want === 'mobile'
+            ? 'SELECT * FROM owners WHERE phone = ?'
+            : want === 'email'
+                ? 'SELECT * FROM owners WHERE email = ?'
+                : 'SELECT * FROM owners WHERE email = ? OR phone = ?';
+        const params = want === 'mobile' || want === 'email' ? [login] : [login, login];
+        const [rows] = await db.execute(sql, params);
         const owner = rows[0];
 
         // These answers are deliberately DIFFERENT, which is a product decision with

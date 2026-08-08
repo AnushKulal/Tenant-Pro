@@ -16,10 +16,29 @@ import { T, Eyebrow, Row, Press, Glyph, Field } from '../ui';
 
 // Resolved once, at first render, so a missing native module is a state to render
 // rather than a crash.
+// Resolve the permission function too, not just the view. expo-camera moved it:
+// SDK <=50 had `Camera.requestCameraPermissionsAsync`, and from SDK 51 it is a
+// TOP-LEVEL export, with `Camera` removed entirely. This screen called the old one,
+// so `mod.Camera` was undefined, `.requestCameraPermissionsAsync` threw a TypeError
+// inside the mount effect, and the whole tree came down — a blank screen, and
+// Android's back button dead because the handler unmounted with it.
+//
+// Every shape is tried rather than pinning one, so this cannot break again the next
+// time the module reorganises.
 function loadCamera() {
     try {
         const mod = require('expo-camera');
-        return mod && mod.CameraView ? mod : null;
+        if (!mod || !mod.CameraView) return null;
+        const ask =
+            (typeof mod.requestCameraPermissionsAsync === 'function' && mod.requestCameraPermissionsAsync) ||
+            (mod.CameraView && typeof mod.CameraView.requestCameraPermissionsAsync === 'function' && mod.CameraView.requestCameraPermissionsAsync.bind(mod.CameraView)) ||
+            (mod.Camera && typeof mod.Camera.requestCameraPermissionsAsync === 'function' && mod.Camera.requestCameraPermissionsAsync.bind(mod.Camera)) ||
+            null;
+        // No way to ask for permission means no usable camera, whatever else the
+        // module exports — fall back to typing the code rather than showing a
+        // viewfinder that can never be allowed.
+        if (!ask) return null;
+        return { CameraView: mod.CameraView, ask };
     } catch (e) {
         return null;
     }
@@ -79,12 +98,19 @@ export default function ScanQrScreen() {
     const W = Dimensions.get('window').width;
     const box = Math.min(280, Math.round(W * 0.72));
 
+    // Belt and braces: whatever this call does, it must not be able to take the
+    // screen down. A throw in a mount effect propagates and unmounts the tree, which
+    // is what produced the blank screen with a dead back button.
     useEffect(() => {
-        if (!camera) return;
+        if (!camera) return undefined;
         let alive = true;
-        camera.Camera.requestCameraPermissionsAsync()
-            .then((res) => { if (alive) setGranted(!!res.granted); })
-            .catch(() => { if (alive) setGranted(false); });
+        try {
+            Promise.resolve(camera.ask())
+                .then((res) => { if (alive) setGranted(!!(res && res.granted)); })
+                .catch(() => { if (alive) setGranted(false); });
+        } catch (e) {
+            setGranted(false);
+        }
         return () => { alive = false; };
     }, [camera]);
 

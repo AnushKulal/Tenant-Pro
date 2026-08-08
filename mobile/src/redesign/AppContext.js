@@ -345,10 +345,13 @@ function deriveVm(s, api) {
   // A two-letter stand-in for a missing photo: the initial of the first name and of
   // the last. A single-word name gives its first two letters rather than one lonely
   // character in a big circle.
+  // "Anush Kulal" → AK, "Nihar Kulal" → NK. One name gets ONE letter rather than
+  // two of its own ("Anush" → A, not AN): two letters from a single word reads like
+  // initials that are not there.
   const initialsOf = (name) => {
     const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
-    if (!parts.length) return '?';
-    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    if (!parts.length) return '';
+    if (parts.length === 1) return parts[0][0].toUpperCase();
     return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
   };
 
@@ -436,6 +439,27 @@ function deriveVm(s, api) {
     const tail = text.split('/').filter(Boolean).pop() || text;
     return tail.toUpperCase().replace(/[^A-Z0-9-]/g, '');
   };
+
+  // Does the typed identifier match the EMAIL/MOBILE switch? '' when it does.
+  //
+  // The switch used to be cosmetic: it changed the label and the keyboard while the
+  // value went to an endpoint matching `email = ? OR phone = ?`, so choosing MOBILE
+  // and typing an email address signed you straight in — on both the landlord and
+  // the tenant screen.
+  const idModeError = (() => {
+    const id = String(s.authId || '').trim();
+    if (!id) return '';
+    if (s.idmode === 'mobile') {
+      if (/^[0-9]{10}$/.test(id)) return '';
+      return /@/.test(id)
+        ? 'That is an email address. Switch to EMAIL to sign in with it.'
+        : 'A mobile number is 10 digits.';
+    }
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(id)) return '';
+    return /^[0-9\s+-]+$/.test(id)
+      ? 'That is a phone number. Switch to MOBILE to sign in with it.'
+      : 'Enter a valid email address.';
+  })();
 
   const whoBase = TENANTS.find((t) => t.id === s.who) || TENANTS[0] || EMPTY_TENANT;
   const who = {
@@ -1105,8 +1129,14 @@ function deriveVm(s, api) {
     tenantIdValue: s.authId,
     // Both endpoints must be the SAME computed type or the transition never starts.
     idThumbX: s.idmode === 'mobile' ? 'calc(50% + 0px)' : 'calc(0% + 4px)',
-    setEmailMode: () => set('idmode', 'email'),
-    setMobileMode: () => set('idmode', 'mobile'),
+    // Switching the mode clears the box. The EMAIL/MOBILE switch used to be
+    // cosmetic — it changed the label and the keyboard while the value still went
+    // to an endpoint that matched either column, so choosing MOBILE and typing an
+    // email address signed you in regardless. Leaving the old value behind after a
+    // switch is the same class of confusion, and any verdict about the previous
+    // identifier ("no account with these details") no longer applies to this one.
+    setEmailMode: () => setState({ idmode: 'email', authId: '', authError: '', authCode: '', authFails: 0 }),
+    setMobileMode: () => setState({ idmode: 'mobile', authId: '', authError: '', authCode: '', authFails: 0 }),
     emailFg: s.idmode === 'email' ? 'ink' : 'fg2',
     mobileFg: s.idmode === 'mobile' ? 'ink' : 'fg2',
     socials: [
@@ -1138,13 +1168,35 @@ function deriveVm(s, api) {
     authFailCount: s.authFails,
     // Changing the identifier invalidates a verdict about the previous one — the
     // "no account with these details" hint must not outlive the details it judged.
-    setAuthId: (e) => setState({ authId: evStr(e), authError: '', authCode: '', authFails: 0 }),
+    setAuthId: (e) => setState({
+      // MOBILE mode keeps digits only, capped at ten: an email address simply
+      // cannot be entered, which is a better answer than accepting it and then
+      // explaining why it was wrong.
+      authId: s.idmode === 'mobile' ? evStr(e).replace(/[^0-9]/g, '').slice(0, 10) : evStr(e),
+      authError: '',
+      authCode: '',
+      authFails: 0
+    }),
     setAuthPw: (e) => set('authPw', evStr(e)),
     setAuthName: (e) => set('authName', evStr(e)),
     setAuthPhone: (e) => set('authPhone', evStr(e)),
     // Signs in against the real backend; picks the owner or tenant endpoint from
     // the current route so one action serves both login screens.
-    submitLogin: () => api.signIn(s.route === 'tlogin' ? 'tenant' : 'owner'),
+    // The identifier has to match the EMAIL/MOBILE switch. Checked here so the
+    // answer is instant and specific ("switch to EMAIL to sign in with that"), and
+    // again inside signIn, which is the half that actually talks to the network.
+    //
+    // Why it matters: the switch used to be cosmetic. It changed the label and the
+    // keyboard while the value went to an endpoint matching `email = ? OR phone = ?`
+    // — so choosing MOBILE and typing an email address signed you straight in, on
+    // both the landlord and the tenant screen.
+    idModeError,
+    submitLogin: () => {
+      const id = String(s.authId || '').trim();
+      if (!id || !s.authPw) { setState({ authError: 'Enter your email/phone and password.' }); return; }
+      if (idModeError) { setState({ authError: idModeError }); return; }
+      api.signIn(s.route === 'tlogin' ? 'tenant' : 'owner');
+    },
     signInLabel: s.authBusy ? 'Signing in…' : 'Sign in',
     isBooting: s.route === 'boot',
     session: s.session,
@@ -1165,6 +1217,7 @@ function deriveVm(s, api) {
     // an onboarding empty state rather than a spinner.
     isEmptyAccount: live && !s.dataLoading && (PROPS.length === 0 && TENANTS.length === 0),
     ownerName: (s.session && s.session.user && s.session.user.name) || '',
+    ownerInitials: initialsOf((s.session && s.session.user && s.session.user.name) || ''),
     ownerEmail: (s.session && s.session.user && s.session.user.email) || '',
     ownerImg: (s.session && s.session.user && s.session.user.profile_pic)
       ? mediaUrl(s.session.user.profile_pic) : null,
@@ -1348,7 +1401,9 @@ function deriveVm(s, api) {
       prop: propName(u.prop),
       go: () => setState({ scope: { ...s.scope, units: u.prop }, route: 'units', overlay: null })
     })),
-    paidFaces: paidList.map((t) => t.img),
+    // {uri, name} rather than a bare URI: a tenant with no photo showed as an
+    // empty gap in the stack instead of their initials.
+    paidFaces: paidList.map((t) => ({ uri: t.img, name: t.name })),
     bars: series.map((v, i) => {
       const now = i === 5;
       return {
@@ -1508,7 +1563,7 @@ function deriveVm(s, api) {
           state: occ.length === 0 ? 'VACANT' : `${occ.length} OF ${u.cap}`,
           dues: owing.length > 0,
           duesLine: owing.length ? `${money(owed)} DUE` : '',
-          faces: occ.map((x) => x.img),
+          faces: occ.map((x) => ({ uri: x.img, name: x.name })),
           open: () => setState({ unit: u.no, overlay: 'unit' })
         };
       }),
@@ -1578,7 +1633,7 @@ function deriveVm(s, api) {
       duesLine: u.late
         ? `${money(u.occ.filter((x) => x.state === 'overdue').reduce((a, x) => a + num(x), 0))} DUE`
         : '',
-      faces: u.occ.map((t) => t.img)
+      faces: u.occ.map((t) => ({ uri: t.img, name: t.name }))
     })),
 
     peopleLine: `${inScope.length} active ${inScope.length === 1 ? 'tenant' : 'tenants'}${overdueList.length ? ` · ${overdueList.length} need chasing` : ' · all paid up'}`,
@@ -2340,9 +2395,9 @@ function deriveVm(s, api) {
     })(),
 
     isTMe: s.route === 'tme',
-    tenantSide: ['portal', 'tfind', 'thelp', 'tstay', 'tme', 'tcheckout', 'tsettings', 'tdocs'].includes(s.route),
+    tenantSide: ['portal', 'tfind', 'thelp', 'tstay', 'tme', 'tcheckout', 'tsettings', 'tdocs', 'tagreement'].includes(s.route),
     showTenantDock: ['portal', 'tfind', 'thelp', 'tstay', 'tme', 'tsettings'].includes(s.route)
-      || (s.route === 'tdocs' && !s.docGate),
+      || (s.route === 'tdocs' && !s.docGate) || s.route === 'tagreement',
     goTMe: () => go('tme'),
     goStay: () => go('tstay'),
     tmeOn: s.route === 'tme' ? '1' : '0',
@@ -2368,10 +2423,101 @@ function deriveVm(s, api) {
       { k: 'DEPOSIT', v: me.deposit, fg: 'fg' },
       { k: 'CREDIT', v: creditOf(me).label, fg: creditOf(me).fg }
     ],
-    myDocs: [
-      { icon: 'card-outline', label: 'AADHAAR' },
-      { icon: 'document-text-outline', label: 'AGREEMENT' }
-    ],
+    // ── The tenant's document tiles ───────────────────────────────────────────
+    // Both were decoration: fixed labels that did nothing and were identical for
+    // everybody. The ID tile now reflects what they have actually uploaded, and the
+    // agreement is LOCKED until there is a tenancy to write one about.
+    //
+    // Two conditions, both necessary:
+    //   • a room — an agreement names the room, the rent and the deposit, so before
+    //     a landlord has placed them there is nothing to put in it;
+    //   • a payment — the tenancy has actually started rather than merely been
+    //     offered. Generating a signed-looking document for somebody who has paid
+    //     nothing would be a document that says something untrue.
+    myDocs: (() => {
+      const idSum = (TD && TD.me && TD.me.id_proof) || null;
+      const paid = TLIVE ? ((TD.payments || []).length > 0) : true;
+      const placed = !!(myUnit && myProp);
+      const ready = placed && paid;
+      return [
+        {
+          key: 'id',
+          icon: 'card-outline',
+          label: 'ID PROOF',
+          state: idSum && idSum.verified ? 'VERIFIED' : idSum && idSum.has_any ? 'PENDING' : 'MISSING',
+          fg: idSum && idSum.verified ? 'pos' : idSum && idSum.has_any ? 'amber' : 'fg3',
+          locked: false,
+          go: () => { api.loadMyDocs(); go('tdocs'); }
+        },
+        {
+          key: 'agreement',
+          icon: 'document-text-outline',
+          label: 'AGREEMENT',
+          state: ready ? 'READY' : 'LOCKED',
+          fg: ready ? 'pos' : 'fg3',
+          locked: !ready,
+          lockLine: !placed
+            ? 'Your agreement is written from the room you are given. Join a property and your landlord will place you in one.'
+            : 'Your agreement unlocks once your first rent payment is recorded.',
+          go: () => {
+            if (!placed) { flash('Join a property first — the agreement is written from your room'); return; }
+            if (!paid) { flash('Your agreement unlocks after your first rent payment'); return; }
+            go('tagreement');
+          }
+        }
+      ];
+    })(),
+
+    // ── The agreement itself ──────────────────────────────────────────────────
+    // Generated from the tenancy rather than stored: every figure in it is already
+    // a column somewhere, and a copy saved at signing time would drift the moment
+    // the rent changed. Nothing here is invented — a clause the backend has no
+    // answer for is left out rather than filled with a plausible number.
+    isAgreement: s.route === 'tagreement',
+    agreement: (() => {
+      const landlord = LANDLORD || null;
+      const start = me.movedIn || '';
+      return {
+        title: 'Rental agreement',
+        subtitle: myProp ? `${myProp.name}${myUnit ? ` · Room ${myUnit.no}` : ''}` : '',
+        // Said plainly: this is a summary of the tenancy, not a stamped legal deed.
+        note: 'This is a summary of the terms recorded in TenantPro, generated from your tenancy. It is not a stamped or registered deed.',
+        parties: [
+          { k: 'LANDLORD', v: landlord ? landlord.name : '', sub: landlord && landlord.phone ? fmtPhone(landlord.phone) : '' },
+          { k: 'TENANT', v: me.name || '', sub: me.phone ? fmtPhone(me.phone) : '' }
+        ].filter((x) => x.v),
+        terms: [
+          { k: 'PROPERTY', v: myProp ? myProp.name : '' },
+          { k: 'ADDRESS', v: myProp ? myProp.address : '' },
+          { k: 'ROOM', v: myUnit ? `${myUnit.no}${myUnit.type ? ` · ${myUnit.type}` : ''}` : '' },
+          { k: 'MONTHLY RENT', v: me.rentFull || '' },
+          { k: 'DEPOSIT HELD', v: me.deposit || '' },
+          { k: 'START DATE', v: start },
+          { k: 'RENT DUE', v: myDue || '' }
+        ].filter((x) => x.v),
+        // Copied out so it can be pasted into a message or an email. Sharing a real
+        // file would need a native print/PDF module, which cannot arrive over the air.
+        copy: () => {
+          const lines = [
+            'RENTAL AGREEMENT — SUMMARY',
+            myProp ? myProp.name : '',
+            myUnit ? `Room ${myUnit.no}` : '',
+            '',
+            landlord ? `Landlord: ${landlord.name}${landlord.phone ? ` (${landlord.phone})` : ''}` : '',
+            `Tenant: ${me.name || ''}${me.phone ? ` (${me.phone})` : ''}`,
+            '',
+            `Monthly rent: ${me.rentFull || ''}`,
+            `Deposit held: ${me.deposit || ''}`,
+            start ? `Start date: ${start}` : '',
+            myDue ? `Next rent due: ${myDue}` : '',
+            '',
+            'Generated by TenantPro. Summary of recorded terms; not a stamped deed.'
+          ].filter(Boolean).join('\n');
+          copyText(lines, 'Agreement copied');
+        },
+        back: () => { if (!api.goBackOneStep()) go('tme'); }
+      };
+    })(),
     tenantDock: [
       ['HOME', 'home-outline', 'portal'],
       ['FIND', 'search-outline', 'tfind'],
@@ -2447,6 +2593,8 @@ function deriveVm(s, api) {
     ],
     portalLinked: !!me.unit,
     portalUnlinked: !me.unit,
+    meFullName: me.name || '',
+    meInitials: initialsOf(me.name),
     me: {
       name: me.name.split(' ')[0],
       img: me.img,
@@ -2853,12 +3001,15 @@ export function AppProvider({ children }) {
   const loadTenantData = useCallback(async ({ refresh = false } = {}) => {
     setState(refresh ? { refreshing: true, dataError: '' } : { dataLoading: true, dataError: '' });
     try {
-      const [meRes, reqRes] = await Promise.all([
+      // Payments come along too: "has this tenant ever paid" is what unlocks the
+      // agreement, and it is the same call the payment history will read.
+      const [meRes, reqRes, payRes] = await Promise.all([
         apiPortal.me(),
-        apiPortal.requests().catch(() => ({ requests: [] }))
+        apiPortal.requests().catch(() => ({ requests: [] })),
+        apiPortal.payments().catch(() => ({ payments: [] }))
       ]);
       setState({
-        tdata: { me: meRes, requests: reqRes.requests || [] },
+        tdata: { me: meRes, requests: reqRes.requests || [], payments: payRes.payments || [] },
         dataLoading: false,
         refreshing: false,
         dataError: ''
@@ -3375,8 +3526,17 @@ export function AppProvider({ children }) {
     try {
       if (kind === 'camera') {
         const cam = require('expo-camera');
-        if (!cam || !cam.Camera) { done('missing'); return; }
-        const res = await cam.Camera.requestCameraPermissionsAsync();
+        // expo-camera moved this: SDK <=50 had `Camera.requestCameraPermissionsAsync`,
+        // and from SDK 51 it is a top-level export with `Camera` removed. Asking for
+        // the old one found `undefined` and this reported "not in this build" for a
+        // camera that was in the build all along — so the user could not grant it.
+        const ask =
+          (typeof cam.requestCameraPermissionsAsync === 'function' && cam.requestCameraPermissionsAsync) ||
+          (cam.CameraView && typeof cam.CameraView.requestCameraPermissionsAsync === 'function' && cam.CameraView.requestCameraPermissionsAsync.bind(cam.CameraView)) ||
+          (cam.Camera && typeof cam.Camera.requestCameraPermissionsAsync === 'function' && cam.Camera.requestCameraPermissionsAsync.bind(cam.Camera)) ||
+          null;
+        if (!ask) { done('missing'); return; }
+        const res = await ask();
         done(res && res.granted ? 'granted' : 'denied');
         return;
       }
@@ -3590,16 +3750,39 @@ export function AppProvider({ children }) {
   }, [setState, loadOwnerData, loadTenantData]);
 
   const signIn = useCallback(async (role) => {
-    const { authId, authPw } = stateRef.current;
-    if (!authId.trim() || !authPw) {
+    const { authId, authPw, idmode } = stateRef.current;
+    const id = String(authId || '').trim();
+    if (!id || !authPw) {
       setState({ authError: 'Enter your email/phone and password.' });
+      return;
+    }
+    // The EMAIL/MOBILE switch has to mean something. It used to change only the
+    // label and the keyboard, while the value went to an endpoint that matched
+    // either column — so choosing MOBILE and typing an email address signed you in,
+    // which is what made the switch look broken. Checked here as well as on the
+    // server, because this is the half that can explain itself.
+    if (idmode === 'mobile' && !/^[0-9]{10}$/.test(id)) {
+      setState({
+        authError: /@/.test(id)
+          ? 'That is an email address. Switch to EMAIL to sign in with it.'
+          : 'A mobile number is 10 digits.'
+      });
+      return;
+    }
+    if (idmode !== 'mobile' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(id)) {
+      setState({
+        authError: /^[0-9\s+-]+$/.test(id)
+          ? 'That is a phone number. Switch to MOBILE to sign in with it.'
+          : 'Enter a valid email address.'
+      });
       return;
     }
     setState({ authBusy: true, authError: '' });
     try {
+      // `idmode` goes with it so the server looks in that column only.
       const res = role === 'tenant'
-        ? await apiAuth.loginTenant(authId.trim(), authPw)
-        : await apiAuth.loginOwner(authId.trim(), authPw);
+        ? await apiAuth.loginTenant(id, authPw, idmode)
+        : await apiAuth.loginOwner(id, authPw, idmode);
       const user = res.owner || res.tenant || null;
       if (role === 'tenant') await saveTenantSession(res.token, user);
       else await saveOwnerSession(res.token, user);

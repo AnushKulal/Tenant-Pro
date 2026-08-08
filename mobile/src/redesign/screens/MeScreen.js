@@ -2,7 +2,7 @@ import React from 'react';
 import { View, ScrollView } from 'react-native';
 import { useVm } from '../AppContext';
 import { useT } from '../ThemeContext';
-import { T, Eyebrow, Card, Row, Pill, Press, Glyph, Face } from '../ui';
+import { T, Eyebrow, Card, Row, Pill, Press, Glyph, Face, Avatar } from '../ui';
 
 export default function MeScreen() {
     const vm = useVm();
@@ -26,7 +26,7 @@ export default function MeScreen() {
                             <View style={{ position: 'absolute', right: -40, top: -40, width: 150, height: 150, borderRadius: 75, backgroundColor: col(cr.bg) }} />
                         )}
                         <Row gap={14}>
-                            <Face uri={me.img} size={64} radius={20} />
+                            <Avatar uri={me.img} name={vm.meFullName} size={64} radius={20} />
                             <View style={{ flex: 1, minWidth: 0 }}>
                                 <T w={700} s={24} lh={1.05} style={{ letterSpacing: -1 }}>{me.name}</T>
                                 <T mono w={600} s={10} lh={1.4} ls={0.08} c={t.fg3} style={{ marginTop: 6 }}>{me.unitLine}</T>
@@ -112,13 +112,28 @@ export default function MeScreen() {
                     <Card radius={22} style={{ marginBottom: 8, paddingHorizontal: 18 }}>
                         <Eyebrow s={10} ls={0.12} style={{ marginBottom: 12 }}>DOCUMENTS</Eyebrow>
                         <Row gap={8} align="stretch">
-                            {vm.myDocs.map((md, i) => (
-                                <View key={i} style={{ flex: 1, borderRadius: 14, borderWidth: 1, borderColor: t.line, backgroundColor: t.ink3, paddingVertical: 12, paddingHorizontal: 10, alignItems: 'flex-start', rowGap: 9 }}>
-                                    <Glyph name={md.icon} size={17} color={t.accent} />
+                            {vm.myDocs.map((md) => (
+                                <Press
+                                    key={md.key}
+                                    onPress={md.go}
+                                    style={{ flex: 1, borderRadius: 14, borderWidth: 1, borderColor: t.line, backgroundColor: t.ink3, paddingVertical: 12, paddingHorizontal: 10, alignItems: 'flex-start', rowGap: 9, opacity: md.locked ? 0.55 : 1 }}
+                                >
+                                    <Row gap={6}>
+                                        <Glyph name={md.locked ? 'lock-closed-outline' : md.icon} size={17} color={md.locked ? t.fg3 : t.accent} />
+                                    </Row>
                                     <T mono w={600} s={9} lh={1.3} ls={0.06} c={t.fg2}>{md.label}</T>
-                                </View>
+                                    <T mono w={600} s={8} lh={1.2} ls={0.08} c={col(md.fg)}>{md.state}</T>
+                                </Press>
                             ))}
                         </Row>
+
+                        {/* Why the agreement is locked, spelled out rather than left
+                            as a greyed tile the tenant cannot explain. */}
+                        {vm.myDocs.filter((md) => md.locked && md.lockLine).map((md) => (
+                            <T key={md.key} w={400} s={12} lh={1.45} c={t.fg3} style={{ marginTop: 11 }}>
+                                {md.lockLine}
+                            </T>
+                        ))}
                     </Card>
 
                     {/* Action buttons */}

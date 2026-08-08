@@ -5,7 +5,7 @@ import React from 'react';
 import { View } from 'react-native';
 import { useVm } from './AppContext';
 import { useT } from './ThemeContext';
-import { T, Press, Glyph, Face } from './ui';
+import { T, Press, Glyph, Face, Avatar } from './ui';
 
 const DOCK_RADIUS = { borderTopLeftRadius: 16, borderTopRightRadius: 16, borderBottomLeftRadius: 6, borderBottomRightRadius: 6 };
 
@@ -75,7 +75,7 @@ export default function DeckDock() {
                             ...DOCK_RADIUS
                         }}
                     >
-                        <Face uri={vm.me && vm.me.img} size={22} radius={11} />
+                        <Avatar uri={vm.me && vm.me.img} name={vm.meFullName} size={22} radius={11} />
                         <T mono w={600} s={8} lh={1} ls={0.06} c={col(vm.tmeFg)}>ME</T>
                     </Press>
                 ) : (
@@ -95,7 +95,7 @@ export default function DeckDock() {
                             ...DOCK_RADIUS
                         }}
                     >
-                        <Face uri={vm.ownerImg} size={22} radius={11} />
+                        <Avatar uri={vm.ownerImg} name={vm.ownerName} size={22} radius={11} />
                         <T mono w={600} s={8} lh={1} ls={0.06} c={t.fg2}>YOU</T>
                     </Press>
                 )}
