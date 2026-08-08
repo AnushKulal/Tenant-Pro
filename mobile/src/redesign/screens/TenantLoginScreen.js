@@ -77,6 +77,35 @@ export default function TenantLoginScreen() {
                     </Row>
                 ) : null}
 
+
+                {vm.authOfferSignup ? (
+                    <View style={{ marginBottom: 12, paddingVertical: 13, paddingHorizontal: 14, borderRadius: 16, backgroundColor: t.vsoft, borderWidth: 1, borderColor: t.line }}>
+                        <T w={500} s={12.5} lh={1.45} c={t.fg2} style={{ marginBottom: 11 }}>{vm.authSignupLine}</T>
+                        <Press
+                            onPress={vm.goSignup}
+                            style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', columnGap: 7, paddingVertical: 13, borderRadius: 999, backgroundColor: t.lime }}
+                        >
+                            <Glyph name="person-add" size={16} color={t.on} />
+                            <T w={700} s={13.5} c={t.on}>Create an account</T>
+                        </Press>
+                    </View>
+                ) : null}
+
+                {vm.authOfferReset ? (
+                    <View style={{ marginBottom: 12, paddingVertical: 13, paddingHorizontal: 14, borderRadius: 16, backgroundColor: t.asoft, borderWidth: 1, borderColor: t.line }}>
+                        <Row gap={9} align="flex-start" style={{ marginBottom: 11 }}>
+                            <Glyph name="key-outline" size={15} color={t.amber} />
+                            <T w={500} s={12.5} lh={1.45} c={t.amber} style={{ flex: 1 }}>{vm.authResetLine}</T>
+                        </Row>
+                        <Press
+                            onPress={vm.goForgot}
+                            style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', columnGap: 7, paddingVertical: 13, borderRadius: 999, backgroundColor: t.lime }}
+                        >
+                            <Glyph name="mail-outline" size={16} color={t.on} />
+                            <T w={700} s={13.5} c={t.on}>Reset my password</T>
+                        </Press>
+                    </View>
+                ) : null}
                 <Press
                     onPress={vm.submitLogin}
                     disabled={vm.authBusy}

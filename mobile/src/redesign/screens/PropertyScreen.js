@@ -95,21 +95,38 @@ export default function PropertyScreen() {
 
             {/* Units here */}
             <View style={{ borderRadius: 22, backgroundColor: t.ink2, borderWidth: 1, borderColor: t.line, paddingVertical: 16, paddingHorizontal: 18 }}>
-                <Row justify="space-between" style={{ marginBottom: 12 }}>
-                    <Eyebrow s={10} ls={0.12} c={t.fg3}>UNITS HERE</Eyebrow>
+                <Row justify="space-between" align="flex-start" style={{ marginBottom: 12 }}>
+                    <View style={{ flex: 1 }}>
+                        <Eyebrow s={10} ls={0.12} c={t.fg3}>ROOMS HERE</Eyebrow>
+                        <T w={400} s={12} lh={1.4} c={t.fg2} style={{ marginTop: 5 }}>{place.roomsLine}</T>
+                    </View>
                     <Press onPress={place.viewUnits}>
                         <View style={{ paddingVertical: 6, paddingHorizontal: 11, borderRadius: 999, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line }}>
                             <T mono w={600} s={9} lh={1} ls={0.08} c={t.fg2}>SEE ALL</T>
                         </View>
                     </Press>
                 </Row>
+                {/* Each room, tappable, with a red mark and the amount when whoever
+                    lives there is behind on rent. */}
                 {(place.units || []).map((pu, i) => (
-                    <Row key={i} gap={12} style={{ paddingVertical: 9 }}>
-                        <T w={700} s={16} lh={1} c={t.fg} style={{ width: 38 }}>{pu.no}</T>
-                        <T w={500} s={13} lh={1.2} c={t.fg2} style={{ flex: 1 }}>{pu.type}</T>
-                        <T w={600} s={13} lh={1} c={t.fg} style={{ marginRight: 10 }}>{pu.rent}</T>
-                        <T mono w={600} s={9} lh={1} ls={0.06} c={t[pu.fg]} style={{ width: 62, textAlign: 'right' }}>{pu.state}</T>
-                    </Row>
+                    <Press key={i} onPress={pu.open}>
+                        <Row gap={11} style={{ paddingVertical: 10, borderTopWidth: i ? 1 : 0, borderTopColor: t.line }}>
+                            <T w={700} s={16} lh={1} c={t.fg} style={{ width: 36 }}>{pu.no}</T>
+                            <View style={{ flex: 1, minWidth: 0 }}>
+                                <T w={500} s={13} lh={1.2} c={t.fg2} numberOfLines={1}>{pu.type}</T>
+                                {pu.dues ? (
+                                    <Row align="center" gap={4} style={{ marginTop: 5, alignSelf: 'flex-start', paddingVertical: 2, paddingHorizontal: 6, borderRadius: 999, backgroundColor: t.coral }}>
+                                        <Glyph name="alert-circle" size={9} color={t.ink} />
+                                        <T mono w={700} s={8} lh={1} ls={0.04} c={t.ink}>{pu.duesLine}</T>
+                                    </Row>
+                                ) : null}
+                            </View>
+                            <View style={{ alignItems: 'flex-end' }}>
+                                <T w={600} s={13} lh={1} c={t.fg}>{pu.rent}</T>
+                                <T mono w={600} s={9} lh={1} ls={0.06} c={t[pu.fg]} style={{ marginTop: 5 }}>{pu.state}</T>
+                            </View>
+                        </Row>
+                    </Press>
                 ))}
             </View>
         </ScrollView>

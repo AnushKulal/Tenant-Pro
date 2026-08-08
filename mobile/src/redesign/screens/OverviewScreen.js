@@ -171,11 +171,28 @@ export default function OverviewScreen() {
                 contentContainerStyle={{ gap: 6, paddingHorizontal: 18, paddingBottom: 2 }}
                 style={{ marginHorizontal: -18, marginBottom: 12 }}
             >
+                {/* Tappable: each chip filters the list below, and tapping the
+                    active one clears it. The selected chip gets a ring so it reads
+                    as a control rather than a tally. */}
                 {vm.ticketCounts.map((tc, i) => (
-                    <Row key={i} align="center" gap={6} style={{ paddingVertical: 6, paddingHorizontal: 11, borderRadius: 999, backgroundColor: col(tc.bg) }}>
-                        <T mono w={600} s={9} lh={1} ls={0.08} c={col(tc.fg)}>{tc.label}</T>
-                        <T w={700} s={11} lh={1} c={col(tc.fg)}>{tc.n}</T>
-                    </Row>
+                    <Press key={i} onPress={tc.go}>
+                        <Row
+                            align="center"
+                            gap={6}
+                            style={{
+                                paddingVertical: 6,
+                                paddingHorizontal: 11,
+                                borderRadius: 999,
+                                backgroundColor: col(tc.bg),
+                                borderWidth: 1,
+                                borderColor: tc.on ? col(tc.fg) : 'transparent'
+                            }}
+                        >
+                            <T mono w={600} s={9} lh={1} ls={0.08} c={col(tc.fg)}>{tc.label}</T>
+                            <T w={700} s={11} lh={1} c={col(tc.fg)}>{tc.n}</T>
+                            {tc.on && tc.label !== 'ALL' ? <Glyph name="close" size={11} color={col(tc.fg)} /> : null}
+                        </Row>
+                    </Press>
                 ))}
             </ScrollView>
 

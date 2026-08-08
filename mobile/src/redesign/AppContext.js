@@ -49,6 +49,8 @@ const INITIAL_STATE = {
   route: 'boot', overlay: null, filter: 'all', who: 'amit', method: 'UPI', toast: '',
   theme: null, pref: 'dark', q: '', pq: '', place: 'sunrise', ticket: 1, tstatus: {},
   roster: {}, gone: [], mover: null, invite: 'sunrise', jq: '', rents: {}, draft: 0,
+  // Which priority the dashboard's ticket list is filtered to ('all' = every one).
+  tprio: 'all',
   idmode: 'email', adult: true, jfilter: 'all', paymethod: 'gpay', paid: false,
   unit: '101', fx: '0',
   scope: { home: 'all', units: 'all', people: 'all' },
@@ -79,6 +81,13 @@ const INITIAL_STATE = {
   authPhone: '',          // register only
   authBusy: false,
   authError: '',
+  // The server's own error code alongside the message. A hint should key off a
+  // fact ('NOT_REGISTERED'), never off matching the wording of a sentence that
+  // someone will reword one day.
+  authCode: '',
+  // Consecutive failed sign-ins for this screen. Three wrong passwords is the
+  // point at which "I have forgotten it" becomes likelier than a typo.
+  authFails: 0,
   signupRole: 'owner',  // which login screen 'Create account' was tapped from
   req: null,            // index of the tenant request opened from Help
 
@@ -403,9 +412,11 @@ function deriveVm(s, api) {
     });
   const vacantList = unitList.filter((u) => u.vacant);
   const vacantCount = vacantList.length;
+  // Describes whichever list the Properties tab is showing: the properties
+  // themselves, or one property's rooms once you have picked one.
   const unitsLine = scoped
-    ? `${unitList.length} units in ${scopeProp.name} · ${vacantCount || 'no'} vacant`
-    : `${UNITS.length} units across ${PROPS.length} properties · ${vacantCount} vacant`;
+    ? `${unitList.length} ${unitList.length === 1 ? 'room' : 'rooms'} in ${scopeProp.name} · ${vacantCount || 'no'} vacant`
+    : `${PROPS.length} ${PROPS.length === 1 ? 'property' : 'properties'} · ${UNITS.length} ${UNITS.length === 1 ? 'room' : 'rooms'} · ${vacantCount} vacant`;
 
   const unitProp = {}; UNITS.forEach((u) => { unitProp[u.no] = u.prop; });
   const propName = (id) => (PROPS.find((p) => p.id === id) || {}).name || '';
@@ -454,9 +465,16 @@ function deriveVm(s, api) {
 
   const statusOf = (t) => s.tstatus[t.id] || t.status;
   const STATUS_FG = { Open: 'fg2', 'In progress': 'amber', Resolved: 'pos' };
-  const shownTickets = TICKETS
+  // Every open ticket in scope, before the priority filter — the counts have to be
+  // computed from this, or filtering to HIGH would leave every other chip reading 0
+  // and there would be no way back.
+  const openTickets = TICKETS
     .filter((t) => (!scoped || unitProp[t.unit] === curProp) && statusOf(t) !== 'Resolved')
     .sort((a, b) => PRIORITY[a.priority].rank - PRIORITY[b.priority].rank);
+  const prioFilter = s.tprio || 'all';
+  const shownTickets = prioFilter === 'all'
+    ? openTickets
+    : openTickets.filter((t) => t.priority === prioFilter);
   const card = (t) => {
     const p = PRIORITY[t.priority];
     // A live ticket carries the raiser's own name/photo, so it still reads as
@@ -484,12 +502,40 @@ function deriveVm(s, api) {
   // The dashboard only ever carries the top of the pile.
   const urgent = shownTickets.filter((t) => t.priority === 'Critical' || t.priority === 'High').slice(0, 3);
   const preview = (urgent.length ? urgent : shownTickets.slice(0, 2)).map(card);
-  const counts = ['Critical', 'High', 'Medium', 'Low'].map((k) => ({
-    label: k.toUpperCase(),
-    n: String(shownTickets.filter((t) => t.priority === k).length),
-    fg: PRIORITY[k].fg,
-    bg: PRIORITY[k].bg
-  })).filter((c) => c.n !== '0');
+  // The priority chips are filters, not just a tally: tapping one narrows the list
+  // below and tapping it again clears it. Counts come from `openTickets` so they
+  // stay honest while a filter is on, and a chip with nothing in it is not offered
+  // at all — a filter that empties the list teaches nothing.
+  const counts = (() => {
+    const bands = ['Critical', 'High', 'Medium', 'Low']
+      .map((k) => ({
+        key: k,
+        label: k.toUpperCase(),
+        n: String(openTickets.filter((t) => t.priority === k).length),
+        fg: PRIORITY[k].fg,
+        bg: PRIORITY[k].bg
+      }))
+      .filter((c) => c.n !== '0')
+      .map((c) => ({
+        ...c,
+        on: prioFilter === c.key,
+        go: () => set('tprio', prioFilter === c.key ? 'all' : c.key)
+      }));
+    // An explicit ALL chip, but only once there is more than one band to choose
+    // between — otherwise it is a filter with a single option.
+    if (bands.length > 1) {
+      bands.unshift({
+        key: 'all',
+        label: 'ALL',
+        n: String(openTickets.length),
+        fg: 'fg',
+        bg: 'ink3',
+        on: prioFilter === 'all',
+        go: () => set('tprio', 'all')
+      });
+    }
+    return bands;
+  })();
   // What actually needs the landlord's attention, built from data already on
   // hand: no new endpoint and no polling. Derived once so the bell's dot and the
   // sheet's contents are the same list.
@@ -886,7 +932,20 @@ function deriveVm(s, api) {
     authBusy: s.authBusy,
     authError: s.authError,
     hasAuthError: !!s.authError,
-    setAuthId: (e) => set('authId', evStr(e)),
+    // ── Hints that follow the failure ──
+    // No account with these details: the answer is to make one, so offer it right
+    // there in lime rather than making them find "Create account" at the bottom.
+    authOfferSignup: s.authCode === 'NOT_REGISTERED',
+    authSignupLine: s.route === 'tlogin'
+      ? 'No tenant account uses these details yet.'
+      : 'No landlord account uses these details yet.',
+    // Three wrong passwords in a row: stop letting them guess a fourth time.
+    authOfferReset: s.authFails >= 3 && s.authCode !== 'NOT_REGISTERED',
+    authResetLine: 'That is three attempts. Reset your password instead of guessing.',
+    authFailCount: s.authFails,
+    // Changing the identifier invalidates a verdict about the previous one — the
+    // "no account with these details" hint must not outlive the details it judged.
+    setAuthId: (e) => setState({ authId: evStr(e), authError: '', authCode: '', authFails: 0 }),
     setAuthPw: (e) => set('authPw', evStr(e)),
     setAuthName: (e) => set('authName', evStr(e)),
     setAuthPhone: (e) => set('authPhone', evStr(e)),
@@ -926,6 +985,7 @@ function deriveVm(s, api) {
     goForgot: () => setState({
       route: 'forgot',
       overlay: null,
+      authError: '', authCode: '', authFails: 0,
       fp: { ...BLANK_FP, role: s.route === 'tlogin' ? 'tenant' : 'owner', id: s.authId || '' }
     }),
     isForgot: s.route === 'forgot',
@@ -1112,9 +1172,18 @@ function deriveVm(s, api) {
 
     tickets: preview,
     ticketCounts: counts,
-    ticketTotal: `${shownTickets.length} OPEN`,
+    ticketTotal: prioFilter === 'all'
+      ? `${shownTickets.length} OPEN`
+      : `${shownTickets.length} ${prioFilter.toUpperCase()}`,
+    ticketsFiltered: prioFilter !== 'all',
+    ticketFilterLabel: prioFilter === 'all' ? '' : prioFilter.toUpperCase(),
+    clearTicketFilter: () => set('tprio', 'all'),
     ticketsEmpty: !shownTickets.length,
-    ticketsEmptyLine: scoped ? `No open tickets in ${scopeProp.name}.` : 'No open tickets. Nothing to chase.',
+    // Say which of the two reasons the list is empty, since one of them is
+    // something the user just did and can undo.
+    ticketsEmptyLine: prioFilter !== 'all'
+      ? `No ${prioFilter.toLowerCase()}-priority tickets open right now.`
+      : scoped ? `No open tickets in ${scopeProp.name}.` : 'No open tickets. Nothing to chase.',
     hasMoreTickets: shownTickets.length > preview.length,
     moreTicketsLabel: `View all ${shownTickets.length} tickets`,
     openAllTickets: () => set('overlay', 'tickets'),
@@ -1163,15 +1232,51 @@ function deriveVm(s, api) {
       amt: `+₹${p.amt}`, date: p.date
     })),
 
+    // The Properties tab is a vertical list of PROPERTIES — one card each, with the
+    // things a landlord scans for: where it is, how many rooms are free, and whether
+    // anyone in it owes money. Rooms live inside a property, so they are one tap in
+    // rather than a second horizontal strip of everything at once.
+    //
+    // The prototype computed occupancy from `u.vacant` on raw UNITS rows, where that
+    // field does not exist — so every room read as occupied and the pips were always
+    // lime. Occupancy is now counted from who actually lives there.
     properties: PROPS.map((p) => {
       const own = UNITS.filter((u) => u.prop === p.id);
-      // Verbatim from the source: raw UNITS items carry no `vacant` field, so
-      // `u.vacant` is undefined here (matches the prototype's rendered output).
-      const free = own.filter((u) => u.vacant).length;
+      const rooms = own.map((u) => {
+        const occ = occupantsOf(u.no);
+        return {
+          no: u.no,
+          vacant: occ.length === 0,
+          free: u.cap - occ.length,
+          // Anyone in this room past their due date. This is what puts the red mark
+          // on the room and on the property card.
+          owing: occ.filter((x) => x.state === 'overdue')
+        };
+      });
+      const free = rooms.filter((r) => r.vacant).length;
+      const owingRooms = rooms.filter((r) => r.owing.length);
+      const owed = rooms.reduce((a, r) => a + r.owing.reduce((b, x) => b + num(x), 0), 0);
       return {
-        name: p.name, loc: p.loc, img: p.img,
+        id: p.id,
+        name: p.name,
+        loc: p.loc,
+        img: p.img,
         stat: `${own.length - free} / ${own.length} FULL`,
-        pips: own.map((u) => (u.vacant ? 'line2' : 'lime')),
+        // Vacancy, said as a fact rather than a fraction to decode.
+        vacantLine: own.length === 0
+          ? 'No rooms yet'
+          : free
+            ? `${free} ${free === 1 ? 'room' : 'rooms'} vacant`
+            : 'Every room filled',
+        vacantFg: own.length === 0 ? 'fg3' : free ? 'amber' : 'pos',
+        // The red mark: money owed inside this property.
+        dues: owingRooms.length > 0,
+        duesLine: owingRooms.length
+          ? `${money(owed)} due · ${owingRooms.map((r) => r.no).join(', ')}`
+          : '',
+        duesCount: String(owingRooms.length),
+        pips: rooms.map((r) => (r.owing.length ? 'coral' : r.vacant ? 'amber' : 'lime')),
+        roomCount: own.length ? `${own.length} ${own.length === 1 ? 'ROOM' : 'ROOMS'}` : 'NO ROOMS',
         border: 'line',
         dim: 1,
         badge: p.rating,
@@ -1193,12 +1298,34 @@ function deriveVm(s, api) {
       mapSrc: `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${place.lat},${place.lon}`,
       mapsUrl: `https://www.google.com/maps/search/?api=1&query=${place.lat},${place.lon}`,
       osmUrl: `https://www.openstreetmap.org/?mlat=${place.lat}&mlon=${place.lon}#map=17/${place.lat}/${place.lon}`,
-      // Verbatim from the source: `u.vacant` is undefined on raw UNITS items.
-      units: UNITS.filter((u) => u.prop === place.id).map((u) => ({
-        no: u.no, type: u.type.replace(' · VACANT', ''), rent: u.rent,
-        fg: u.vacant ? 'amber' : 'fg2',
-        state: u.vacant ? 'VACANT' : 'OCCUPIED'
-      })),
+      // The prototype read `u.vacant` off raw UNITS rows, where that field does not
+      // exist — so every room here claimed to be OCCUPIED regardless. Occupancy is
+      // counted from who actually lives in it, and a room whose tenant owes rent
+      // carries the red mark and the amount.
+      units: UNITS.filter((u) => u.prop === place.id).map((u) => {
+        const occ = occupantsOf(u.no);
+        const owing = occ.filter((x) => x.state === 'overdue');
+        const owed = owing.reduce((a, x) => a + num(x), 0);
+        return {
+          no: u.no,
+          type: u.type.replace(' · VACANT', ''),
+          rent: u.rent,
+          vacant: occ.length === 0,
+          fg: occ.length === 0 ? 'amber' : owing.length ? 'coral' : 'fg2',
+          state: occ.length === 0 ? 'VACANT' : `${occ.length} OF ${u.cap}`,
+          dues: owing.length > 0,
+          duesLine: owing.length ? `${money(owed)} DUE` : '',
+          faces: occ.map((x) => x.img),
+          open: () => setState({ unit: u.no, overlay: 'unit' })
+        };
+      }),
+      roomsLine: (() => {
+        const own = UNITS.filter((u) => u.prop === place.id);
+        const free = own.filter((u) => occupantsOf(u.no).length === 0).length;
+        return own.length
+          ? `${own.length} ${own.length === 1 ? 'room' : 'rooms'} · ${free || 'no'} vacant`
+          : 'No rooms yet';
+      })(),
       viewUnits: () => setState({ scope: { ...s.scope, units: place.id }, route: 'units' })
     },
 
@@ -1242,6 +1369,9 @@ function deriveVm(s, api) {
       }
     })),
 
+    // True once a property is chosen: the tab then lists that property's rooms
+    // instead of the properties.
+    showingRooms: scoped,
     units: unitList.map((u) => ({
       no: u.no, rent: u.rent, beds: u.beds,
       open: () => setState({ unit: u.no, overlay: 'unit' }),
@@ -1250,6 +1380,11 @@ function deriveVm(s, api) {
       fg: 'fg',
       sub: u.vacant ? 'amber' : u.late ? 'coral' : 'fg3',
       dot: u.vacant ? 'amber' : u.late ? 'coral' : 'lime',
+      // The red mark, and what it is for: somebody in this room owes rent.
+      dues: u.late,
+      duesLine: u.late
+        ? `${money(u.occ.filter((x) => x.state === 'overdue').reduce((a, x) => a + num(x), 0))} DUE`
+        : '',
       faces: u.occ.map((t) => t.img)
     })),
 
@@ -2689,14 +2824,23 @@ export function AppProvider({ children }) {
       setToken(res.token);
       setState({
         session: { role, token: res.token, user },
-        authBusy: false, authPw: '', authError: '',
+        authBusy: false, authPw: '', authError: '', authCode: '', authFails: 0,
         route: role === 'tenant' ? 'portal' : 'home'
       });
       flash(`Welcome back${user && user.name ? `, ${String(user.name).split(' ')[0]}` : ''}`);
       if (role === 'owner') loadOwnerData();
       else loadTenantData();
     } catch (e) {
-      setState({ authBusy: false, authError: errText(e, 'Sign in failed. Check your details and try again.') });
+      const code = (e && e.response && e.response.data && e.response.data.code) || '';
+      setState({
+        authBusy: false,
+        authError: errText(e, 'Sign in failed. Check your details and try again.'),
+        authCode: code,
+        // Only a wrong password counts toward the forgot-password nudge. An
+        // unregistered address is a different problem with a different answer, and
+        // a network failure is nobody's fault.
+        authFails: code === 'NOT_REGISTERED' ? 0 : stateRef.current.authFails + 1
+      });
     }
   }, [setState, flash, loadOwnerData, loadTenantData]);
 
