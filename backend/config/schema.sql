@@ -113,21 +113,7 @@ CREATE TABLE IF NOT EXISTS `expenses` (
   CONSTRAINT `expenses_ibfk_1` FOREIGN KEY (`property_id`) REFERENCES `properties` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
--- 7. payments (-> tenants)
-CREATE TABLE IF NOT EXISTS `payments` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `tenant_id` int(11) NOT NULL,
-  `amount_paid` decimal(10,2) NOT NULL,
-  `payment_date` date NOT NULL,
-  `payment_method` varchar(50) NOT NULL,
-  `reference_id` varchar(100) DEFAULT NULL,
-  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
-  PRIMARY KEY (`id`),
-  KEY `tenant_id` (`tenant_id`),
-  CONSTRAINT `payments_ibfk_1` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
--- 8. payment_settings (-> owners)
+-- 7. payment_settings (-> owners)
 CREATE TABLE IF NOT EXISTS `payment_settings` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `owner_id` int(11) NOT NULL,
@@ -140,7 +126,7 @@ CREATE TABLE IF NOT EXISTS `payment_settings` (
   CONSTRAINT `payment_settings_ibfk_1` FOREIGN KEY (`owner_id`) REFERENCES `owners` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
--- 9. rent_invoices (-> leases)
+-- 8. rent_invoices (-> leases)
 CREATE TABLE IF NOT EXISTS `rent_invoices` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `lease_id` int(11) NOT NULL,
@@ -155,7 +141,7 @@ CREATE TABLE IF NOT EXISTS `rent_invoices` (
   CONSTRAINT `rent_invoices_ibfk_1` FOREIGN KEY (`lease_id`) REFERENCES `leases` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
--- 12. tenant_users (login accounts for tenants — separate from owner-created `tenants` records)
+-- 9. tenant_users (login accounts for tenants — separate from owner-created `tenants` records)
 CREATE TABLE IF NOT EXISTS `tenant_users` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `name` varchar(100) NOT NULL,
@@ -167,6 +153,51 @@ CREATE TABLE IF NOT EXISTS `tenant_users` (
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   PRIMARY KEY (`id`),
   UNIQUE KEY `email` (`email`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- 10. payments (-> tenants, tenant_users)
+--
+-- Sits after tenant_users rather than beside the other money tables because
+-- `declared_by` points at it, and this file creates tables in dependency order.
+--
+-- A row here is not automatically money in hand. There are two ways one appears:
+--
+--   * The landlord records it themselves, because they watched it arrive. That is
+--     their own statement, so it is born 'Confirmed'.
+--   * The tenant says in the app that they have paid. That is a claim about money
+--     the landlord has not acknowledged yet, so it is born 'Declared' and counts
+--     for nothing until the landlord agrees.
+--
+-- The distinction is not cosmetic: confirming a payment advances the tenant's
+-- `next_rent_due`, which is what clears the month. If a Declared row counted, a
+-- tenant could settle their own dues by typing a number, so every total --
+-- rent collected, the six-month chart, the transaction ledger -- filters on
+-- status = 'Confirmed'. 'Declared' is deliberately NOT the column default:
+-- every INSERT that predates this column came from the landlord.
+CREATE TABLE IF NOT EXISTS `payments` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `tenant_id` int(11) NOT NULL,
+  `amount_paid` decimal(10,2) NOT NULL,
+  `payment_date` date NOT NULL,
+  `payment_method` varchar(50) NOT NULL,
+  `reference_id` varchar(100) DEFAULT NULL,
+  `status` enum('Declared','Confirmed','Rejected') NOT NULL DEFAULT 'Confirmed',
+  -- Which tenant_users account claimed it. NULL means the landlord entered the
+  -- row, which is also how a Confirmed payment with no claim behind it reads.
+  `declared_by` int(11) DEFAULT NULL,
+  `decided_at` timestamp NULL DEFAULT NULL,
+  -- The landlord's reason when they reject, shown to the tenant so a refusal is
+  -- answerable rather than mysterious.
+  `decision_note` varchar(300) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `tenant_id` (`tenant_id`),
+  KEY `declared_by` (`declared_by`),
+  -- Every dashboard query is "this tenant's payments in this state", and the
+  -- declared queue is "anything still waiting", so both live on one index.
+  KEY `status_tenant` (`status`, `tenant_id`),
+  CONSTRAINT `payments_ibfk_1` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `payments_ibfk_2` FOREIGN KEY (`declared_by`) REFERENCES `tenant_users` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- 11. password_resets (email verification codes for "forgot password")
@@ -184,7 +215,7 @@ CREATE TABLE IF NOT EXISTS `password_resets` (
   KEY `email` (`email`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
--- 10. settlements (-> leases)
+-- 12. settlements (-> leases)
 CREATE TABLE IF NOT EXISTS `settlements` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `lease_id` int(11) NOT NULL,
@@ -199,7 +230,7 @@ CREATE TABLE IF NOT EXISTS `settlements` (
   CONSTRAINT `settlements_ibfk_1` FOREIGN KEY (`lease_id`) REFERENCES `leases` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
--- 12. maintenance_requests (tenant-raised service requests -> tenants, owners)
+-- 13. maintenance_requests (tenant-raised service requests -> tenants, owners)
 -- Powers the tenant portal's "Raise a request" feature and the landlord's queue.
 CREATE TABLE IF NOT EXISTS `maintenance_requests` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
@@ -222,7 +253,7 @@ CREATE TABLE IF NOT EXISTS `maintenance_requests` (
   CONSTRAINT `maintenance_requests_ibfk_2` FOREIGN KEY (`owner_id`) REFERENCES `owners` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
--- 13. maintenance_messages (one request's TIMELINE -> maintenance_requests)
+-- 14. maintenance_messages (one request's TIMELINE -> maintenance_requests)
 -- Despite the name this is not only the chat: it is the ordered record of
 -- everything that happened to a request. `kind` separates the two sorts of entry —
 -- 'message' is something a person typed, 'status' is the landlord moving the
@@ -258,7 +289,7 @@ CREATE TABLE IF NOT EXISTS `maintenance_messages` (
   CONSTRAINT `maintenance_messages_ibfk_1` FOREIGN KEY (`request_id`) REFERENCES `maintenance_requests` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
--- 14. join_requests (a tenant asking a landlord to be let into a property)
+-- 15. join_requests (a tenant asking a landlord to be let into a property)
 -- The missing first step of a tenancy: until now a landlord had to create the
 -- `tenants` row before the tenant's own login could see anything, and a tenant who
 -- had the property's code had no way to raise their hand. This table is that
@@ -302,7 +333,7 @@ CREATE TABLE IF NOT EXISTS `join_requests` (
   CONSTRAINT `join_requests_ibfk_4` FOREIGN KEY (`unit_id`) REFERENCES `units` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
--- 17. tenant_documents (-> tenant_users, owners)
+-- 16. tenant_documents (-> tenant_users, owners)
 -- The ID proofs a tenant uploads on their own profile, and the landlord's verdict
 -- on each. Keyed on tenant_users (the portal account) rather than tenants (the
 -- landlord's record), because the whole point is that a landlord can look at a

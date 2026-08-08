@@ -114,7 +114,8 @@ const getDashboardStats = async (req, res) => {
                 JOIN tenants t ON pay.tenant_id = t.id
                 LEFT JOIN units u ON t.unit_id = u.id
                 LEFT JOIN properties p ON u.property_id = p.id
-                WHERE t.owner_id = ? AND MONTH(pay.payment_date) = MONTH(CURDATE()) AND YEAR(pay.payment_date) = YEAR(CURDATE())
+                WHERE t.owner_id = ? AND pay.status = 'Confirmed'
+                  AND MONTH(pay.payment_date) = MONTH(CURDATE()) AND YEAR(pay.payment_date) = YEAR(CURDATE())
                 ${propertyFilter}
             `, queryParams),
 
@@ -127,7 +128,8 @@ const getDashboardStats = async (req, res) => {
                 JOIN tenants t ON pay.tenant_id = t.id
                 LEFT JOIN units u ON t.unit_id = u.id
                 LEFT JOIN properties p ON u.property_id = p.id
-                WHERE t.owner_id = ? AND pay.payment_date >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
+                WHERE t.owner_id = ? AND pay.status = 'Confirmed'
+                  AND pay.payment_date >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
                 ${propertyFilter}
                 GROUP BY YEAR(pay.payment_date), MONTH(pay.payment_date), DATE_FORMAT(pay.payment_date, '%b')
                 ORDER BY YEAR(pay.payment_date) ASC, MONTH(pay.payment_date) ASC
@@ -146,7 +148,7 @@ const getDashboardStats = async (req, res) => {
                 JOIN tenants t ON pay.tenant_id = t.id
                 LEFT JOIN units u ON t.unit_id = u.id
                 LEFT JOIN properties p ON u.property_id = p.id
-                WHERE t.owner_id = ? ${propertyFilter}
+                WHERE t.owner_id = ? AND pay.status = 'Confirmed' ${propertyFilter}
                 ORDER BY pay.created_at DESC
                 LIMIT 5
             `, queryParams)
@@ -191,7 +193,7 @@ const getAllTransactions = async (req, res) => {
             JOIN tenants t ON pay.tenant_id = t.id
             LEFT JOIN units u ON t.unit_id = u.id
             LEFT JOIN properties p ON u.property_id = p.id
-            WHERE t.owner_id = ? ${propertyFilter}
+            WHERE t.owner_id = ? AND pay.status = 'Confirmed' ${propertyFilter}
             ORDER BY pay.payment_date DESC, pay.created_at DESC
         `, queryParams);
 

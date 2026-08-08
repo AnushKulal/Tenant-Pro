@@ -1,5 +1,12 @@
 const db = require('../config/db');
 const { getFileUrl } = require('../middleware/uploadMiddleware');
+const { nextDueAfter, anchorDayOf } = require('../utils/rentDates');
+
+// Owner tokens carry no role; tenant tokens carry role: 'tenant'. server.js already
+// mounts requireOwner on this whole router, so this is the second lock on the same
+// door -- kept because these handlers treat req.user.id as an owners.id, and the day
+// someone mounts them elsewhere the mount-level guard does not travel with them.
+const isTenantToken = (req) => req.user?.role === 'tenant';
 
 // --- FETCH PAYMENT SETTINGS ---
 const getPaymentSettings = async (req, res) => {
@@ -88,15 +95,18 @@ const savePaymentSettings = async (req, res) => {
     }
 };
 
+// --- THE LANDLORD RECORDS A PAYMENT THEY SAW ARRIVE ---
+// Born Confirmed: this is the landlord's own statement about their own money, so
+// there is nobody left to verify it. A tenant CLAIMING a payment goes through
+// tenantPortalController.declarePayment and waits for decidePayment below.
 const recordPayment = async (req, res) => {
     const { id } = req.params; // This is the tenant_id from the URL
     const { amount, payment_mode, reference_id, payment_date } = req.body;
 
     try {
         // 1. Verify the tenant exists and get their current due date
-        // ✨ FIX: Removed .promise()
         const [tenants] = await db.query(
-            `SELECT next_rent_due FROM tenants WHERE id = ? AND owner_id = ?`, 
+            `SELECT next_rent_due, move_in_date FROM tenants WHERE id = ? AND owner_id = ?`,
             [id, req.user.id] // req.user.id comes from authMiddleware
         );
 
@@ -105,40 +115,30 @@ const recordPayment = async (req, res) => {
         }
 
         // 2. Save the actual payment receipt to the database
-        // ✨ FIX: Removed .promise()
         await db.query(
-            `INSERT INTO payments (tenant_id, amount_paid, payment_date, payment_method, reference_id)
-             VALUES (?, ?, ?, ?, ?)`,
+            `INSERT INTO payments (tenant_id, amount_paid, payment_date, payment_method, reference_id, status)
+             VALUES (?, ?, ?, ?, ?, 'Confirmed')`,
             [id, amount, payment_date, payment_mode, reference_id || null]
         );
 
-        // 3. The Smart Math: Push the due date forward by 1 month!
-        let currentDueDate = new Date(tenants[0].next_rent_due);
-        
-        // Safety fallback: If they somehow don't have a due date yet, start from the payment date
-        if (isNaN(currentDueDate.getTime())) {
-            currentDueDate = new Date(payment_date); 
-        }
-
-        // Add exactly 1 month
-        currentDueDate.setMonth(currentDueDate.getMonth() + 1);
-        
-        // Format it safely for MySQL (YYYY-MM-DD)
-        const year = currentDueDate.getFullYear();
-        const month = String(currentDueDate.getMonth() + 1).padStart(2, '0');
-        const day = String(currentDueDate.getDate()).padStart(2, '0');
-        const nextRentDueStr = `${year}-${month}-${day}`;
+        // 3. Push the due date forward by one month. The month arithmetic -- including
+        //    why a tenant anchored on the 31st does not drift -- lives in one place
+        //    now, because confirming a declared payment has to give the same answer.
+        const nextRentDueStr = nextDueAfter(
+            tenants[0].next_rent_due,
+            payment_date,
+            anchorDayOf(tenants[0].move_in_date)
+        );
 
         // 4. Update the tenant's profile with their new due date
-        // ✨ FIX: Removed .promise()
         await db.query(
             `UPDATE tenants SET next_rent_due = ? WHERE id = ?`,
             [nextRentDueStr, id]
         );
 
-        res.status(200).json({ 
-            message: "Payment recorded successfully!", 
-            next_rent_due: nextRentDueStr 
+        res.status(200).json({
+            message: "Payment recorded successfully!",
+            next_rent_due: nextRentDueStr
         });
 
     } catch (error) {
@@ -147,4 +147,121 @@ const recordPayment = async (req, res) => {
     }
 };
 
-module.exports = { getPaymentSettings, savePaymentSettings, recordPayment };
+// --- THE QUEUE OF PAYMENTS TENANTS SAY THEY HAVE MADE ---
+// GET /api/payments/declared
+// Read on every dashboard load to put a count on the bell, so it returns the whole
+// row the confirm sheet needs rather than making the client fetch each one.
+const getDeclaredPayments = async (req, res) => {
+    try {
+        if (isTenantToken(req)) {
+            return res.status(403).json({ message: 'Landlord access only.' });
+        }
+        const [rows] = await db.query(
+            `SELECT
+                pay.id, pay.amount_paid, pay.payment_date, pay.payment_method,
+                pay.reference_id, pay.created_at,
+                t.id AS tenant_id, t.name AS tenant_name, t.image_url AS tenant_image,
+                t.rent_share, t.next_rent_due,
+                u.unit_number, p.name AS property_name, p.id AS property_id
+             FROM payments pay
+             JOIN tenants t ON pay.tenant_id = t.id
+             LEFT JOIN units u ON t.unit_id = u.id
+             LEFT JOIN properties p ON u.property_id = p.id
+             WHERE t.owner_id = ? AND pay.status = 'Declared'
+             ORDER BY pay.created_at ASC`,
+            [req.user.id]
+        );
+        res.status(200).json({ payments: rows });
+    } catch (error) {
+        console.error("Error fetching declared payments:", error);
+        res.status(500).json({ message: "Could not load payments awaiting confirmation." });
+    }
+};
+
+// --- THE LANDLORD'S VERDICT ON A CLAIMED PAYMENT ---
+// PUT /api/payments/declared/:id   { decision: 'confirm' | 'reject', note }
+// Confirming is the moment the money becomes real: it starts counting toward every
+// total AND it advances the due date, which is what clears the month. Rejecting
+// keeps the row as a record of the claim, so the tenant can see it was refused and
+// why, rather than watching it silently vanish.
+const decidePayment = async (req, res) => {
+    if (isTenantToken(req)) {
+        return res.status(403).json({ message: 'Only your landlord can confirm a payment.' });
+    }
+    // Validated before a pooled connection is taken out, so a malformed request
+    // never holds one of the ten.
+    const decision = String(req.body?.decision || '').trim().toLowerCase();
+    const status = { confirm: 'Confirmed', reject: 'Rejected' }[decision];
+    if (!status) {
+        return res.status(400).json({ message: "Decision must be 'confirm' or 'reject'." });
+    }
+    const note = String(req.body?.note || '').trim().slice(0, 300) || null;
+
+    const conn = await db.getConnection();
+    try {
+        // Confirming does two writes that must not come apart: if the due date moved
+        // but the status did not, the landlord sees the claim again and confirming it
+        // a second time would advance the date by another month.
+        await conn.beginTransaction();
+
+        // FOR UPDATE so two taps on the confirm button cannot both pass the
+        // still-Declared check and each advance the due date.
+        const [rows] = await conn.query(
+            `SELECT pay.id, pay.status, pay.amount_paid, pay.payment_date, pay.tenant_id,
+                    t.next_rent_due, t.move_in_date, t.name AS tenant_name
+             FROM payments pay
+             JOIN tenants t ON pay.tenant_id = t.id
+             WHERE pay.id = ? AND t.owner_id = ?
+             FOR UPDATE`,
+            [req.params.id, req.user.id]
+        );
+        if (!rows.length) {
+            await conn.rollback();
+            return res.status(404).json({ message: 'Payment not found.' });
+        }
+
+        const pay = rows[0];
+        if (pay.status !== 'Declared') {
+            await conn.rollback();
+            return res.status(409).json({
+                message: pay.status === 'Confirmed'
+                    ? 'That payment was already confirmed.'
+                    : 'That payment was already rejected.'
+            });
+        }
+
+        await conn.query(
+            'UPDATE payments SET status = ?, decided_at = NOW(), decision_note = ? WHERE id = ?',
+            [status, note, pay.id]
+        );
+
+        let nextRentDue = pay.next_rent_due;
+        if (status === 'Confirmed') {
+            nextRentDue = nextDueAfter(pay.next_rent_due, pay.payment_date, anchorDayOf(pay.move_in_date));
+            await conn.query('UPDATE tenants SET next_rent_due = ? WHERE id = ?', [nextRentDue, pay.tenant_id]);
+        }
+
+        await conn.commit();
+        res.status(200).json({
+            message: status === 'Confirmed'
+                ? `₹${Number(pay.amount_paid).toLocaleString('en-IN')} from ${pay.tenant_name} confirmed.`
+                : `Payment from ${pay.tenant_name} rejected.`,
+            status,
+            next_rent_due: nextRentDue
+        });
+    } catch (error) {
+        await conn.rollback().catch(() => {});
+        console.error("Error deciding payment:", error);
+        res.status(500).json({ message: "Server error while confirming the payment." });
+    } finally {
+        conn.release();
+    }
+};
+
+module.exports = {
+    getPaymentSettings,
+    savePaymentSettings,
+    recordPayment,
+    getDeclaredPayments,
+    decidePayment
+};

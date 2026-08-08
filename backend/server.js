@@ -57,6 +57,7 @@ const unitRoutes = require('./routes/unitRoutes');
 const tenantRoutes = require('./routes/tenantRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
 const tenantPortalRoutes = require('./routes/tenantPortalRoutes');
+const { protect, requireOwner } = require('./middleware/authMiddleware');
 const { initCronJobs, checkAndSendRentReminders } = require('./services/cronService');
 const initDb = require('./config/initDb');
 const seedDemo = require('./config/seedDemo');
@@ -65,11 +66,23 @@ const { mailProvider, isMailConfigured, verifyMail } = require('./config/mailer'
 // --- Mount Routes ---
 app.use('/api/auth', authRoutes);
 app.use('/api/tenant-auth', tenantAuthRoutes);
-app.use('/api/owner', ownerRoutes);
-app.use('/api/properties', propertyRoutes);
-app.use('/api/units', unitRoutes);
-app.use('/api/tenants', tenantRoutes);
-app.use('/api/payments', paymentRoutes);
+
+// The landlord-facing API. `requireOwner` is mounted here, once, rather than left to
+// each handler: these routers read req.user.id AS AN owners.id, and a tenant's token
+// carries a tenant_users.id from an independent AUTO_INCREMENT. Without this, the
+// first tenant to register (id 1) could read the first landlord's (id 1) dashboard,
+// tenants, properties and payment settings. Every route inside these routers already
+// runs `protect`, but `protect` only proves the token is ours -- not whose it is, so
+// it runs again here to populate req.user before the role can be checked.
+const ownerApi = [protect, requireOwner];
+app.use('/api/owner', ownerApi, ownerRoutes);
+app.use('/api/properties', ownerApi, propertyRoutes);
+app.use('/api/units', ownerApi, unitRoutes);
+app.use('/api/tenants', ownerApi, tenantRoutes);
+app.use('/api/payments', ownerApi, paymentRoutes);
+
+// The tenant-facing API scopes every query through tenant_users -> tenants and
+// asserts role === 'tenant' in the handlers, so it needs no equivalent here.
 app.use('/api/tenant-portal', tenantPortalRoutes);
 
 // --- Basic Health Check ---

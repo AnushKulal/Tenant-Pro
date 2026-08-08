@@ -15,6 +15,9 @@ const { fetchThread, insertMessage, cleanBody } = require('./requestController')
 // The ID-proof summary rides along with /me so the portal knows on its first call
 // whether this account still owes a document — one source of that answer, not two.
 const { fetchDocuments, summarise } = require('./documentController');
+// Date formatting shared with the confirmation side, so a declared payment and the
+// due date it eventually moves are written by the same code.
+const { toSqlDate } = require('../utils/rentDates');
 
 // Resolves the logged-in tenant_users account to its linked landlord tenant row,
 // with the unit, property and the owner's UPI settings joined in. Returns null if
@@ -141,6 +144,27 @@ const getMe = async (req, res) => {
     }
 };
 
+// What the receipts screen puts at the top. `paid` counts only money the landlord
+// has acknowledged, because that is the number the tenant is judged by; `awaiting` is
+// kept separate rather than added in, so the screen can say "8,000 waiting on your
+// landlord" instead of implying it is settled.
+const paymentSummary = (rows) => {
+    const sum = (state) => rows
+        .filter((r) => r.status === state)
+        .reduce((n, r) => n + Number(r.amount_paid || 0), 0);
+    const declared = rows.filter((r) => r.status === 'Declared');
+    return {
+        paid_total: sum('Confirmed'),
+        paid_count: rows.filter((r) => r.status === 'Confirmed').length,
+        awaiting_total: sum('Declared'),
+        awaiting_count: declared.length,
+        rejected_count: rows.filter((r) => r.status === 'Rejected').length,
+        // The screen blocks a second "Pay rent" while one is outstanding, so it needs
+        // to be able to point at the one that is waiting.
+        oldest_awaiting_id: declared.length ? declared[declared.length - 1].id : null
+    };
+};
+
 // GET /api/tenant-portal/payments — the tenant's own payment history.
 const getPayments = async (req, res) => {
     try {
@@ -148,19 +172,114 @@ const getPayments = async (req, res) => {
             return res.status(403).json({ message: 'Tenant access only.' });
         }
         const ctx = await loadTenantContext(req.user.id);
-        if (!ctx?.tenant_id) return res.status(200).json({ payments: [] });
+        // Shape stays the same when there is nothing to show, so the screen has one
+        // code path rather than a special case for "not linked yet".
+        if (!ctx?.tenant_id) return res.status(200).json({ payments: [], summary: paymentSummary([]) });
 
+        // Every state is returned, INCLUDING Rejected. A tenant whose claimed payment
+        // was refused needs to see that it was refused and why — a claim that quietly
+        // disappears is the version of this that generates a phone call.
         const [payments] = await db.query(
-            `SELECT id, amount_paid, payment_date, payment_method, reference_id
+            `SELECT id, amount_paid, payment_date, payment_method, reference_id,
+                    status, declared_by, decided_at, decision_note, created_at
              FROM payments WHERE tenant_id = ?
              ORDER BY payment_date DESC, id DESC
              LIMIT 50`,
             [ctx.tenant_id]
         );
-        res.status(200).json({ payments });
+        res.status(200).json({ payments, summary: paymentSummary(payments) });
     } catch (err) {
         console.error('Tenant portal getPayments error:', err.message);
         res.status(500).json({ message: 'Could not load payments.' });
+    }
+};
+
+// POST /api/tenant-portal/payments — "I have paid this."
+//
+// This does NOT record money received. It records a CLAIM, which the landlord then
+// confirms or refuses (paymentController.decidePayment). Nothing here touches
+// next_rent_due: if it did, a tenant could clear their own month by typing a number
+// into a form, which is the entire reason the status column exists.
+//
+// The app cannot verify a UPI transfer either, so the honest framing — in the API and
+// in the screen — is that the tenant is telling their landlord something.
+const declarePayment = async (req, res) => {
+    try {
+        if (req.user?.role !== 'tenant') {
+            return res.status(403).json({ message: 'Tenant access only.' });
+        }
+        const ctx = await loadTenantContext(req.user.id);
+        if (!ctx?.tenant_id) {
+            return res.status(400).json({ message: 'Your account is not linked to a unit yet.' });
+        }
+
+        // Amount, rounded to paise. A zero or negative "payment" is not a typo worth
+        // guessing at.
+        const amount = Math.round(Number(req.body?.amount) * 100) / 100;
+        if (!Number.isFinite(amount) || amount <= 0) {
+            return res.status(400).json({ message: 'Enter the amount you paid.' });
+        }
+        // An upper bound no real rent payment reaches, so a fat-fingered extra digit is
+        // caught here rather than sitting in the landlord's queue as 80,00,000. Ten
+        // months' rent still allows paying several months at once or clearing arrears.
+        const ceiling = Math.max(Number(ctx.rent_share || 0) * 10, 500000);
+        if (amount > ceiling) {
+            return res.status(400).json({ message: 'That amount looks too large — check it and try again.' });
+        }
+
+        const METHODS = ['UPI', 'Card', 'Net Banking', 'Cash', 'Bank Transfer', 'Cheque', 'Other'];
+        const method = METHODS.find((m) => m.toLowerCase() === String(req.body?.method || '').trim().toLowerCase())
+            || 'UPI';
+        const reference = String(req.body?.reference || '').trim().slice(0, 100) || null;
+
+        // The date they say they paid. A future date is refused, and anything older
+        // than a year is almost certainly a mistyped year.
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+        let when = req.body?.date ? new Date(req.body.date) : today;
+        if (isNaN(when.getTime())) when = today;
+        when.setHours(0, 0, 0, 0);
+        if (when > today) {
+            return res.status(400).json({ message: 'You cannot record a payment for a future date.' });
+        }
+        if (when < new Date(today.getTime() - 366 * 86400000)) {
+            return res.status(400).json({ message: 'That date is more than a year ago — check the year.' });
+        }
+
+        // One claim at a time. Without this, tapping "Pay" twice on a slow connection
+        // leaves the landlord two identical rows and no way to tell a double-tap from
+        // a tenant who genuinely paid twice.
+        const [pending] = await db.query(
+            "SELECT id, amount_paid FROM payments WHERE tenant_id = ? AND status = 'Declared' LIMIT 1",
+            [ctx.tenant_id]
+        );
+        if (pending.length) {
+            return res.status(409).json({
+                message: 'You already have a payment waiting for your landlord to confirm.',
+                existing_id: pending[0].id
+            });
+        }
+
+        const [result] = await db.query(
+            `INSERT INTO payments
+                (tenant_id, amount_paid, payment_date, payment_method, reference_id, status, declared_by)
+             VALUES (?, ?, ?, ?, ?, 'Declared', ?)`,
+            [ctx.tenant_id, amount, toSqlDate(when), method, reference, ctx.user_id]
+        );
+
+        res.status(201).json({
+            message: 'Sent to your landlord. It clears the month once they confirm it.',
+            payment: {
+                id: result.insertId,
+                amount_paid: amount,
+                payment_date: toSqlDate(when),
+                payment_method: method,
+                reference_id: reference,
+                status: 'Declared'
+            }
+        });
+    } catch (err) {
+        console.error('Tenant portal declarePayment error:', err.message);
+        res.status(500).json({ message: 'Could not send that to your landlord.' });
     }
 };
 
@@ -291,6 +410,7 @@ const createRequestMessage = async (req, res) => {
 module.exports = {
     getMe,
     getPayments,
+    declarePayment,
     getRequests,
     createRequest,
     getRequestMessages,

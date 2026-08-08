@@ -18,6 +18,12 @@
 const db = require('../config/db');
 const { getFileUrl } = require('../middleware/uploadMiddleware');
 
+// The three landlord handlers below read req.user.id as an owners.id. server.js mounts
+// requireOwner on the router they hang off, and this is the same check at the handler,
+// so moving one of them to a different mount cannot silently unlock it. (The tenant
+// handlers do the mirror check: role MUST be 'tenant'.)
+const isTenantToken = (req) => req.user?.role === 'tenant';
+
 // The kinds of ID we accept, keyed by what the app sends. Anything else is
 // refused rather than stored as free text, so the landlord's list cannot be
 // filled with invented document names.
@@ -190,6 +196,7 @@ const respondWithDocuments = async (res, ownerId, tenantUserId, person) => {
 // GET /api/owner/tenants/:id/documents — from the tenant's detail screen.
 const getTenantDocuments = async (req, res) => {
     try {
+        if (isTenantToken(req)) return res.status(403).json({ message: 'Landlord access only.' });
         const [rows] = await db.query(
             `SELECT tu.id AS tenant_user_id, t.name, t.phone, t.email
              FROM tenants t
@@ -225,6 +232,7 @@ const getTenantDocuments = async (req, res) => {
 // GET /api/owner/join-requests/:id/documents — from the bell, before deciding.
 const getApplicantDocuments = async (req, res) => {
     try {
+        if (isTenantToken(req)) return res.status(403).json({ message: 'Landlord access only.' });
         const [rows] = await db.query(
             `SELECT jr.tenant_user_id, tu.name, tu.phone, tu.email
              FROM join_requests jr
@@ -249,6 +257,7 @@ const getApplicantDocuments = async (req, res) => {
 // that the caller reached it through a screen they were entitled to.
 const decideDocument = async (req, res) => {
     try {
+        if (isTenantToken(req)) return res.status(403).json({ message: 'Landlord access only.' });
         const decision = String(req.body.decision || '').trim().toLowerCase();
         const status = { verified: 'Verified', rejected: 'Rejected', pending: 'Pending' }[decision];
         if (!status) {

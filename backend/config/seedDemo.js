@@ -242,15 +242,41 @@ const reseedPayments = async (tenantIds) => {
         for (let m = startMonth; m <= 5; m++) {
             const date = ymd(monthsAgo(m, 2 + ((n + m) % 6))); // vary the day a little
             const method = METHODS[(n + m) % METHODS.length];
+            // History is money the landlord already acknowledged, so it is Confirmed
+            // and counts toward the dashboard totals.
             await db.query(
-                `INSERT INTO payments (tenant_id, amount_paid, payment_date, payment_method, reference_id)
-                 VALUES (?, ?, ?, ?, ?)`,
+                `INSERT INTO payments (tenant_id, amount_paid, payment_date, payment_method, reference_id, status)
+                 VALUES (?, ?, ?, ?, ?, 'Confirmed')`,
                 [tenantId, rent, date, method, 'DEMO-REF']
             );
             inserted++;
         }
     }
-    console.log(`💸 Demo payments reseeded — ${inserted} across ${names.length} tenants (6-month history).`);
+
+    // One tenant who says they have paid and is waiting on the landlord, so the
+    // confirm queue has something real in it the moment you sign in to the demo --
+    // and so the totals can be seen NOT counting it.
+    let declared = 0;
+    for (const name of names) {
+        const tenantId = tenantIds[name];
+        const [tr] = await db.query('SELECT rent_share, next_rent_due FROM tenants WHERE id = ?', [tenantId]);
+        const rent = Number(tr[0]?.rent_share || 0);
+        // Only somebody who actually owes something would be declaring a payment.
+        if (rent <= 0 || new Date(tr[0].next_rent_due) > new Date()) continue;
+        await db.query(
+            `INSERT INTO payments
+                (tenant_id, amount_paid, payment_date, payment_method, reference_id, status, declared_by)
+             VALUES (?, ?, ?, 'UPI', ?, 'Declared',
+                     (SELECT id FROM tenant_users WHERE tenant_id = ? LIMIT 1))`,
+            [tenantId, rent, ymd(new Date()), 'DEMO-UPI-8842', tenantId]
+        );
+        declared++;
+        break; // one is enough to show the flow without muddying the totals
+    }
+    console.log(
+        `💸 Demo payments reseeded — ${inserted} confirmed across ${names.length} tenants (6-month history)`
+        + `${declared ? `, ${declared} awaiting confirmation` : ''}.`
+    );
 };
 
 const reseedExpenses = async (propIds) => {
