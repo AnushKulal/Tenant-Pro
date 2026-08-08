@@ -18,6 +18,7 @@ const inr = (n) => {
 };
 
 const MON = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+const MON_TITLE = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 const asDate = (v) => {
     if (!v) return null;
@@ -114,8 +115,6 @@ export function mapRequest(r, now) {
     };
 }
 
-const MON_TITLE = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
 // The tone the tenant portal shows a request's state in. Same three-state view as
 // the landlord's queue, so 'Closed' reads as resolved on both sides.
 const REQ_DOT = { Open: 'fg2', 'In Progress': 'amber', Resolved: 'pos', Closed: 'pos' };
@@ -140,6 +139,27 @@ export function mapPortalRequest(r) {
         dot: REQ_DOT[r.status] || 'fg2',
         raised: d ? `${d.getDate()} ${MON_TITLE[d.getMonth()]} ${d.getFullYear()}` : '',
         photos: r.image_url ? [mediaUrl(r.image_url)] : []
+    };
+}
+
+// /owner/join-requests rows → what the landlord's inbox shows. The requester is a
+// `tenant_users` account, not a tenant record yet — that is the whole point of the
+// request — so their name and contact come off the login account.
+export function mapJoinRequest(r, now) {
+    const created = asDate(r.created_at);
+    return {
+        id: r.id,
+        name: r.requester_name || 'Someone',
+        email: r.requester_email || '',
+        phone: r.requester_phone || '',
+        propertyId: r.property_id != null ? String(r.property_id) : null,
+        property: r.property_name || '',
+        unit: r.unit_number ? String(r.unit_number) : null,
+        status: r.status || 'Pending',
+        pending: (r.status || 'Pending') === 'Pending',
+        note: r.note || '',
+        age: ageLabel(created, now),
+        askedOn: created ? `${created.getDate()} ${MON_TITLE[created.getMonth()]} ${created.getFullYear()}` : ''
     };
 }
 
@@ -209,7 +229,7 @@ export function mapPayment(row, tenantsByName, now) {
 
 // Build the whole `state.data` bundle from the five owner endpoints.
 // `now` is injected so the result is deterministic and testable.
-export function mapOwnerData({ dashboard, properties, units, tenants, transactions, requests, paySettings }, now = new Date()) {
+export function mapOwnerData({ dashboard, properties, units, tenants, transactions, requests, paySettings, joinRequests }, now = new Date()) {
     const props = (properties || []).map(mapProperty);
     const us = (units || []).map(mapUnit);
 
@@ -232,6 +252,7 @@ export function mapOwnerData({ dashboard, properties, units, tenants, transactio
         tenants: ts,
         payments: pays,
         tickets: (requests || []).map((r) => mapRequest(r, now)),
+        joins: (joinRequests || []).map((r) => mapJoinRequest(r, now)),
         // The owner's UPI details, as tenants will see them. Null until they set
         // them up — an empty state, not a missing one.
         pay: paySettings

@@ -55,6 +55,10 @@ const INITIAL_STATE = {
 
   // The QR scanner's manually-typed fallback code.
   scanCode: '',
+  // True while a tenant's "request to join" is in flight.
+  joining: false,
+  // Which join request the landlord has opened from the inbox.
+  join: null,
 
   // ── Navigation history ──
   // Every route change pushes the route being left, so the phone's back gesture
@@ -179,6 +183,9 @@ function deriveVm(s, api) {
   const TICKETS = D.tickets || [];
   // The owner's own UPI details (empty until they set them up).
   const PAY = D.pay || { upiId: '', upiNumber: '', qr: null };
+  // People asking to be let into one of this owner's properties.
+  const JOINS = D.joins || [];
+  const PENDING_JOINS = JOINS.filter((j) => j.pending);
   const PAYMENTS_SRC = D.payments || [];
   const EXPENSES_SRC = D.expenses || [];
   const live = !!s.live;
@@ -305,6 +312,14 @@ function deriveVm(s, api) {
     } catch (e) {
       flash('Could not copy that');
     }
+  };
+  // Open the phone's messaging app with the number and an opening line filled in.
+  // A join request has no tenancy behind it yet, so there is no in-app thread to
+  // put a message in — SMS is the channel that actually exists at this point.
+  const messageNumber = (phone, label, prefill) => {
+    const n = String(phone).replace(/[^0-9+]/g, '');
+    const url = `sms:${n}${prefill ? `?body=${encodeURIComponent(prefill)}` : ''}`;
+    Linking.openURL(url).catch(() => copyText(phone, `Could not open messages — ${label}'s number copied`));
   };
   const callNumber = (phone, label) => {
     const url = `tel:${String(phone).replace(/[^0-9+]/g, '')}`;
@@ -480,6 +495,21 @@ function deriveVm(s, api) {
   // sheet's contents are the same list.
   const ALERTS = (() => {
       const rows = [];
+      // Someone is waiting on an answer from a person, not a system, so this leads.
+      if (PENDING_JOINS.length) {
+        const first = PENDING_JOINS[0];
+        rows.push({
+          icon: 'person-add',
+          tone: 'accent',
+          title: PENDING_JOINS.length === 1
+            ? `${first.name} wants to join ${first.property}`
+            : `${PENDING_JOINS.length} people want to join`,
+          sub: PENDING_JOINS.length === 1
+            ? `Asked ${String(first.age).toLowerCase()} · accept or decline`
+            : `${PENDING_JOINS.map((j) => String(j.name).split(' ')[0]).slice(0, 3).join(', ')}${PENDING_JOINS.length > 3 ? ' and more' : ''}`,
+          go: () => setState({ overlay: 'joins' })
+        });
+      }
       const late = inScope.filter((t) => t.state === 'overdue');
       if (late.length) {
         // Worst first — the longest overdue is the one to ring today.
@@ -1283,6 +1313,10 @@ function deriveVm(s, api) {
     // not have — it used to be painted on unconditionally.
     hasAlerts: ALERTS.length > 0,
     alertCount: String(ALERTS.length),
+    // People waiting on a decision, surfaced as a number on the bell itself: the
+    // question "how many want in" should be answerable without opening anything.
+    bellCount: PENDING_JOINS.length ? String(PENDING_JOINS.length) : '',
+    bellUrgent: PENDING_JOINS.length > 0,
     alertsEmptyLine: 'Nothing needs you right now. Rent is on track and no tickets are open.',
 
     // ── Help & support (owner) ────────────────────────────────────────────────
@@ -1346,6 +1380,117 @@ function deriveVm(s, api) {
         call: () => (person.phone
           ? callNumber(person.phone, person.name || 'this tenant')
           : flash(`No number on file for ${person.name || 'this tenant'}`))
+      };
+    })(),
+
+    // ── Requests to join (owner inbox) ────────────────────────────────────────
+    // Reached from the bell. Each row is a real person — a tenant_users account, not
+    // a tenant record yet — so it shows who they are and how to reach them BEFORE
+    // the decision, because "is this someone I know" is the actual question a
+    // landlord is answering when a stranger asks to move in.
+    openJoins: () => setState({ overlay: 'joins' }),
+    isJoins: s.overlay === 'joins',
+    joinCount: String(PENDING_JOINS.length),
+    hasJoins: PENDING_JOINS.length > 0,
+    joins: (() => {
+      // Pending first, then most recent: decided ones stay visible as a short
+      // history rather than vanishing, so a landlord can see what they did.
+      const ordered = [...PENDING_JOINS, ...JOINS.filter((j) => !j.pending)];
+      return {
+        count: PENDING_JOINS.length,
+        title: PENDING_JOINS.length
+          ? `${PENDING_JOINS.length} ${PENDING_JOINS.length === 1 ? 'person wants' : 'people want'} to join`
+          : 'No one is waiting',
+        emptyLine: 'When someone enters one of your property codes, their request lands here for you to accept or decline.',
+        empty: ordered.length === 0,
+        rows: ordered.map((j) => ({
+          id: j.id,
+          name: j.name,
+          initials: initialsOf(j.name),
+          phone: j.phone,
+          phoneLabel: fmtPhone(j.phone),
+          email: j.email,
+          property: j.property,
+          note: j.note,
+          hasNote: !!j.note,
+          age: j.age,
+          askedOn: j.askedOn,
+          pending: j.pending,
+          status: String(j.status).toUpperCase(),
+          statusFg: j.pending ? 'amber' : j.status === 'Accepted' ? 'pos' : 'fg3',
+          // Reach them before deciding. A message is an SMS rather than an in-app
+          // thread: there is no tenancy to hang a conversation off yet.
+          call: () => (j.phone ? callNumber(j.phone, j.name) : flash(`No number on file for ${j.name}`)),
+          message: () => (j.phone
+            ? messageNumber(j.phone, j.name, `Hi ${String(j.name).split(' ')[0]}, about your request to join ${j.property} on TenantPro — `)
+            : flash(`No number on file for ${j.name}`)),
+          // Open the decision sheet, where a room can be chosen.
+          open: () => setState({ overlay: 'joindecide', join: j.id }),
+          decline: () => api.decideJoin({ id: j.id, decision: 'reject', name: j.name })
+        }))
+      };
+    })(),
+
+    // The accept sheet: who they are, and which room to put them in (optional).
+    isJoinDecide: s.overlay === 'joindecide',
+    joinDecide: (() => {
+      const j = JOINS.find((x) => x.id === s.join) || PENDING_JOINS[0] || null;
+      if (!j) return null;
+      // Only rooms in the property they asked about, and only ones with a free bed.
+      const rooms = UNITS
+        .filter((u) => (j.propertyId ? u.prop === j.propertyId : true))
+        .filter((u) => occupantsOf(u.no).length < u.cap);
+      return {
+        id: j.id,
+        name: j.name,
+        initials: initialsOf(j.name),
+        phone: j.phone,
+        phoneLabel: fmtPhone(j.phone),
+        email: j.email,
+        property: j.property,
+        note: j.note,
+        hasNote: !!j.note,
+        askedOn: j.askedOn,
+        age: j.age,
+        pending: j.pending,
+        status: String(j.status).toUpperCase(),
+        rooms: rooms.map((u) => ({
+          label: `${u.no} · ${u.rent}`,
+          on: s.unit === u.no,
+          go: () => set('unit', u.no)
+        })),
+        hasRooms: rooms.length > 0,
+        // Accepting without a room is allowed: the person is admitted and placed
+        // later, which is the same thing "add a tenant with no room" already does.
+        //
+        // Shaped explicitly rather than handed out as a raw unit: the sheet needs a
+        // label and an id, and passing the internal unit object let a caller reach
+        // for a `.label` that only the chip rows have — which crashed the sheet.
+        chosen: (() => {
+          const u = rooms.find((x) => x.no === s.unit);
+          return u ? { id: u.id, no: u.no, label: `${u.no} · ${u.rent}` } : null;
+        })(),
+        noRoomsLine: 'Every room in this property is full. You can still accept them and assign a room once one frees up.',
+        call: () => (j.phone ? callNumber(j.phone, j.name) : flash(`No number on file for ${j.name}`)),
+        message: () => (j.phone
+          ? messageNumber(j.phone, j.name, `Hi ${String(j.name).split(' ')[0]}, about your request to join ${j.property} on TenantPro — `)
+          : flash(`No number on file for ${j.name}`)),
+        accept: () => {
+          const room = rooms.find((u) => u.no === s.unit) || null;
+          setState({ overlay: null });
+          api.decideJoin({
+            id: j.id,
+            decision: 'accept',
+            unitId: room ? room.id : null,
+            name: j.name,
+            where: room ? `room ${room.no}` : ''
+          });
+        },
+        decline: () => {
+          setState({ overlay: null });
+          api.decideJoin({ id: j.id, decision: 'reject', name: j.name });
+        },
+        busy: !!s.writing
       };
     })(),
 
@@ -1813,12 +1958,15 @@ function deriveVm(s, api) {
         ctaFg: isCurrent ? 'accent' : 'on',
         ctaDisabled: isCurrent,
         bd: isCurrent ? 'accent' : exact ? 'accent' : 'line',
+        // Asking is a real request now: it goes to the landlord's inbox and they
+        // decide. The prototype moved you in on the spot, which is not a thing a
+        // tenant gets to do to somebody else's property.
         join: () => {
           if (isCurrent) { flash(`You already live at ${p.name}`); return; }
-          if (!spot) { flash(`${p.name} has no free beds`); return; }
-          setState({ roster: { ...s.roster, rahul: spot.no }, jq: '' });
-          flash(`Joined ${p.name} · Unit ${spot.no}`);
-        }
+          if (!TLIVE) { flash('Sign in to your tenancy to ask to join'); return; }
+          api.requestToJoin({ code: p.code, name: p.name });
+        },
+        joining: !!s.joining
       };
     }),
     noJoinResults: !joinMatches.length,
@@ -2015,7 +2163,7 @@ export function AppProvider({ children }) {
   const loadOwnerData = useCallback(async ({ refresh = false } = {}) => {
     setState(refresh ? { refreshing: true, dataError: '' } : { dataLoading: true, dataError: '' });
     try {
-      const [dashboard, propsRes, unitsRes, tenantsRes, txRes, reqRes, payRes] = await Promise.all([
+      const [dashboard, propsRes, unitsRes, tenantsRes, txRes, reqRes, payRes, joinRes] = await Promise.all([
         apiOwner.dashboard('all'),
         apiProps.list(),
         apiUnits.list('all'),
@@ -2027,7 +2175,10 @@ export function AppProvider({ children }) {
         apiOwner.requests('all').catch(() => ({ requests: [] })),
         // Likewise: an owner who has never set up UPI has no row, and that is a
         // state to render, not an error.
-        apiPayments.getSettings().catch(() => ({ settings: null }))
+        apiPayments.getSettings().catch(() => ({ settings: null })),
+        // Newer than the rest again — a backend without this route must not take
+        // the dashboard down, so an empty inbox stands in.
+        apiOwner.joinRequests('all').catch(() => ({ requests: [] }))
       ]);
       const data = mapOwnerData({
         dashboard,
@@ -2036,7 +2187,8 @@ export function AppProvider({ children }) {
         tenants: tenantsRes.tenants,
         transactions: txRes.transactions,
         requests: reqRes.requests,
-        paySettings: payRes.settings
+        paySettings: payRes.settings,
+        joinRequests: joinRes.requests
       });
       setState({
         data,
@@ -2233,6 +2385,37 @@ export function AppProvider({ children }) {
       });
     }
   }, [setState]);
+
+  // Accept or reject a request to join a property. Accepting creates the tenant
+  // record and links their login, which changes the roster, the occupancy and the
+  // dues — hence the full refresh ownerWrite does rather than patching one row.
+  const decideJoin = useCallback(({ id, decision, unitId, name, where }) => ownerWrite(
+    () => apiOwner.decideJoinRequest(id, decision, unitId),
+    {
+      done: decision === 'accept'
+        ? `${name} accepted${where ? ` into ${where}` : ''}`
+        : `${name}'s request declined`,
+      failed: decision === 'accept' ? 'Could not accept that request.' : 'Could not decline that request.'
+    }
+  ), [ownerWrite]);
+
+  // Ask a landlord to be let into a property. The tenant side of the same table.
+  const requestToJoin = useCallback(async ({ code, propertyId, name }) => {
+    setState({ joining: true });
+    try {
+      await apiPortal.requestJoin({ ...(code ? { code } : {}), ...(propertyId ? { property_id: propertyId } : {}) });
+      // Re-read so the tenant sees their own request listed as Pending rather than
+      // having to trust a toast.
+      await loadTenantData({ refresh: true });
+      setState({ joining: false });
+      flash(`Request sent to ${name || 'the landlord'}`);
+      return true;
+    } catch (e) {
+      setState({ joining: false });
+      flash(errText(e, 'Could not send that request.'));
+      return false;
+    }
+  }, [setState, flash, loadTenantData]);
 
   // Record a rent payment against a tenant. The backend also rolls their
   // next_rent_due forward a month, which is why the refresh matters: the due
@@ -2572,14 +2755,16 @@ export function AppProvider({ children }) {
       loadOwnerData, loadTenantData, loadThread, sendReply, setRequestStatus,
       pickRequestPhoto, createRequest, requestResetCode, submitNewPassword,
       recordPayment, saveTenantRent, assignTenant, moveTenantOut, deleteTenant, savePaymentSettings,
-      pickPhotoFor, createProperty, createUnit, createTenantRecord, goBackOneStep
+      pickPhotoFor, createProperty, createUnit, createTenantRecord, goBackOneStep,
+      decideJoin, requestToJoin
     }),
     [
       setState, set, go, flash, signIn, register, signOut, resolveSession,
       loadOwnerData, loadTenantData, loadThread, sendReply, setRequestStatus,
       pickRequestPhoto, createRequest, requestResetCode, submitNewPassword,
       recordPayment, saveTenantRent, assignTenant, moveTenantOut, deleteTenant, savePaymentSettings,
-      pickPhotoFor, createProperty, createUnit, createTenantRecord, goBackOneStep
+      pickPhotoFor, createProperty, createUnit, createTenantRecord, goBackOneStep,
+      decideJoin, requestToJoin
     ]
   );
 

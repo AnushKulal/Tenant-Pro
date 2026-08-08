@@ -71,7 +71,29 @@ export default function Header() {
                 only appears when there is genuinely something to see. */}
             <Press onPress={vm.openAlerts} style={{ ...BTN, borderWidth: 1, borderColor: t.line }}>
                 <Glyph name={vm.hasAlerts ? 'notifications' : 'notifications-outline'} size={18} color={vm.hasAlerts ? t.fg : t.fg2} />
-                {vm.hasAlerts && (
+                {/* A count when people are waiting on a decision — "how many want
+                    in" is answerable without opening anything — and a plain dot when
+                    the alerts are only things to look at. */}
+                {vm.bellUrgent ? (
+                    <View
+                        style={{
+                            position: 'absolute',
+                            top: 3,
+                            right: 2,
+                            minWidth: 16,
+                            height: 16,
+                            paddingHorizontal: 4,
+                            borderRadius: 8,
+                            backgroundColor: t.lime,
+                            borderWidth: 1.5,
+                            borderColor: t.ink,
+                            alignItems: 'center',
+                            justifyContent: 'center'
+                        }}
+                    >
+                        <T mono w={700} s={8} lh={1} c={t.on}>{vm.bellCount}</T>
+                    </View>
+                ) : vm.hasAlerts ? (
                     <View
                         style={{
                             position: 'absolute',
@@ -85,7 +107,7 @@ export default function Header() {
                             borderColor: t.ink
                         }}
                     />
-                )}
+                ) : null}
             </Press>
         </Row>
     );

@@ -909,6 +909,172 @@ export default function Sheets() {
                     </View>
                 )}
 
+                {/* ── Requests to join (owner inbox) ──────────────────── */}
+                {vm.isJoins && vm.joins && (
+                    <View>
+                        <Row justify="space-between" align="flex-start" style={{ marginBottom: 16 }}>
+                            <View style={{ flex: 1 }}>
+                                <T w={700} s={20} lh={1.1} style={{ letterSpacing: -0.8 }}>{vm.joins.title}</T>
+                                <Eyebrow s={10} ls={0.08} style={{ marginTop: 7 }}>REQUESTS TO JOIN YOUR PROPERTIES</Eyebrow>
+                            </View>
+                            <Glyph name="person-add" size={20} color={vm.joins.count ? t.accent : t.fg3} />
+                        </Row>
+
+                        {vm.joins.empty ? (
+                            <View style={{ alignItems: 'center', paddingVertical: 24, paddingHorizontal: 10, marginBottom: 8 }}>
+                                <View style={{ width: 52, height: 52, borderRadius: 18, backgroundColor: t.ink3, alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
+                                    <Glyph name="person-add-outline" size={24} color={t.fg3} />
+                                </View>
+                                <T w={400} s={13} lh={1.5} c={t.fg2} style={{ textAlign: 'center' }}>{vm.joins.emptyLine}</T>
+                            </View>
+                        ) : (
+                            <View style={{ rowGap: 8, marginBottom: 14 }}>
+                                {vm.joins.rows.map((j) => (
+                                    <View
+                                        key={j.id}
+                                        style={{
+                                            borderRadius: 18,
+                                            backgroundColor: j.pending ? t.ink3 : t.ink2,
+                                            borderWidth: 1,
+                                            borderColor: j.pending ? t.accent : t.line,
+                                            padding: 14
+                                        }}
+                                    >
+                                        {/* Who they are, first — this is the question a
+                                            landlord is actually answering. */}
+                                        <Press onPress={j.pending ? j.open : undefined}>
+                                            <Row gap={12}>
+                                                <Avatar initials={j.initials} size={44} radius={15} />
+                                                <View style={{ flex: 1, minWidth: 0 }}>
+                                                    <T w={600} s={15} lh={1.2} c={t.fg} numberOfLines={1}>{j.name}</T>
+                                                    <T mono w={600} s={9} lh={1.4} ls={0.08} c={t.fg3} numberOfLines={1} style={{ marginTop: 4 }}>
+                                                        {j.phoneLabel}
+                                                    </T>
+                                                    <T mono w={600} s={9} lh={1.4} ls={0.06} c={t.fg3} numberOfLines={1} style={{ marginTop: 3 }}>
+                                                        {`${String(j.property).toUpperCase()} · ${j.age}`}
+                                                    </T>
+                                                </View>
+                                                <T mono w={600} s={8} lh={1} ls={0.08} c={col(j.statusFg)}>{j.status}</T>
+                                            </Row>
+                                        </Press>
+
+                                        {j.hasNote ? (
+                                            <T w={400} s={12.5} lh={1.5} c={t.fg2} style={{ marginTop: 11 }}>{`“${j.note}”`}</T>
+                                        ) : null}
+
+                                        {/* Reach them before deciding. */}
+                                        <Row gap={7} style={{ marginTop: 12 }}>
+                                            <Press onPress={j.call} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', columnGap: 6, paddingVertical: 11, borderRadius: 13, backgroundColor: t.lsoft, borderWidth: 1, borderColor: t.line }}>
+                                                <Glyph name="call" size={14} color={t.pos} />
+                                                <T w={600} s={12} c={t.fg}>Call</T>
+                                            </Press>
+                                            <Press onPress={j.message} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', columnGap: 6, paddingVertical: 11, borderRadius: 13, backgroundColor: t.vsoft, borderWidth: 1, borderColor: t.line }}>
+                                                <Glyph name="chatbubble-ellipses" size={14} color={t.accent} />
+                                                <T w={600} s={12} c={t.fg}>Message</T>
+                                            </Press>
+                                        </Row>
+
+                                        {j.pending ? (
+                                            <Row gap={7} style={{ marginTop: 7 }}>
+                                                <Press onPress={j.decline} style={{ paddingVertical: 11, paddingHorizontal: 16, borderRadius: 13, backgroundColor: t.ink2, borderWidth: 1, borderColor: t.line }}>
+                                                    <T w={600} s={12} c={t.fg2}>Decline</T>
+                                                </Press>
+                                                <Press onPress={j.open} style={{ flex: 1, alignItems: 'center', paddingVertical: 11, borderRadius: 13, backgroundColor: t.lime }}>
+                                                    <T w={700} s={12.5} c={t.on}>Accept…</T>
+                                                </Press>
+                                            </Row>
+                                        ) : null}
+                                    </View>
+                                ))}
+                            </View>
+                        )}
+
+                        <Press onPress={vm.closeOverlay} style={{ paddingVertical: 15, borderRadius: 999, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line, alignItems: 'center' }}>
+                            <T w={600} s={14} c={t.fg}>Close</T>
+                        </Press>
+                    </View>
+                )}
+
+                {/* ── Accept a join request ───────────────────────────── */}
+                {vm.isJoinDecide && vm.joinDecide && (
+                    <View>
+                        <Row gap={13} style={{ marginBottom: 16 }}>
+                            <Avatar initials={vm.joinDecide.initials} size={52} radius={18} />
+                            <View style={{ flex: 1, minWidth: 0 }}>
+                                <T w={700} s={19} lh={1.15} style={{ letterSpacing: -0.6 }} numberOfLines={1}>{vm.joinDecide.name}</T>
+                                <Eyebrow s={9} ls={0.08} style={{ marginTop: 6 }}>
+                                    {`WANTS TO JOIN ${String(vm.joinDecide.property).toUpperCase()}`}
+                                </Eyebrow>
+                            </View>
+                        </Row>
+
+                        <View style={{ rowGap: 8, marginBottom: 14 }}>
+                            <Row gap={11} style={{ padding: 13, borderRadius: 16, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line }}>
+                                <Glyph name="call-outline" size={16} color={t.pos} />
+                                <View style={{ flex: 1, minWidth: 0 }}>
+                                    <Eyebrow s={9} ls={0.1}>MOBILE</Eyebrow>
+                                    <T w={600} s={13.5} lh={1} style={{ marginTop: 5 }}>{vm.joinDecide.phoneLabel}</T>
+                                </View>
+                                <Press onPress={vm.joinDecide.call} style={{ width: 32, height: 32, borderRadius: 11, backgroundColor: t.lsoft, alignItems: 'center', justifyContent: 'center' }}>
+                                    <Glyph name="call" size={14} color={t.pos} />
+                                </Press>
+                                <Press onPress={vm.joinDecide.message} style={{ width: 32, height: 32, borderRadius: 11, backgroundColor: t.vsoft, alignItems: 'center', justifyContent: 'center' }}>
+                                    <Glyph name="chatbubble-ellipses" size={14} color={t.accent} />
+                                </Press>
+                            </Row>
+                            {vm.joinDecide.email ? (
+                                <Row gap={11} style={{ padding: 13, borderRadius: 16, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line }}>
+                                    <Glyph name="mail-outline" size={16} color={t.accent} />
+                                    <View style={{ flex: 1, minWidth: 0 }}>
+                                        <Eyebrow s={9} ls={0.1}>EMAIL</Eyebrow>
+                                        <T w={600} s={13.5} lh={1} numberOfLines={1} style={{ marginTop: 5 }}>{vm.joinDecide.email}</T>
+                                    </View>
+                                </Row>
+                            ) : null}
+                            <Row gap={11} style={{ padding: 13, borderRadius: 16, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line }}>
+                                <Glyph name="time-outline" size={16} color={t.fg2} />
+                                <View style={{ flex: 1, minWidth: 0 }}>
+                                    <Eyebrow s={9} ls={0.1}>ASKED</Eyebrow>
+                                    <T w={600} s={13.5} lh={1} style={{ marginTop: 5 }}>{`${vm.joinDecide.askedOn} · ${vm.joinDecide.age}`}</T>
+                                </View>
+                            </Row>
+                        </View>
+
+                        {vm.joinDecide.hasNote ? (
+                            <View style={{ borderRadius: 16, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line, padding: 14, marginBottom: 14 }}>
+                                <Eyebrow s={9} ls={0.12} style={{ marginBottom: 8 }}>THEY SAID</Eyebrow>
+                                <T w={400} s={13} lh={1.5} c={t.fg2}>{vm.joinDecide.note}</T>
+                            </View>
+                        ) : null}
+
+                        <Eyebrow s={9} ls={0.12} c={t.fg3} style={{ marginBottom: 9 }}>PUT THEM IN A ROOM — OPTIONAL</Eyebrow>
+                        {vm.joinDecide.hasRooms ? (
+                            <Chips items={vm.joinDecide.rooms} t={t} />
+                        ) : (
+                            <Row gap={9} align="flex-start" style={{ paddingVertical: 12, paddingHorizontal: 13, borderRadius: 14, backgroundColor: t.asoft, marginBottom: 12 }}>
+                                <Glyph name="information-circle-outline" size={15} color={t.amber} />
+                                <T w={500} s={12} lh={1.45} c={t.amber} style={{ flex: 1 }}>{vm.joinDecide.noRoomsLine}</T>
+                            </Row>
+                        )}
+
+                        <Row gap={8}>
+                            <Press onPress={vm.joinDecide.decline} disabled={vm.joinDecide.busy} style={{ paddingVertical: 15, paddingHorizontal: 18, borderRadius: 999, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line }}>
+                                <T w={600} s={13.5} c={t.fg2}>Decline</T>
+                            </Press>
+                            <Press
+                                onPress={vm.joinDecide.accept}
+                                disabled={vm.joinDecide.busy}
+                                style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', columnGap: 8, paddingVertical: 15, borderRadius: 999, backgroundColor: t.lime, opacity: vm.joinDecide.busy ? 0.7 : 1 }}
+                            >
+                                {vm.joinDecide.busy ? <ActivityIndicator size="small" color={t.on} /> : <Glyph name="checkmark" size={16} color={t.on} />}
+                                <T w={700} s={14} c={t.on}>
+                                    {vm.joinDecide.chosen ? `Accept into ${vm.joinDecide.chosen.no}` : 'Accept'}
+                                </T>
+                            </Press>
+                        </Row>
+                    </View>
+                )}
+
                 {/* ── Your landlord (tenant) ──────────────────────────── */}
                 {vm.isLandlordCard && (
                     <View>

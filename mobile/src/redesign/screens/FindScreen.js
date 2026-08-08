@@ -110,7 +110,7 @@ export default function FindScreen() {
                             }}
                         >
                             {jr.isCurrent ? <Glyph name="checkmark-circle" size={12} color={t.accent} /> : null}
-                            <T w={600} s={11} lh={1} c={col(jr.ctaFg)}>{jr.cta}</T>
+                            <T w={600} s={11} lh={1} c={col(jr.ctaFg)}>{jr.joining && !jr.isCurrent ? 'Sending…' : jr.cta}</T>
                         </Press>
                     </Row>
                 </View>

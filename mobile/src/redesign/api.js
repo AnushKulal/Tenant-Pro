@@ -57,7 +57,12 @@ export const owner = {
     requests: (propertyId = 'all') => body(http.get('/owner/requests', { params: { property_id: propertyId } })),
     setRequestStatus: (id, status) => body(http.put(`/owner/requests/${id}/status`, { status })),
     requestMessages: (id) => body(http.get(`/owner/requests/${id}/messages`)),
-    sendRequestMessage: (id, text) => body(http.post(`/owner/requests/${id}/messages`, { body: text }))
+    sendRequestMessage: (id, text) => body(http.post(`/owner/requests/${id}/messages`, { body: text })),
+    // People asking to be let into one of this owner's properties.
+    joinRequests: (status = 'all') => body(http.get('/owner/join-requests', { params: { status } })),
+    decideJoinRequest: (id, decision, unitId) => body(
+        http.put(`/owner/join-requests/${id}`, { decision, ...(unitId != null ? { unit_id: unitId } : {}) })
+    )
 };
 
 export const properties = {
@@ -106,7 +111,10 @@ export const portal = {
         http.post('/tenant-portal/requests', payload, isForm(payload) ? MULTIPART : undefined)
     ),
     requestMessages: (id) => body(http.get(`/tenant-portal/requests/${id}/messages`)),
-    sendRequestMessage: (id, text) => body(http.post(`/tenant-portal/requests/${id}/messages`, { body: text }))
+    sendRequestMessage: (id, text) => body(http.post(`/tenant-portal/requests/${id}/messages`, { body: text })),
+    // Ask a landlord to be let into a property, by its code, and see the answer.
+    joinRequests: () => body(http.get('/tenant-portal/join-requests')),
+    requestJoin: (payload) => body(http.post('/tenant-portal/join-requests', payload))
 };
 
 export default http;
