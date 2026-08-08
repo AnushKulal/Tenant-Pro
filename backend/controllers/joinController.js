@@ -85,6 +85,87 @@ const cleanNote = (note) => {
 
 // --- Tenant side (mounted on the tenant-portal router) ---
 
+// GET /api/tenant-portal/property-lookup?code=TP-SUN-8412
+//
+// Why this exists: the app let a tenant scan an invite QR or type a code and then
+// looked the code up in its OWN in-memory list of properties. On a real tenancy
+// that list is the demo bundle, so a genuine landlord's code matched nothing and
+// the screen said "no property matches that code" for a code that was perfectly
+// valid. The tenant could still blind-fire a join request at it — createJoinRequest
+// resolves the code server-side — but they had no way to see WHAT they were asking
+// to join, which is the entire point of the screen.
+//
+// What it returns is bounded to what somebody already holding the invite code is
+// entitled to see before asking: the property, roughly where it is, whether there
+// is a bed, and who the landlord is. Deliberately NOT included: the other tenants,
+// their rents, or anything about the landlord beyond a name — a code is a weak
+// secret that gets forwarded around, and this endpoint needs no login-specific
+// trust to be safe.
+//
+// There is no search-by-name here on purpose. Listing or searching every property
+// in the database would let anyone with a tenant account enumerate every landlord's
+// portfolio; you find a property because someone gave you its code.
+const lookupProperty = async (req, res) => {
+    try {
+        if (req.user?.role !== 'tenant') {
+            return res.status(403).json({ message: 'Tenant access only.' });
+        }
+        const code = String(req.query.code || '').trim().toUpperCase();
+        if (!code) return res.status(400).json({ message: 'A property code is required.' });
+
+        const property = await findPropertyByCode(code);
+        if (!property) {
+            return res.status(404).json({
+                message: 'No property matches that code. Please check it with your landlord.',
+                code
+            });
+        }
+
+        // One row per unit with its capacity and how many active tenants are in it,
+        // so "is there a bed" is answered from the same numbers the landlord's own
+        // occupancy figures use rather than a second rule.
+        const [rows] = await db.query(
+            `SELECT p.id, p.name, p.address, p.locality, p.city, p.property_type, p.image_url,
+                    o.name AS owner_name,
+                    (SELECT COUNT(*) FROM units u WHERE u.property_id = p.id) AS unit_count,
+                    (SELECT COALESCE(SUM(u.capacity), 0) FROM units u WHERE u.property_id = p.id) AS bed_count,
+                    (SELECT COUNT(*) FROM tenants t
+                      JOIN units u ON t.unit_id = u.id
+                      WHERE u.property_id = p.id AND t.status = 'Active') AS taken
+             FROM properties p
+             LEFT JOIN owners o ON p.owner_id = o.id
+             WHERE p.id = ?`,
+            [property.id]
+        );
+        const row = rows[0];
+        if (!row) return res.status(404).json({ message: 'No property matches that code.' });
+
+        const beds = Number(row.bed_count) || 0;
+        const taken = Number(row.taken) || 0;
+
+        res.status(200).json({
+            property: {
+                id: row.id,
+                code,
+                name: row.name,
+                locality: row.locality,
+                city: row.city,
+                property_type: row.property_type,
+                image_url: row.image_url,
+                unit_count: Number(row.unit_count) || 0,
+                // Never negative, even if a room is over-filled by a manual edit.
+                free_beds: Math.max(0, beds - taken),
+                // First name only: enough to recognise "yes, that is who gave me the
+                // code", without handing out a full contact record to a code holder.
+                owner_first_name: String(row.owner_name || '').trim().split(/\s+/)[0] || ''
+            }
+        });
+    } catch (error) {
+        console.error('lookupProperty error:', error);
+        res.status(500).json({ message: 'Could not look up that code.' });
+    }
+};
+
 // POST /api/tenant-portal/join-requests — "let me into this property".
 // Body: { code } or { property_id }, plus optional { note }.
 const createJoinRequest = async (req, res) => {
@@ -502,6 +583,7 @@ const acceptRequest = async (res, ownerId, request, unitId) => {
 };
 
 module.exports = {
+    lookupProperty,
     createJoinRequest,
     getMyJoinRequests,
     getJoinRequests,

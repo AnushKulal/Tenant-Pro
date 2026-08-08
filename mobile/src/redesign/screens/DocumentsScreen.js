@@ -157,13 +157,23 @@ export default function DocumentsScreen() {
                 </View>
             ) : null}
 
-            <Press
-                onPress={f.pick}
-                style={{ paddingVertical: 14, borderRadius: 14, backgroundColor: t.ink2, borderWidth: 1, borderColor: t.line, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', columnGap: 8, marginBottom: 11 }}
-            >
-                <Glyph name="camera-outline" size={16} color={t.accent} />
-                <T w={600} s={13} c={t.fg}>{f.pickLabel}</T>
-            </Press>
+            {/* Camera first: the usual case is holding the card. */}
+            <Row gap={8} align="stretch" style={{ marginBottom: 11 }}>
+                <Press
+                    onPress={f.capture}
+                    style={{ flex: 1, paddingVertical: 14, borderRadius: 14, backgroundColor: t.ink2, borderWidth: 1, borderColor: t.line, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', columnGap: 7 }}
+                >
+                    <Glyph name="camera-outline" size={16} color={t.accent} />
+                    <T w={600} s={12.5} c={t.fg}>Take a photo</T>
+                </Press>
+                <Press
+                    onPress={f.pick}
+                    style={{ flex: 1, paddingVertical: 14, borderRadius: 14, backgroundColor: t.ink2, borderWidth: 1, borderColor: t.line, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', columnGap: 7 }}
+                >
+                    <Glyph name="image-outline" size={16} color={t.fg2} />
+                    <T w={600} s={12.5} c={t.fg}>{f.pickLabel}</T>
+                </Press>
+            </Row>
 
             {f.hasError ? (
                 <Row gap={8} align="flex-start" style={{ marginBottom: 11, paddingVertical: 11, paddingHorizontal: 12, borderRadius: 13, backgroundColor: t.csoft }}>

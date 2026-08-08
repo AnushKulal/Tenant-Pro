@@ -167,14 +167,25 @@ function PhotoPick({ form, t, label = 'Add a photo' }) {
             </Row>
         );
     }
+    // Two sources, side by side. A landlord adding a room is usually standing in
+    // it, so "take one" has to be as easy to reach as "choose one".
     return (
-        <Press
-            onPress={form.pickPhoto}
-            style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', columnGap: 8, paddingVertical: 14, borderRadius: 16, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line, marginBottom: 12 }}
-        >
-            <Glyph name="image-outline" size={17} color={t.fg2} />
-            <T w={600} s={13} c={t.fg2}>{label}</T>
-        </Press>
+        <Row gap={8} align="stretch" style={{ marginBottom: 12 }}>
+            <Press
+                onPress={form.takePhoto}
+                style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', columnGap: 7, paddingVertical: 14, borderRadius: 16, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line }}
+            >
+                <Glyph name="camera-outline" size={17} color={t.accent} />
+                <T w={600} s={12.5} c={t.fg2}>Take a photo</T>
+            </Press>
+            <Press
+                onPress={form.pickPhoto}
+                style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', columnGap: 7, paddingVertical: 14, borderRadius: 16, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line }}
+            >
+                <Glyph name="image-outline" size={17} color={t.fg2} />
+                <T w={600} s={12.5} c={t.fg2}>{label}</T>
+            </Press>
+        </Row>
     );
 }
 
@@ -1531,13 +1542,22 @@ export default function Sheets() {
                                 </View>
                             </Row>
                         ) : (
-                            <Press
-                                onPress={vm.newRequest.pickPhoto}
-                                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', columnGap: 8, paddingVertical: 14, borderRadius: 16, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line, marginBottom: 14 }}
-                            >
-                                <Glyph name="camera-outline" size={17} color={t.fg2} />
-                                <T w={600} s={13} c={t.fg2}>Attach a photo</T>
-                            </Press>
+                            <Row gap={8} align="stretch" style={{ marginBottom: 14 }}>
+                                <Press
+                                    onPress={vm.newRequest.takePhoto}
+                                    style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', columnGap: 7, paddingVertical: 14, borderRadius: 16, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line }}
+                                >
+                                    <Glyph name="camera-outline" size={17} color={t.accent} />
+                                    <T w={600} s={12.5} c={t.fg2}>Take a photo</T>
+                                </Press>
+                                <Press
+                                    onPress={vm.newRequest.pickPhoto}
+                                    style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', columnGap: 7, paddingVertical: 14, borderRadius: 16, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line }}
+                                >
+                                    <Glyph name="image-outline" size={17} color={t.fg2} />
+                                    <T w={600} s={12.5} c={t.fg2}>Choose one</T>
+                                </Press>
+                            </Row>
                         )}
 
                         {!vm.newRequest.canSubmitAtAll ? (

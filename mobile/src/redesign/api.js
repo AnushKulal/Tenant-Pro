@@ -120,6 +120,9 @@ export const portal = {
     requestMessages: (id) => body(http.get(`/tenant-portal/requests/${id}/messages`)),
     sendRequestMessage: (id, text) => body(http.post(`/tenant-portal/requests/${id}/messages`, { body: text })),
     // Ask a landlord to be let into a property, by its code, and see the answer.
+    // Resolve a scanned/typed invite code to the property it belongs to. Lookup by
+    // code only — there is no browse-all endpoint, by design.
+    lookupProperty: (code) => body(http.get('/tenant-portal/property-lookup', { params: { code } })),
     joinRequests: () => body(http.get('/tenant-portal/join-requests')),
     requestJoin: (payload) => body(http.post('/tenant-portal/join-requests', payload)),
     // The tenant's own ID proofs. `addDocument` always carries a file, so it is

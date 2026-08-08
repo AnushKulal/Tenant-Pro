@@ -65,6 +65,14 @@ const INITIAL_STATE = {
   // Which join request the landlord has opened from the inbox.
   join: null,
 
+  // ── Finding a property by its invite code ──
+  // The result of resolving a scanned QR or a typed code against the server. This
+  // exists because the app used to look the code up in its own in-memory property
+  // list, which on a real tenancy is the demo bundle — so a genuine landlord's code
+  // matched nothing and the screen said "no property matches that code" about a
+  // code that was perfectly valid.
+  look: { code: '', loading: false, error: '', place: null },
+
   // ── ID documents ──
   // `docs` is whichever person's documents the landlord currently has open; it is
   // fetched per view rather than bundled into the dashboard payload, because an ID
@@ -401,6 +409,19 @@ function deriveVm(s, api) {
   // NOTE: colour resolution (ACCENTS/SURFACES/EDGES/vars) is owned by
   // ThemeContext and intentionally dropped here — the vm carries token keys only.
 
+  // An invite QR carries the join link (https://tenantpro.app/join/TP-SUN-8412), but
+  // a landlord might equally read the code out loud or paste the link into the
+  // search box, so accept any of them and keep only the code itself.
+  //
+  // Drop any query string or fragment FIRST, then take the last path segment:
+  // splitting on all three at once made "?ref=x" the last piece and read it as the
+  // code. Shared by the scanner and the search box — two copies would drift.
+  const codeOf = (v) => {
+    const text = String(v || '').trim().split('#')[0].split('?')[0];
+    const tail = text.split('/').filter(Boolean).pop() || text;
+    return tail.toUpperCase().replace(/[^A-Z0-9-]/g, '');
+  };
+
   const whoBase = TENANTS.find((t) => t.id === s.who) || TENANTS[0] || EMPTY_TENANT;
   const who = {
     ...whoBase,
@@ -700,6 +721,12 @@ function deriveVm(s, api) {
   const me = ROSTER.find((t) => t.id === 'rahul') || ROSTER[0] || TENANTS[0] || EMPTY_TENANT;
   const myUnit = UNITS.find((u) => u.no === me.unit);
   const myProp = myUnit ? PROPS.find((p) => p.id === myUnit.prop) : null;
+  // The property this tenant actually lives in, straight from /tenant-portal/me.
+  // `myProp` above is a DEMO lookup by unit number and is only meaningful in the
+  // walk-through; anything comparing a real property against it will be wrong.
+  const myPropId = (TD && TD.me && TD.me.home && TD.me.home.property_id) != null
+    ? TD.me.home.property_id
+    : null;
   const jqv = s.jq.trim().toLowerCase();
   const roomTypes = (pid) => UNITS.filter((u) => u.prop === pid).map((u) => u.type).join(' ').toLowerCase();
   const joinMatches = PROPS.filter((p) => {
@@ -818,7 +845,10 @@ function deriveVm(s, api) {
         types: PROPERTY_TYPES.map((k) => ({ label: k, on: np.type === k, go: () => put({ type: k }) })),
         photo: np.photo ? np.photo.uri : null,
         hasPhoto: !!np.photo,
-        pickPhoto: () => api.pickPhotoFor('np'),
+        // Two ways in: the phone's camera for something in front of you, the
+        // gallery for a picture you already have.
+        pickPhoto: () => api.pickPhotoFor('np', 'library'),
+        takePhoto: () => api.pickPhotoFor('np', 'camera'),
         clearPhoto: () => put({ photo: null }),
         busy: !!np.busy,
         error: np.error || '',
@@ -859,7 +889,10 @@ function deriveVm(s, api) {
         capacity: nu.capacity, setCapacity: (e) => put({ capacity: evStr(e).replace(/[^0-9]/g, '') }),
         photo: nu.photo ? nu.photo.uri : null,
         hasPhoto: !!nu.photo,
-        pickPhoto: () => api.pickPhotoFor('nu'),
+        // Two ways in: the phone's camera for something in front of you, the
+        // gallery for a picture you already have.
+        pickPhoto: () => api.pickPhotoFor('nu', 'library'),
+        takePhoto: () => api.pickPhotoFor('nu', 'camera'),
         clearPhoto: () => put({ photo: null }),
         busy: !!nu.busy,
         error: nu.error || '',
@@ -900,7 +933,10 @@ function deriveVm(s, api) {
         unassigned: nt.unitId == null,
         photo: nt.photo ? nt.photo.uri : null,
         hasPhoto: !!nt.photo,
-        pickPhoto: () => api.pickPhotoFor('nt'),
+        // Two ways in: the phone's camera for something in front of you, the
+        // gallery for a picture you already have.
+        pickPhoto: () => api.pickPhotoFor('nt', 'library'),
+        takePhoto: () => api.pickPhotoFor('nt', 'camera'),
         clearPhoto: () => put({ photo: null }),
         busy: !!nt.busy,
         error: nt.error || '',
@@ -2223,8 +2259,10 @@ function deriveVm(s, api) {
           photo: f.photo,
           hasPhoto: !!f.photo,
           photoUri: f.photo ? f.photo.uri : null,
-          pick: () => api.pickDocPhoto(),
-          pickLabel: f.photo ? 'Change the photo' : 'Attach a photo',
+          pick: () => api.pickDocPhoto('library'),
+          // Most people are holding the card when they do this.
+          capture: () => api.pickDocPhoto('camera'),
+          pickLabel: f.photo ? 'Choose another' : 'Choose one',
           error: f.error || '',
           hasError: !!f.error,
           busy: !!f.busy,
@@ -2375,6 +2413,15 @@ function deriveVm(s, api) {
     },
     jq: s.jq,
     setJq: (e) => set('jq', e && e.target ? e.target.value : e),
+    // On a live tenancy the box is a code lookup, so it needs an explicit submit —
+    // the demo catalogue filters as you type and needs none.
+    submitJq: () => {
+      const code = codeOf(s.jq);
+      if (!TLIVE || !code) return;
+      api.lookupProperty(code);
+    },
+    jqLabel: TLIVE ? 'Property code (TP-…)' : 'Property ID (TP-…) or name',
+    canSubmitJq: !!codeOf(s.jq),
     joinQuery: s.jq.trim(),
     // ── Scan an invite QR ─────────────────────────────────────────────────────
     // "Join with an invite QR" used to drop you straight into the portal without
@@ -2387,18 +2434,15 @@ function deriveVm(s, api) {
       // An invite QR carries the join link (https://tenantpro.app/join/TP-SUN-8412),
       // but a landlord might equally read the code out loud, so accept either and
       // keep only the code itself.
-      const codeOf = (v) => {
-        // Drop any query string or fragment FIRST, then take the last path
-        // segment: splitting on all three at once made "?ref=x" the last piece and
-        // read it as the code.
-        const text = String(v || '').trim().split('#')[0].split('?')[0];
-        const tail = text.split('/').filter(Boolean).pop() || text;
-        return tail.toUpperCase().replace(/[^A-Z0-9-]/g, '');
-      };
+      // A scanned or typed code is resolved against the server. The old version set
+      // `jq` and let the find screen filter its OWN property list, which for a real
+      // tenant is the demo bundle — so every genuine invite code came back "no
+      // property matches", which is what "the invite QR doesn't work" was.
       const find = (code) => {
         if (!code) return;
         setState({ jq: code, route: 'tfind', scanCode: '', keepHistory: true });
-        flash(`Looking for ${code}`);
+        if (TLIVE) api.lookupProperty(code);
+        else flash(`Looking for ${code}`);
       };
       return {
         code: raw,
@@ -2413,14 +2457,64 @@ function deriveVm(s, api) {
       };
     })(),
     scanQr: () => setState({ route: 'scan', overlay: null, scanCode: '' }),
-    joinResults: joinMatches.map((p) => {
-      const free = UNITS.filter((u) => u.prop === p.id).reduce((a, u) => a + (u.cap - occupantsOf(u.no).length), 0);
-      const spot = UNITS.find((u) => u.prop === p.id && occupantsOf(u.no).length < u.cap);
+    // Live tenancy: exactly what the code resolved to (nought or one property), from
+    // the server. Walk-through: the demo catalogue, filterable as before.
+    // There is deliberately no browse-all for real accounts — that would let anyone
+    // with a tenant login enumerate every landlord's portfolio.
+    lookup: (() => {
+      const l = s.look || { code: '', loading: false, error: '', place: null };
+      return {
+        live: TLIVE,
+        code: l.code,
+        loading: !!l.loading,
+        error: l.error || '',
+        hasError: !!l.error,
+        found: !!l.place,
+        // Only says "nothing found" once a code has actually been looked for.
+        searched: !!l.code && !l.loading,
+        idleLine: 'Scan the QR your landlord shared, or type the property code they gave you.',
+        retry: () => api.lookupProperty(l.code)
+      };
+    })(),
+    joinResults: (TLIVE ? (s.look && s.look.place ? [(() => {
+      const pl = s.look.place;
+      const free = Number(pl.free_beds) || 0;
+      return {
+        id: pl.id,
+        code: pl.code,
+        name: pl.name,
+        // The same one-line place string the demo rows use, from whichever of the
+        // two location columns the landlord actually filled in.
+        loc: [pl.locality, pl.city].filter(Boolean).join(', ').toUpperCase(),
+        img: mediaUrl(pl.image_url),
+        policy: String(pl.property_type || 'PROPERTY').toUpperCase(),
+        policyIcon: 'business',
+        short: '',
+        free,
+        landlord: pl.owner_first_name || '',
+        rooms: Number(pl.unit_count) || 0
+      };
+    })()] : []) : joinMatches).map((p) => {
+      // A looked-up property carries its own free-bed count from the server; a demo
+      // one is counted from the local unit list. Reading the local list for a live
+      // result would always say zero, because a tenant never loads anybody's units.
+      const free = p.free != null
+        ? p.free
+        : UNITS.filter((u) => u.prop === p.id).reduce((a, u) => a + (u.cap - occupantsOf(u.no).length), 0);
       const exact = s.jq.trim().toUpperCase() === p.code;
       // The property this tenant already lives in. Offering to "join" the place you
       // are already in made no sense — and acting on it would have moved you out of
       // your own room.
-      const isCurrent = !!(myProp && myProp.id === p.id);
+      // Where they already live.
+      //
+      // On a live tenancy this MUST come from the portal payload, not from `myProp`:
+      // that is resolved out of the DEMO unit list by unit number, so a real tenant
+      // in a room called "101" silently resolved to the demo Sunrise PG — which then
+      // claimed an unrelated property was "your current property" and refused to let
+      // them ask to join it. /me now carries the real property id.
+      const isCurrent = TLIVE
+        ? (myPropId != null && String(myPropId) === String(p.id))
+        : !!(myProp && myProp.id === p.id);
       return {
         name: p.name, code: p.code, loc: p.loc, img: p.img, policy: p.policy,
         policyIcon: p.policyIcon,
@@ -2444,7 +2538,12 @@ function deriveVm(s, api) {
         joining: !!s.joining
       };
     }),
-    noJoinResults: !joinMatches.length,
+    // On a live tenancy "nothing found" must not be claimed before a code has been
+    // looked up, or the screen accuses a perfectly good code of not existing while
+    // the request is still in flight.
+    noJoinResults: TLIVE
+      ? (!!(s.look && s.look.code) && !(s.look && s.look.loading) && !(s.look && s.look.place) && !(s.look && s.look.error))
+      : !joinMatches.length,
     requests: REQUESTS.map((r, i) => ({
       ...r,
       // Tapping a request opens its detail sheet. This previously pointed at
@@ -2519,7 +2618,9 @@ function deriveVm(s, api) {
         setBody: (e) => put({ body: e && e.target ? e.target.value : e }),
         photo: nr.photo ? nr.photo.uri : null,
         hasPhoto: !!nr.photo,
-        pickPhoto: () => api.pickRequestPhoto(),
+        pickPhoto: () => api.pickRequestPhoto('library'),
+        // A tenant reporting a leak is standing in front of it.
+        takePhoto: () => api.pickRequestPhoto('camera'),
         clearPhoto: () => put({ photo: null }),
         busy: !!nr.busy,
         error: nr.error || '',
@@ -2953,6 +3054,69 @@ export function AppProvider({ children }) {
     );
   }, [ownerWrite]);
 
+  // ── Getting a picture: camera OR gallery ───────────────────────────────────
+  // Every image in the app went straight to the photo library, which is wrong for
+  // the common case — a landlord standing in the room they are adding, or a tenant
+  // holding the ID card they need to upload, wants to point the phone at it.
+  //
+  // This uses expo-image-picker's camera, not expo-camera: the picker hands off to
+  // the phone's own camera app and is ALREADY in every installed build, so taking a
+  // photo works over the air. expo-camera (the live QR scanner) is a separate native
+  // module and needs a new APK.
+  //
+  // Returns the picked asset, or null when the user cancelled or said no — callers
+  // treat both the same, because in both cases nothing should change.
+  const captureOrPick = useCallback(async (source) => {
+    const camera = source === 'camera';
+    try {
+      const picker = require('expo-image-picker');
+      const perm = camera
+        ? await picker.requestCameraPermissionsAsync()
+        : await picker.requestMediaLibraryPermissionsAsync();
+      if (!perm || !perm.granted) {
+        flash(camera
+          ? 'Camera access is needed to take a photo'
+          : 'Photo access is needed to add a picture');
+        return null;
+      }
+      const res = camera
+        ? await picker.launchCameraAsync({ quality: 0.8 })
+        : await picker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.8 });
+      if (res.canceled || !res.assets || !res.assets[0]) return null;
+      return res.assets[0];
+    } catch (e) {
+      flash(camera ? 'Could not open the camera' : 'Could not open your photos');
+      return null;
+    }
+  }, [flash]);
+
+  // ── Finding a property by its invite code ──────────────────────────────────
+  // Resolves a code against the server so a tenant can SEE what they are about to
+  // ask to join. The response is checked against the code still being looked for,
+  // so a slow answer for one code cannot paint under another.
+  const lookupProperty = useCallback(async (code) => {
+    const wanted = String(code || '').trim().toUpperCase();
+    if (!wanted) return;
+    setState({ look: { code: wanted, loading: true, error: '', place: null } });
+    try {
+      const res = await apiPortal.lookupProperty(wanted);
+      if (stateRef.current.look.code !== wanted) return;
+      setState({ look: { code: wanted, loading: false, error: '', place: res.property || null } });
+    } catch (e) {
+      if (stateRef.current.look.code !== wanted) return;
+      setState({
+        look: {
+          code: wanted,
+          loading: false,
+          // The server's own wording for a bad code is better than a generic one: it
+          // says to check it with the landlord, which is the actual next step.
+          error: errText(e, 'Could not look up that code.'),
+          place: null
+        }
+      });
+    }
+  }, [setState]);
+
   // ── ID documents ───────────────────────────────────────────────────────────
   // Read on demand, never bundled into the dashboard: a government ID is the most
   // sensitive thing here, so it travels only when somebody has opened the screen
@@ -3071,18 +3235,11 @@ export function AppProvider({ children }) {
   // Pick the file to upload. Camera first would be the nicer default, but the
   // library also covers "I already have a scan of my PAN card", which is how most
   // people actually hold their ID.
-  const pickDocPhoto = useCallback(async () => {
-    try {
-      const picker = require('expo-image-picker');
-      const perm = await picker.requestMediaLibraryPermissionsAsync();
-      if (!perm.granted) { flash('Photo access is needed to attach a document'); return; }
-      const res = await picker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.8 });
-      if (res.canceled || !res.assets || !res.assets[0]) return;
-      setState({ docForm: { ...stateRef.current.docForm, photo: res.assets[0], error: '' } });
-    } catch (e) {
-      flash('Could not open your photos');
-    }
-  }, [setState, flash]);
+  const pickDocPhoto = useCallback(async (source) => {
+    const asset = await captureOrPick(source);
+    if (!asset) return;
+    setState({ docForm: { ...stateRef.current.docForm, photo: asset, error: '' } });
+  }, [setState, captureOrPick]);
 
   const addMyDoc = useCallback(async () => {
     const f = stateRef.current.docForm;
@@ -3195,18 +3352,11 @@ export function AppProvider({ children }) {
 
   // Pick a photo for one of the creation forms. Same lazy require as the
   // request-photo picker; `slot` says which form's state to drop it into.
-  const pickPhotoFor = useCallback(async (slot) => {
-    try {
-      const picker = require('expo-image-picker');
-      const perm = await picker.requestMediaLibraryPermissionsAsync();
-      if (!perm.granted) { flash('Photo access is needed to add a picture'); return; }
-      const res = await picker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.7 });
-      if (res.canceled || !res.assets || !res.assets[0]) return;
-      setState({ [slot]: { ...stateRef.current[slot], photo: res.assets[0], error: '' } });
-    } catch (e) {
-      flash('Could not open your photos');
-    }
-  }, [setState, flash]);
+  const pickPhotoFor = useCallback(async (slot, source) => {
+    const asset = await captureOrPick(source);
+    if (!asset) return;
+    setState({ [slot]: { ...stateRef.current[slot], photo: asset, error: '' } });
+  }, [setState, captureOrPick]);
 
   // A picked asset as the multipart file part RN's fetch understands.
   const filePart = (asset, fallback) => ({
@@ -3283,19 +3433,11 @@ export function AppProvider({ children }) {
 
   // Attach a photo of the problem. expo-image-picker is loaded lazily so the
   // module is only pulled in when a tenant actually reaches for the camera roll.
-  const pickRequestPhoto = useCallback(async () => {
-    try {
-      const picker = require('expo-image-picker');
-      const perm = await picker.requestMediaLibraryPermissionsAsync();
-      if (!perm.granted) { flash('Photo access is needed to attach a picture'); return; }
-      const res = await picker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.7 });
-      if (res.canceled || !res.assets || !res.assets[0]) return;
-      const a = res.assets[0];
-      setState({ nr: { ...stateRef.current.nr, photo: a, error: '' } });
-    } catch (e) {
-      flash('Could not open your photos');
-    }
-  }, [setState, flash]);
+  const pickRequestPhoto = useCallback(async (source) => {
+    const asset = await captureOrPick(source);
+    if (!asset) return;
+    setState({ nr: { ...stateRef.current.nr, photo: asset, error: '' } });
+  }, [setState, captureOrPick]);
 
   // Raise a maintenance request. Sent as multipart only when a photo is attached,
   // so the common case stays a plain JSON post.
@@ -3484,7 +3626,8 @@ export function AppProvider({ children }) {
       recordPayment, saveTenantRent, assignTenant, moveTenantOut, deleteTenant, savePaymentSettings,
       pickPhotoFor, createProperty, createUnit, createTenantRecord, goBackOneStep,
       decideJoin, requestToJoin, askPermission, finishPermits,
-      loadDocs, decideDoc, loadMyDocs, pickDocPhoto, addMyDoc, removeMyDoc
+      loadDocs, decideDoc, loadMyDocs, pickDocPhoto, addMyDoc, removeMyDoc,
+      lookupProperty
     }),
     [
       setState, set, go, flash, signIn, register, signOut, resolveSession,
@@ -3493,7 +3636,8 @@ export function AppProvider({ children }) {
       recordPayment, saveTenantRent, assignTenant, moveTenantOut, deleteTenant, savePaymentSettings,
       pickPhotoFor, createProperty, createUnit, createTenantRecord, goBackOneStep,
       decideJoin, requestToJoin, askPermission, finishPermits,
-      loadDocs, decideDoc, loadMyDocs, pickDocPhoto, addMyDoc, removeMyDoc
+      loadDocs, decideDoc, loadMyDocs, pickDocPhoto, addMyDoc, removeMyDoc,
+      lookupProperty
     ]
   );
 

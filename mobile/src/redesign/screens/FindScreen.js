@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, ScrollView, Image, TextInput } from 'react-native';
+import { View, ScrollView, Image, TextInput, ActivityIndicator } from 'react-native';
 import { useVm } from '../AppContext';
 import { useT } from '../ThemeContext';
 import { T, Card, Row, Press, Glyph } from '../ui';
@@ -46,33 +46,81 @@ export default function FindScreen() {
                     <TextInput
                         value={vm.jq}
                         onChangeText={vm.setJq}
-                        placeholder="Property ID (TP-…) or name"
+                        onSubmitEditing={vm.submitJq}
+                        returnKeyType="search"
+                        autoCapitalize="characters"
+                        placeholder={vm.jqLabel}
                         placeholderTextColor={t.fg3}
                         style={{ flex: 1, minWidth: 0, padding: 0, fontFamily: t.font.grotesk[500], fontSize: 13, color: t.fg }}
                     />
+                    {/* A real lookup needs an explicit submit; the demo catalogue
+                        filters as you type, so the button is only shown when it does
+                        something. */}
+                    {vm.lookup.live ? (
+                        <Press onPress={vm.submitJq} disabled={!vm.canSubmitJq} hitSlop={8}>
+                            <T mono w={600} s={9} ls={0.1} c={vm.canSubmitJq ? t.accent : t.fg3}>FIND</T>
+                        </Press>
+                    ) : null}
                 </Row>
             </View>
 
-            <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                style={{ marginHorizontal: -18, marginBottom: 10 }}
-                contentContainerStyle={{ gap: 7, paddingHorizontal: 18, paddingBottom: 2 }}
-            >
-                {vm.jfilters.map((jf, i) => (
-                    <Press
-                        key={i}
-                        onPress={jf.go}
-                        style={{ paddingVertical: 9, paddingHorizontal: 14, borderRadius: 999, borderWidth: 1, borderColor: col(jf.bd), backgroundColor: col(jf.bg) }}
-                    >
-                        <T mono w={600} s={9} lh={1} ls={0.08} c={col(jf.fg)}>{jf.label}</T>
+            {/* Area/room-type filters browse the walk-through catalogue. A real
+                account has nothing to browse — you find a property because someone
+                gave you its code — so they would be dead chips. */}
+            {!vm.lookup.live ? (
+                <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    style={{ marginHorizontal: -18, marginBottom: 10 }}
+                    contentContainerStyle={{ gap: 7, paddingHorizontal: 18, paddingBottom: 2 }}
+                >
+                    {vm.jfilters.map((jf, i) => (
+                        <Press
+                            key={i}
+                            onPress={jf.go}
+                            style={{ paddingVertical: 9, paddingHorizontal: 14, borderRadius: 999, borderWidth: 1, borderColor: col(jf.bd), backgroundColor: col(jf.bg) }}
+                        >
+                            <T mono w={600} s={9} lh={1} ls={0.08} c={col(jf.fg)}>{jf.label}</T>
+                        </Press>
+                    ))}
+                </ScrollView>
+            ) : null}
+
+            {/* Looking one up. */}
+            {vm.lookup.loading ? (
+                <View style={{ paddingVertical: 28, alignItems: 'center', rowGap: 12 }}>
+                    <ActivityIndicator color={t.lime} />
+                    <T mono w={600} s={9} ls={0.12} c={t.fg3}>{`LOOKING FOR ${vm.lookup.code}`}</T>
+                </View>
+            ) : null}
+
+            {vm.lookup.hasError ? (
+                <View style={{ paddingVertical: 15, paddingHorizontal: 15, borderRadius: 18, backgroundColor: t.csoft, marginBottom: 8 }}>
+                    <Row gap={9} align="flex-start">
+                        <Glyph name="alert-circle" size={16} color={t.coral} />
+                        <T w={500} s={12.5} lh={1.45} c={t.coral} style={{ flex: 1 }}>{vm.lookup.error}</T>
+                    </Row>
+                    <Press onPress={vm.lookup.retry} style={{ marginTop: 11, alignSelf: 'flex-start', paddingVertical: 9, paddingHorizontal: 14, borderRadius: 999, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line }}>
+                        <T w={600} s={12} c={t.fg}>Try again</T>
                     </Press>
-                ))}
-            </ScrollView>
+                </View>
+            ) : null}
+
+            {/* Nothing has been looked for yet — say what to do, rather than
+                "no property matches", which accuses a code nobody has typed. */}
+            {vm.lookup.live && !vm.lookup.searched && !vm.lookup.loading && !vm.lookup.hasError ? (
+                <View style={{ paddingVertical: 24, paddingHorizontal: 16, borderRadius: 18, backgroundColor: t.ink2, borderWidth: 1, borderColor: t.line }}>
+                    <T w={400} s={13} lh={1.5} c={t.fg2}>{vm.lookup.idleLine}</T>
+                </View>
+            ) : null}
 
             {vm.noJoinResults && (
                 <View style={{ paddingVertical: 30, alignItems: 'center' }}>
-                    <T w={500} s={13} lh={1.5} c={t.fg2}>No property matches that name or ID.</T>
+                    <T w={500} s={13} lh={1.5} c={t.fg2}>
+                        {vm.lookup.live
+                            ? 'No property matches that code. Check it with your landlord.'
+                            : 'No property matches that name or ID.'}
+                    </T>
                 </View>
             )}
 

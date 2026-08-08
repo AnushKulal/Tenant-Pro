@@ -99,6 +99,11 @@ const getMe = async (req, res) => {
                 billing_cycle: ctx.billing_cycle
             },
             home: {
+                // The id matters, not just the name: the app has to be able to tell
+                // "this is the property I already live in" from a code lookup, and a
+                // name is not an identifier.
+                property_id: ctx.property_id,
+                unit_id: ctx.unit_id,
                 unit_number: ctx.unit_number,
                 room_type: ctx.room_type,
                 base_rent: ctx.base_rent,
