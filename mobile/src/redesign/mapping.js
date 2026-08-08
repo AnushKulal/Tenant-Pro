@@ -57,6 +57,46 @@ export function mapProperty(p) {
     };
 }
 
+// The tenant's own home, from /tenant-portal/me, in the same shapes the rest of the
+// view-model already expects for a property and a unit.
+//
+// Why this exists: the portal used to find the tenant's property by matching their
+// unit NUMBER against the demo unit list, so a real tenant living in a room called
+// "101" was shown the demo property's name, photo, code, policy and address. Their
+// own home card named somebody else's building.
+export function mapMyPlace(me) {
+    const home = (me && me.home) || {};
+    if (home.property_id == null) return { place: null, unit: null };
+    const id = String(home.property_id);
+    return {
+        place: {
+            ...mapProperty({
+                id: home.property_id,
+                name: home.property_name,
+                address: home.address,
+                locality: home.locality,
+                city: home.city,
+                image_url: home.property_image,
+                property_type: home.property_type,
+                units: 1
+            }),
+            // The room type is the closest thing the backend has to the design's
+            // "policy" line, and it is at least true.
+            policy: String(home.room_type || '').toUpperCase(),
+            policyIcon: /shar/i.test(String(home.room_type || '')) ? 'people-outline' : 'bed-outline'
+        },
+        unit: home.unit_number == null ? null : {
+            id: home.unit_id != null ? String(home.unit_id) : null,
+            no: String(home.unit_number),
+            prop: id,
+            type: home.room_type || '',
+            cap: 1,
+            rent: `₹${inr(home.base_rent)}`,
+            base: Number(home.base_rent) || 0
+        }
+    };
+}
+
 export function mapUnit(u) {
     return {
         id: u.id,

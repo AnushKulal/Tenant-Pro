@@ -20,7 +20,7 @@ import {
   units as apiUnits, tenants as apiTenants, portal as apiPortal, payments as apiPayments,
   setToken, mediaUrl
 } from './api';
-import { mapOwnerData, mapPortalRequest, mapDocument } from './mapping';
+import { mapOwnerData, mapPortalRequest, mapDocument, mapMyPlace } from './mapping';
 import {
   loadSession, saveOwnerSession, saveTenantSession, clearSession,
   hasOnboarded, setOnboarded, hasSeenPermits, setPermitsSeen
@@ -40,6 +40,21 @@ const errText = (e, fallback) =>
   || fallback;
 
 const evStr = (e) => (e && e.target && typeof e.target.value === 'string' ? e.target.value : (typeof e === 'string' ? e : ''));
+
+// "1 Feb 2026" — how the design writes a date in prose.
+const MON_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const fmtDay = (v) => {
+  const d = v instanceof Date ? v : new Date(v);
+  if (!v || isNaN(d.getTime())) return '';
+  return `${d.getDate()} ${MON_SHORT[d.getMonth()]} ${d.getFullYear()}`;
+};
+// Whole months since a date, floored at 0 — the "6 mo with you" figure.
+const monthsSince = (v) => {
+  const d = v instanceof Date ? v : new Date(v);
+  if (!v || isNaN(d.getTime())) return 0;
+  const now = new Date();
+  return Math.max(0, (now.getFullYear() - d.getFullYear()) * 12 + (now.getMonth() - d.getMonth()));
+};
 
 const inr = (n) => {
   const s = String(Math.round(Math.abs(Number(n) || 0)));
@@ -718,12 +733,51 @@ function deriveVm(s, api) {
   });
   const mover = ROSTER.find((t) => t.id === s.mover);
   // The tenant portal is the same roster seen from the other side.
-  const me = ROSTER.find((t) => t.id === 'rahul') || ROSTER[0] || TENANTS[0] || EMPTY_TENANT;
-  const myUnit = UNITS.find((u) => u.no === me.unit);
-  const myProp = myUnit ? PROPS.find((p) => p.id === myUnit.prop) : null;
-  // The property this tenant actually lives in, straight from /tenant-portal/me.
-  // `myProp` above is a DEMO lookup by unit number and is only meaningful in the
-  // walk-through; anything comparing a real property against it will be wrong.
+  // ── Who "me" is on the tenant side ─────────────────────────────────────────
+  // On a live tenancy this MUST come from /tenant-portal/me. It used to be the demo
+  // roster's Rahul, with the property found by matching his unit NUMBER against the
+  // demo unit list — so a real tenant living in a room called "101" was shown the
+  // demo property's name, photo, code, policy and address on their own home card,
+  // and their rent, deposit and move-in date came from a stranger.
+  const MINE = TLIVE ? mapMyPlace(TD.me) : { place: null, unit: null };
+  const meLive = TLIVE ? (() => {
+    const pro = (TD.me && TD.me.profile) || {};
+    const rent = (TD.me && TD.me.rent) || {};
+    const home = (TD.me && TD.me.home) || {};
+    const days = rent.days_until_due;
+    return {
+      ...EMPTY_TENANT,
+      id: 'me',
+      name: pro.name || (u && u.name) || 'You',
+      img: mediaUrl(pro.image_url),
+      unit: home.unit_number != null ? String(home.unit_number) : null,
+      type: home.room_type || '',
+      rent: `₹${inr(rent.amount)}`,
+      rentFull: `₹${inr(rent.amount)}`,
+      rentRaw: Number(rent.amount) || 0,
+      deposit: `₹${inr(home.deposit)}`,
+      depositRaw: Number(home.deposit) || 0,
+      credit: Number(pro.credit_score) || 0,
+      // The server already worked out whether rent is late and by how much; a
+      // second opinion computed here could disagree with the tenant's own portal.
+      state: rent.state === 'overdue' ? 'overdue' : 'paid',
+      days: days == null ? 0 : Math.abs(days),
+      movedIn: pro.move_in_date ? fmtDay(pro.move_in_date) : '',
+      since: `${pro.move_in_date ? monthsSince(pro.move_in_date) : 0} mo`,
+      phone: pro.phone || '',
+      email: pro.email || '',
+      co: pro.company || '',
+      propertyId: home.property_id != null ? String(home.property_id) : null
+    };
+  })() : null;
+
+  const me = meLive || ROSTER.find((t) => t.id === 'rahul') || ROSTER[0] || TENANTS[0] || EMPTY_TENANT;
+  // When their rent is next due, in prose. Blank on the walk-through, where there is
+  // no real date to show — better than the prototype's hard-coded "30 Aug", which
+  // told every tenant the same wrong day.
+  const myDue = TLIVE && TD.me && TD.me.rent ? fmtDay(TD.me.rent.next_due) : '';
+  const myUnit = TLIVE ? MINE.unit : UNITS.find((u2) => u2.no === me.unit);
+  const myProp = TLIVE ? MINE.place : (myUnit ? PROPS.find((p) => p.id === myUnit.prop) : null);
   const myPropId = (TD && TD.me && TD.me.home && TD.me.home.property_id) != null
     ? TD.me.home.property_id
     : null;
@@ -2402,8 +2456,14 @@ function deriveVm(s, api) {
       movedIn: me.movedIn || MOVE_IN[me.id] || '',
       due: `${me.state === 'overdue' ? 'OVERDUE BY' : 'IN'} ${me.days} DAYS`,
       dueFg: me.state === 'overdue' ? 'coral' : 'on',
-      home: myUnit ? `${propName(myUnit.prop)} · Unit ${myUnit.no} · due 30 Aug` : '',
-      propName: myUnit ? propName(myUnit.prop) : '',
+      // The property NAME comes from myProp, not a lookup in the landlord's
+      // collection — a live tenant never loads that, so the lookup returned ''.
+      // And the due date is the tenant's own, not the prototype's "30 Aug".
+      home: myUnit
+        ? [myProp ? myProp.name : '', `Unit ${myUnit.no}`, myDue ? `due ${myDue}` : '']
+          .filter(Boolean).join(' · ')
+        : '',
+      propName: myProp ? myProp.name : '',
       propImg: myProp ? myProp.img : '',
       propCode: myProp ? myProp.code : '',
       policy: myProp ? myProp.policy : '',
@@ -3104,13 +3164,16 @@ export function AppProvider({ children }) {
       setState({ look: { code: wanted, loading: false, error: '', place: res.property || null } });
     } catch (e) {
       if (stateRef.current.look.code !== wanted) return;
+      // A 404 is not a failure — it is the answer. Reporting it as an error put a
+      // "Try again" button under a code that will never resolve however many times
+      // it is retried; the screen's own not-found copy says the useful thing
+      // instead ("check it with your landlord").
+      const notFound = e && e.response && e.response.status === 404;
       setState({
         look: {
           code: wanted,
           loading: false,
-          // The server's own wording for a bad code is better than a generic one: it
-          // says to check it with the landlord, which is the actual next step.
-          error: errText(e, 'Could not look up that code.'),
+          error: notFound ? '' : errText(e, 'Could not look up that code.'),
           place: null
         }
       });
