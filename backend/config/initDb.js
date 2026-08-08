@@ -52,6 +52,50 @@ const ensureColumnType = async (conn, table, column, expectedType, definition) =
     return true;
 };
 
+// MySQL has no `CREATE INDEX IF NOT EXISTS` either. information_schema.STATISTICS
+// lists one row per indexed column, so DISTINCT on the name answers "does this
+// index exist" without caring how many columns it spans.
+const ensureIndex = async (conn, table, name, columns) => {
+    const [rows] = await conn.query(
+        `SELECT DISTINCT INDEX_NAME FROM information_schema.STATISTICS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND INDEX_NAME = ?`,
+        [table, name]
+    );
+    if (rows.length > 0) return false;
+    await conn.query(`ALTER TABLE \`${table}\` ADD INDEX \`${name}\` ${columns}`);
+    console.log(`🔧 Migration: indexed ${table}.${name}`);
+    return true;
+};
+
+// Adds a constraint that schema.sql gives fresh databases, so a database created
+// before the column existed ends up with the same shape as one created after.
+// Leaving the constraint out of one of the two paths is how a bug comes to
+// reproduce on one deploy and not another.
+//
+// A constraint cannot be added if existing rows already violate it, so the orphan
+// check runs first and the ALTER is skipped (loudly) rather than crashing the boot:
+// a server that will not start is a worse outcome than a missing constraint.
+const ensureForeignKey = async (conn, table, name, definition, orphanCheck) => {
+    const [rows] = await conn.query(
+        `SELECT CONSTRAINT_NAME FROM information_schema.TABLE_CONSTRAINTS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND CONSTRAINT_NAME = ?
+           AND CONSTRAINT_TYPE = 'FOREIGN KEY'`,
+        [table, name]
+    );
+    if (rows.length > 0) return false;
+    if (orphanCheck) {
+        const [bad] = await conn.query(orphanCheck);
+        const count = bad[0] ? Number(Object.values(bad[0])[0]) : 0;
+        if (count > 0) {
+            console.warn(`⚠️  Skipping ${table}.${name}: ${count} row(s) would violate it.`);
+            return false;
+        }
+    }
+    await conn.query(`ALTER TABLE \`${table}\` ADD CONSTRAINT \`${name}\` ${definition}`);
+    console.log(`🔧 Migration: constrained ${table}.${name}`);
+    return true;
+};
+
 const initDb = async () => {
     const ssl = sslOption();
     const conn = await mysql.createConnection({
@@ -95,6 +139,29 @@ const initDb = async () => {
             'sender_role',
             "enum('tenant','owner','system')",
             "enum('tenant','owner','system') NOT NULL"
+        );
+
+        // A payment used to be an unconditional fact, because only the landlord could
+        // enter one. Now a tenant can claim one, so a payment carries the landlord's
+        // verdict. Every existing row WAS the landlord's own entry, and the
+        // 'Confirmed' default backfills them as exactly that -- which is why the
+        // default is Confirmed and not Declared. Getting this backwards would zero
+        // out every dashboard total on the deploy that added the column.
+        await ensureColumn(conn, 'payments', 'status', "enum('Declared','Confirmed','Rejected') NOT NULL DEFAULT 'Confirmed'");
+        await ensureColumn(conn, 'payments', 'declared_by', 'int(11) DEFAULT NULL');
+        await ensureColumn(conn, 'payments', 'decided_at', 'timestamp NULL DEFAULT NULL');
+        await ensureColumn(conn, 'payments', 'decision_note', 'varchar(300) DEFAULT NULL');
+        // The queue of claims waiting on a landlord is read on every dashboard load.
+        await ensureIndex(conn, 'payments', 'declared_by', '(`declared_by`)');
+        await ensureIndex(conn, 'payments', 'status_tenant', '(`status`, `tenant_id`)');
+        await ensureForeignKey(
+            conn,
+            'payments',
+            'payments_ibfk_2',
+            'FOREIGN KEY (`declared_by`) REFERENCES `tenant_users` (`id`) ON DELETE SET NULL',
+            `SELECT COUNT(*) AS n FROM payments p
+              WHERE p.declared_by IS NOT NULL
+                AND NOT EXISTS (SELECT 1 FROM tenant_users tu WHERE tu.id = p.declared_by)`
         );
 
         console.log('✅ Database schema is up to date.');

@@ -9,6 +9,7 @@ const upload = require('../middleware/uploadMiddleware');
 const {
     getMe,
     getPayments,
+    declarePayment,
     getRequests,
     createRequest,
     getRequestMessages,
@@ -29,6 +30,9 @@ router.use(protect);
 
 router.get('/me', getMe);
 router.get('/payments', getPayments);
+// "I have paid this." Records a CLAIM, not money received -- the landlord confirms it
+// at PUT /api/payments/declared/:id, and only that advances the due date.
+router.post('/payments', declarePayment);
 router.get('/requests', getRequests);
 // `request_image` is optional — multer's .single() passes a request with no file
 // straight through, so a JSON body still works exactly as before.
