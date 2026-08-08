@@ -7,10 +7,18 @@
 //   Tenant login:    demo@gmail.com   /  Kajal@2004   (tenant portal — SAME
 //                    credential works on both; mobile 9000000000 too)
 //   Tenant alias:    tenant@gmail.com /  Tenant@2004  (kept working too)
+//   Applicants:      meera.demo@gmail.com, vikram.demo@gmail.com,
+//                    anjali.demo@gmail.com  /  Tenant@2004
+//                    Deliberately UNLINKED accounts with a pending request to join,
+//                    so the landlord's bell has real people in it during a demo —
+//                    and so the flow can also be shown from the applicant's side.
 //
 // Design notes:
 //   • Structure (properties/units/tenants) is created-if-missing and then UPDATED
 //     to known values, so it never duplicates and never drifts.
+//   • Decisions are undone too: accepting an applicant during a demo creates a real
+//     tenant record and links their login, and the reset removes both, so the next
+//     demo starts with the requests still waiting.
 //   • Financial history (payments, expenses) is DELETED and rebuilt every boot,
 //     scoped to demo-owned rows only. That is what makes it self-healing: recording
 //     a payment during a demo does not permanently alter the account.
@@ -367,6 +375,88 @@ const REQUESTS = [
         [['owner', 'Done — descaled and tested. Closing this out.']]]
 ];
 
+// People asking to be let into a demo property, so the landlord's bell has
+// something in it during a demo. These are `tenant_users` accounts deliberately
+// left UNLINKED with status 'Pending' — that is what a real applicant looks like
+// before a landlord decides, and it is the only state in which a join request can
+// exist. Real passwords, so a demo can also be given from the applicant's side.
+//
+// [name, email, phone, property, hoursAgo, note]
+const APPLICANTS = [
+    ['Meera Iyer', 'meera.demo@gmail.com', '9845012345', 'Sunrise PG', 3,
+        'Referred by Rahul in 101 — looking for a bed from next month.'],
+    ['Vikram Singh', 'vikram.demo@gmail.com', '9845099999', 'Sunrise PG', 20,
+        'Working at Swiggy nearby. Can move in this weekend if a bed is free.'],
+    ['Anjali Menon', 'anjali.demo@gmail.com', '9845077777', 'Green Meadows Apartment', 52,
+        '']
+];
+const APPLICANT_PASSWORD = 'Tenant@2004';
+
+const reseedJoinRequests = async (ownerId, propIds) => {
+    const emails = APPLICANTS.map((a) => a[1]);
+    const phones = APPLICANTS.map((a) => a[2]);
+    const emailMarks = emails.map(() => '?').join(',');
+
+    // Self-healing, and the order matters. Accepting an applicant during a demo
+    // creates a real tenants row and links their account, so a reset has to undo
+    // BOTH or the next demo starts with yesterday's decisions already made:
+    //   1. drop their join requests (the FK would block deleting the accounts),
+    //   2. unlink the accounts,
+    //   3. delete any tenant record an accept created — matched on phone within
+    //      this owner, which is how accept dedupes in the first place.
+    const [accounts] = await db.query(
+        `SELECT id FROM tenant_users WHERE email IN (${emailMarks})`,
+        emails
+    );
+    if (accounts.length) {
+        const ids = accounts.map((a) => a.id);
+        await db.query(
+            `DELETE FROM join_requests WHERE tenant_user_id IN (${ids.map(() => '?').join(',')})`,
+            ids
+        );
+        await db.query(
+            `UPDATE tenant_users SET tenant_id = NULL, status = 'Pending'
+             WHERE id IN (${ids.map(() => '?').join(',')})`,
+            ids
+        );
+    }
+    await db.query(
+        `DELETE FROM tenants WHERE owner_id = ? AND phone IN (${phones.map(() => '?').join(',')})`,
+        [ownerId, ...phones]
+    );
+
+    const hash = await bcrypt.hash(APPLICANT_PASSWORD, 10);
+    let seeded = 0;
+    for (const [name, email, phone, propertyName, hoursAgo, note] of APPLICANTS) {
+        const propertyId = propIds[propertyName];
+        if (!propertyId) continue;
+
+        // UNIQUE(email) makes this a clean upsert. Left unlinked on purpose.
+        await db.query(
+            `INSERT INTO tenant_users (name, email, phone, password_hash, tenant_id, status)
+             VALUES (?, ?, ?, ?, NULL, 'Pending')
+             ON DUPLICATE KEY UPDATE
+                name = VALUES(name), phone = VALUES(phone),
+                password_hash = VALUES(password_hash),
+                tenant_id = NULL, status = 'Pending'`,
+            [name, email, phone, hash]
+        );
+        const [rows] = await db.query('SELECT id FROM tenant_users WHERE email = ?', [email]);
+        if (!rows.length) continue;
+
+        // created_at written explicitly so the inbox shows a believable spread of
+        // ages ("3H AGO" … "2D AGO") rather than three requests all made at the
+        // moment of the last deploy.
+        await db.query(
+            `INSERT INTO join_requests (tenant_user_id, owner_id, property_id, status, note, created_at)
+             VALUES (?, ?, ?, 'Pending', ?, ?)`,
+            [rows[0].id, ownerId, propertyId, note || null, hoursFromNow(-hoursAgo)]
+        );
+        seeded += 1;
+    }
+    console.log(`🙋 Demo join requests reseeded — ${seeded} waiting on a decision.`);
+};
+
 const reseedRequests = async (ownerId, tenantIds) => {
     const ids = Object.values(tenantIds).filter(Boolean);
     if (ids.length === 0) return;
@@ -441,6 +531,7 @@ const seedDemo = async () => {
         await step('payments', () => reseedPayments(tenantIds));
         await step('expenses', () => reseedExpenses(propIds));
         await step('requests', () => reseedRequests(ownerId, tenantIds));
+        await step('join-requests', () => reseedJoinRequests(ownerId, propIds));
 
         console.log('✅ Demo account ready — landlord demo@gmail.com / Kajal@2004, tenant tenant@gmail.com / Tenant@2004');
     } catch (err) {
