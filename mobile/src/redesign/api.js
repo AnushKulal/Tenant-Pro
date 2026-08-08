@@ -72,7 +72,12 @@ export const owner = {
     applicantDocuments: (joinId) => body(http.get(`/owner/join-requests/${joinId}/documents`)),
     decideDocument: (id, decision, note) => body(
         http.put(`/owner/documents/${id}`, { decision, ...(note ? { note } : {}) })
-    )
+    ),
+    // The demo account. `demoStatus` answers for every landlord — `is_demo` is how the
+    // app knows whether to offer the reset at all, so a real customer is never shown a
+    // button that deletes their data. The server refuses the reset for anyone else too.
+    demoStatus: () => body(http.get('/owner/demo')),
+    resetDemo: () => body(http.post('/owner/demo/reset'))
 };
 
 export const properties = {

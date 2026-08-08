@@ -1426,6 +1426,45 @@ export default function Sheets() {
                     </View>
                 )}
 
+                {vm.isDemoReset && vm.demoReset && (
+                    <View>
+                        <Row align="flex-start" style={{ gap: 12, marginBottom: 16 }}>
+                            <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: t.asoft, alignItems: 'center', justifyContent: 'center', marginTop: 2 }}>
+                                <Glyph name="refresh-outline" size={20} color={t.amber} />
+                            </View>
+                            <View style={{ flex: 1, minWidth: 0 }}>
+                                <T w={700} s={20} lh={1.15} numberOfLines={2} style={{ letterSpacing: -0.7 }}>Rebuild the demo?</T>
+                                <T w={400} s={13} lh={1.5} c={t.fg2} style={{ marginTop: 7 }}>{vm.demoReset.line}</T>
+                            </View>
+                        </Row>
+
+                        {/* Counted, not described, so it is clear what is about to go. */}
+                        <Row gap={9} align="flex-start" style={{ paddingVertical: 12, paddingHorizontal: 13, borderRadius: 14, backgroundColor: t.asoft, marginBottom: 10 }}>
+                            <Glyph name="information-circle-outline" size={15} color={t.amber} />
+                            <T w={500} s={12} lh={1.45} c={t.amber} style={{ flex: 1 }}>{vm.demoReset.holds}</T>
+                        </Row>
+
+                        {/* The reassurance that matters if this is ever tapped by mistake. */}
+                        <Row gap={9} align="flex-start" style={{ paddingVertical: 12, paddingHorizontal: 13, borderRadius: 14, backgroundColor: t.lsoft, marginBottom: 14 }}>
+                            <Glyph name="shield-checkmark-outline" size={15} color={t.pos} />
+                            <T w={500} s={12} lh={1.45} c={t.pos} style={{ flex: 1 }}>{vm.demoReset.safe}</T>
+                        </Row>
+
+                        <Row style={{ gap: 8 }}>
+                            <Press onPress={vm.demoReset.cancel} disabled={vm.demoReset.busy} style={{ flex: 1, paddingVertical: 15, borderRadius: 999, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line, alignItems: 'center' }}>
+                                <T w={600} s={14} lh={1} c={t.fg}>Leave it</T>
+                            </Press>
+                            <Press
+                                onPress={vm.demoReset.busy ? undefined : vm.demoReset.confirm}
+                                disabled={vm.demoReset.busy}
+                                style={{ flex: 1, paddingVertical: 15, borderRadius: 999, backgroundColor: vm.demoReset.busy ? t.ink3 : t.amber, borderWidth: 1, borderColor: vm.demoReset.busy ? t.line : t.amber, alignItems: 'center' }}
+                            >
+                                <T w={700} s={14} lh={1} c={vm.demoReset.busy ? t.fg3 : t.on}>{vm.demoReset.busy ? 'Rebuilding\u2026' : 'Rebuild'}</T>
+                            </Press>
+                        </Row>
+                    </View>
+                )}
+
                 {vm.isNewProperty && vm.newProperty && (
                     <View>
                         <T w={700} s={20} lh={1} style={{ letterSpacing: -0.8 }}>Add a property</T>

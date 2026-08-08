@@ -19,8 +19,13 @@ export default function SettingsScreen() {
         <Row gap={14}>
           <Avatar uri={vm.ownerImg} name={vm.ownerName} size={56} radius={18} />
           <View style={{ flex: 1, minWidth: 0 }}>
-            <T w={600} s={17} lh={1.2} c={t.fg}>Demo Landlord</T>
-            <Eyebrow s={10} ls={0.08} c={t.fg3} style={{ marginTop: 5 }}>DEMO@GMAIL.COM</Eyebrow>
+            {/* Was hard-coded to the demo landlord, so every real customer saw
+                "Demo Landlord" here — and a demo profile edit, which now persists,
+                would never show. */}
+            <T w={600} s={17} lh={1.2} c={t.fg} numberOfLines={1}>{vm.ownerName || 'Your account'}</T>
+            <Eyebrow s={10} ls={0.08} c={t.fg3} style={{ marginTop: 5 }} numberOfLines={1}>
+              {(vm.ownerEmail || '').toUpperCase()}
+            </Eyebrow>
           </View>
           <Glyph name="chevron-forward" size={18} color={t.fg3} />
         </Row>
@@ -68,6 +73,33 @@ export default function SettingsScreen() {
           </Press>
         ))}
       </View>
+
+      {/* Demo account — rendered only when the SERVER says this is the demo, so a
+          real landlord is never shown a control that deletes their data. */}
+      {vm.isDemoAccount && (
+        <View style={{ borderRadius: 22, backgroundColor: t.ink2, borderWidth: 1, borderColor: t.line, padding: 18, marginBottom: 8 }}>
+          <Row gap={10} style={{ marginBottom: 12 }}>
+            <View style={{ width: 30, height: 30, borderRadius: 10, backgroundColor: t.asoft, alignItems: 'center', justifyContent: 'center' }}>
+              <Glyph name="flask-outline" size={15} color={t.amber} />
+            </View>
+            <Eyebrow s={10} ls={0.12} c={t.fg3} style={{ flex: 1 }}>DEMO ACCOUNT</Eyebrow>
+            <T mono w={600} s={9} ls={0.06} c={vm.demoCard.stale ? t.amber : t.fg3}>
+              {vm.demoCard.lastReset.toUpperCase()}
+            </T>
+          </Row>
+
+          <T w={600} s={14} lh={1.2} c={t.fg} numberOfLines={1}>{vm.demoCard.line}</T>
+          <T w={400} s={12} lh={1.5} c={t.fg3} style={{ marginTop: 7 }}>{vm.demoCard.note}</T>
+
+          <Press
+            onPress={vm.demoCard.busy ? undefined : vm.demoCard.ask}
+            disabled={vm.demoCard.busy}
+            style={{ width: '100%', marginTop: 14, paddingVertical: 13, borderRadius: 999, borderWidth: 1, borderColor: vm.demoCard.busy ? t.line : t.amber, backgroundColor: vm.demoCard.busy ? t.ink3 : t.asoft, alignItems: 'center' }}
+          >
+            <T w={700} s={13} lh={1} c={vm.demoCard.busy ? t.fg3 : t.amber}>{vm.demoCard.label}</T>
+          </Press>
+        </View>
+      )}
 
       {/* Sign out */}
       <Press

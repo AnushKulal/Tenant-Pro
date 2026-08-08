@@ -48,6 +48,22 @@ const fmtDay = (v) => {
   if (!v || isNaN(d.getTime())) return '';
   return `${d.getDate()} ${MON_SHORT[d.getMonth()]} ${d.getFullYear()}`;
 };
+// How long ago, in words, for the demo card's "last reset" line. Coarse on purpose:
+// the answer to "is this demo stale" is days, never minutes, and "2 days ago" reads
+// better than a date you have to compare against today yourself.
+const agoWords = (v) => {
+  const d = v instanceof Date ? v : new Date(v);
+  if (!v || isNaN(d.getTime())) return '';
+  const mins = Math.floor((Date.now() - d.getTime()) / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins} min ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs} ${hrs === 1 ? 'hour' : 'hours'} ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 30) return `${days} ${days === 1 ? 'day' : 'days'} ago`;
+  return fmtDay(d);
+};
+
 // Whole months since a date, floored at 0 — the "6 mo with you" figure.
 const monthsSince = (v) => {
   const d = v instanceof Date ? v : new Date(v);
@@ -161,6 +177,11 @@ const INITIAL_STATE = {
   // mapped live payload once loadOwnerData() returns. `live` says which one it is.
   data: SEED,
   live: false,
+  // The demo account's own status: null for every real landlord, so the reset control
+  // in Settings is hidden by default and only appears once the server has said this
+  // IS the demo. Never assumed from an email typed at the login screen.
+  demo: null,
+  demoBusy: false,
   dataLoading: false,
   dataError: '',
   refreshing: false,
@@ -2243,6 +2264,49 @@ function deriveVm(s, api) {
       { label: 'Help & support', icon: 'help-buoy-outline', go: () => setState({ route: 'support', overlay: null }), fg: 'fg', bg: 'vsoft', ifg: 'accent' },
       { label: 'Sign out', icon: 'log-out-outline', go: () => set('overlay', 'signout'), fg: 'coral', bg: 'csoft', ifg: 'coral' }
     ],
+    // ── The demo account's reset control ─────────────────────────────────────
+    // Only rendered when the SERVER says this is the demo account. Never inferred
+    // from the email on screen: a real landlord must never be shown a button whose
+    // job is to delete their payments and history, and a typo'd login is not proof of
+    // anything. `demo` is null for everybody else, so `isDemoAccount` is false and
+    // Settings draws nothing.
+    isDemoAccount: !!(s.demo && s.demo.is_demo),
+    demoCard: (() => {
+      const d = s.demo || {};
+      const c = d.counts || {};
+      const ago = agoWords(d.last_reset_at);
+      return {
+        // What the account holds right now, so it is obvious whether there is
+        // anything worth keeping before it gets wiped.
+        line: `${c.properties || 0} ${c.properties === 1 ? 'property' : 'properties'} · ${c.tenants || 0} ${c.tenants === 1 ? 'tenant' : 'tenants'} · ${c.payments || 0} payments`,
+        lastReset: ago ? `Last rebuilt ${ago}` : 'Never rebuilt',
+        // The whole point of the change: say plainly that this account keeps what a
+        // demo does to it, because the old behaviour trained the opposite expectation.
+        note: 'Everything you do here sticks — a restart no longer wipes it. Rebuild before a client walkthrough to get a full, current-dated portfolio back.',
+        stale: agoWords(d.last_reset_at).includes('day'),
+        busy: !!s.demoBusy,
+        label: s.demoBusy ? 'Rebuilding…' : 'Reset demo data',
+        ask: () => set('overlay', 'demoreset')
+      };
+    })(),
+    isDemoReset: s.overlay === 'demoreset',
+    demoReset: (() => {
+      const c = (s.demo && s.demo.counts) || {};
+      const awaiting = c.payments_awaiting || 0;
+      return {
+        // A confirmation that names what goes, because "reset" understates it.
+        line: 'This deletes the demo\u2019s payments, expenses, tickets and join decisions, puts every property, room and tenant back, and re-dates six months of history to today.',
+        // Anything the landlord did that is about to be lost, counted rather than
+        // described, so the warning is specific.
+        holds: `Right now: ${c.properties || 0} properties, ${c.tenants || 0} tenants, ${c.payments || 0} payments`
+          + (awaiting ? `, ${awaiting} awaiting confirmation` : ''),
+        safe: 'Only the demo account is ever rebuilt. No other landlord is touched.',
+        busy: !!s.demoBusy,
+        confirm: () => api.resetDemo(),
+        cancel: () => set('overlay', null)
+      };
+    })(),
+
     isSignOut: s.overlay === 'signout',
     askSignOut: () => set('overlay', 'signout'),
     confirmSignOut: () => api.signOut(),
@@ -3066,7 +3130,7 @@ export function AppProvider({ children }) {
   const loadOwnerData = useCallback(async ({ refresh = false } = {}) => {
     setState(refresh ? { refreshing: true, dataError: '' } : { dataLoading: true, dataError: '' });
     try {
-      const [dashboard, propsRes, unitsRes, tenantsRes, txRes, reqRes, payRes, joinRes] = await Promise.all([
+      const [dashboard, propsRes, unitsRes, tenantsRes, txRes, reqRes, payRes, joinRes, demoRes] = await Promise.all([
         apiOwner.dashboard('all'),
         apiProps.list(),
         apiUnits.list('all'),
@@ -3081,7 +3145,12 @@ export function AppProvider({ children }) {
         apiPayments.getSettings().catch(() => ({ settings: null })),
         // Newer than the rest again — a backend without this route must not take
         // the dashboard down, so an empty inbox stands in.
-        apiOwner.joinRequests('all').catch(() => ({ requests: [] }))
+        apiOwner.joinRequests('all').catch(() => ({ requests: [] })),
+        // Is this the demo account? Fetched with the dashboard rather than when
+        // Settings opens, so the reset control is already correct the first time that
+        // screen is drawn instead of appearing a moment later. A backend without the
+        // route answers "not the demo", which hides the control — the safe direction.
+        apiOwner.demoStatus().catch(() => ({ is_demo: false }))
       ]);
       const data = mapOwnerData({
         dashboard,
@@ -3099,6 +3168,9 @@ export function AppProvider({ children }) {
         dataLoading: false,
         refreshing: false,
         dataError: '',
+        // Kept out of `data` because it describes the ACCOUNT, not its contents, and
+        // mapOwnerData is about mapping rows.
+        demo: demoRes && demoRes.is_demo ? demoRes : null,
         // Keep the selected property/tenant valid against the new collections.
         place: (data.props[0] && data.props[0].id) || null,
         who: (data.tenants[0] && data.tenants[0].id) || null
@@ -3784,6 +3856,31 @@ export function AppProvider({ children }) {
     });
   }, [setState, ownerWrite]);
 
+  // Rebuild the demo account's rich picture. Only ever reachable from the demo
+  // account — the control is hidden otherwise and the server refuses anyone else — so
+  // this does not need its own guard, but it DOES need to reload afterwards: a reset
+  // deletes and recreates every row, which makes every id on screen stale.
+  //
+  // Goes through ownerWrite for that reload, and its own `demoBusy` flag drives the
+  // button's spinner. Without the flag a slow rebuild looks like a dead button and
+  // invites the second tap the server would answer with a 429.
+  const resetDemo = useCallback(async () => {
+    if (stateRef.current.demoBusy) return;
+    setState({ demoBusy: true, overlay: null });
+    let message = '';
+    const ok = await ownerWrite(async () => { message = (await apiOwner.resetDemo()).message; }, {
+      failed: 'Could not rebuild the demo data.'
+    });
+    // The status card's counts and "last reset" come from the same call the dashboard
+    // makes, so refreshing it is what makes the card agree with what just happened.
+    let demo = stateRef.current.demo;
+    if (ok) {
+      try { demo = await apiOwner.demoStatus(); } catch (e) { /* keep the old card */ }
+    }
+    setState({ demoBusy: false, demo: demo && demo.is_demo ? demo : stateRef.current.demo });
+    if (ok) flash(message || 'Demo data rebuilt');
+  }, [setState, ownerWrite, flash]);
+
   const createUnit = useCallback(async () => {
     const nu = stateRef.current.nu;
     if (nu.busy) return;
@@ -4059,7 +4156,7 @@ export function AppProvider({ children }) {
       pickPhotoFor, createProperty, saveProperty, deleteProperty, createUnit, createTenantRecord, goBackOneStep,
       decideJoin, requestToJoin, holdJoinCode, askPermission, finishPermits,
       loadDocs, decideDoc, loadMyDocs, pickDocPhoto, addMyDoc, removeMyDoc,
-      lookupProperty
+      lookupProperty, resetDemo
     }),
     [
       setState, set, go, flash, signIn, register, signOut, resolveSession,
@@ -4069,7 +4166,7 @@ export function AppProvider({ children }) {
       pickPhotoFor, createProperty, saveProperty, deleteProperty, createUnit, createTenantRecord, goBackOneStep,
       decideJoin, requestToJoin, holdJoinCode, askPermission, finishPermits,
       loadDocs, decideDoc, loadMyDocs, pickDocPhoto, addMyDoc, removeMyDoc,
-      lookupProperty
+      lookupProperty, resetDemo
     ]
   );
 
