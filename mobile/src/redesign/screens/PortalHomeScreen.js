@@ -19,8 +19,10 @@ export default function PortalHomeScreen() {
                 <Avatar uri={me.img} name={vm.meFullName} size={42} radius={14} />
                 <View style={{ flex: 1 }}>
                     <Eyebrow s={9} ls={0.1} c={t.fg3}>WELCOME BACK</Eyebrow>
-                    <T w={700} s={20} lh={1.1} style={{ letterSpacing: -0.8, marginTop: 5 }}>
-                        {me.name || 'Rahul'}
+                    {/* Fell back to 'Rahul' — the demo tenant — so a real tenant whose
+                        name had not arrived yet was greeted by somebody else's. */}
+                    <T w={700} s={20} lh={1.1} numberOfLines={1} style={{ letterSpacing: -0.8, marginTop: 5 }}>
+                        {me.name || 'Welcome'}
                     </T>
                 </View>
                 <Press

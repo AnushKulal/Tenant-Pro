@@ -802,7 +802,7 @@ export default function Sheets() {
                 {/* ── Pay (tenant) ────────────────────────────────────── */}
                 {vm.isPay && (
                     <View>
-                        <T w={700} s={20} lh={1} style={{ letterSpacing: -0.8, marginBottom: 16 }}>{vm.payLabel || 'Pay ₹8,000'}</T>
+                        <T w={700} s={20} lh={1} style={{ letterSpacing: -0.8, marginBottom: 16 }}>{vm.payLabel || 'Pay rent'}</T>
                         {/* The landlord's real UPI details. Tap either row to copy it. */}
                         {vm.payInfo.missing ? (
                             <Row gap={9} align="flex-start" style={{ paddingVertical: 12, paddingHorizontal: 13, borderRadius: 14, backgroundColor: t.asoft, marginBottom: 16 }}>
