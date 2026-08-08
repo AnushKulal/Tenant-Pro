@@ -9,7 +9,7 @@ import { useVm } from './AppContext';
 import { useT } from './ThemeContext';
 import { grotesk } from './theme';
 import { T, Eyebrow, Row, Press, Glyph, Field, Avatar } from './ui';
-import { useSheetIn, useFadeIn } from './motion';
+import { useSheetIn, useFadeIn, useSheet } from './motion';
 
 // ── The conversation on a maintenance request ────────────────────────────────
 // One component, both sides: the landlord's ticket sheet and the tenant's request
@@ -136,6 +136,10 @@ export function Thread({ thread, composer, canReply, t, placeholder }) {
 // A row of pick-one chips. Every creation sheet needs the same control, and the
 // selected chip reads as selected in both themes because it uses the foreground
 // token rather than a hand-picked colour.
+// A row of choice chips. `maxWidth` + a single truncated line is the important
+// part: a chip's label can carry a property name, and a long one ("Green Meadows
+// Apartment · 102") grew the chip past the screen edge and pushed the row out of
+// shape. It now shrinks and ellipsizes instead of overflowing.
 function Chips({ items, t, wrap = true }) {
     return (
         <Row gap={7} wrap={wrap} style={{ marginBottom: 12 }}>
@@ -143,9 +147,18 @@ function Chips({ items, t, wrap = true }) {
                 <Press
                     key={c.label}
                     onPress={c.go}
-                    style={{ paddingVertical: 9, paddingHorizontal: 13, borderRadius: 999, backgroundColor: c.on ? t.lsoft : t.ink3, borderWidth: 1, borderColor: c.on ? t.accent : t.line }}
+                    style={{
+                        paddingVertical: 9,
+                        paddingHorizontal: 13,
+                        borderRadius: 999,
+                        backgroundColor: c.on ? t.lsoft : t.ink3,
+                        borderWidth: 1,
+                        borderColor: c.on ? t.accent : t.line,
+                        maxWidth: '100%',
+                        flexShrink: 1
+                    }}
                 >
-                    <T w={600} s={12} lh={1} c={c.on ? t.accent : t.fg2}>{c.label}</T>
+                    <T w={600} s={12} lh={1} numberOfLines={1} c={c.on ? t.accent : t.fg2}>{c.label}</T>
                 </Press>
             ))}
         </Row>
@@ -231,8 +244,17 @@ export default function Sheets() {
     // sheet replays the motion (see the key on <Sheets/> usage in RedesignRoot).
     const H = Dimensions.get('window').height;
     const SHEET_MAX = Math.round(H * 0.88);
-    const sheetIn = useSheetIn({ height: H });
-    const scrimIn = useFadeIn();
+    // Slides both ways now. Dismissing used to unmount the sheet outright, so it
+    // simply vanished — motion in, nothing out. `replayKey` re-arms the entrance
+    // when one sheet is replaced by another; `onClosed` clears the overlay only once
+    // the slide-down has actually landed, which is what keeps the contents on screen
+    // for the whole exit instead of emptying halfway through.
+    const { sheet, scrim } = useSheet({
+        height: H,
+        open: !vm.overlayClosing,
+        replayKey: vm.overlay || '',
+        onClosed: vm.finishClose
+    });
 
     if (!vm.overlayOpen) return null;
 
@@ -247,14 +269,14 @@ export default function Sheets() {
 
     return (
         <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'flex-end', zIndex: 60, elevation: 24 }}>
-            <Animated.View style={[{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }, scrimIn]}>
+            <Animated.View style={[{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }, scrim]}>
             <Press
                 onPress={vm.closeOverlay}
                 style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(4,4,6,0.6)' }}
             />
             </Animated.View>
 
-            <Animated.View style={[{ position: 'absolute', left: 0, right: 0, bottom: 0, maxHeight: SHEET_MAX }, sheetIn]}>
+            <Animated.View style={[{ position: 'absolute', left: 0, right: 0, bottom: 0, maxHeight: SHEET_MAX }, sheet]}>
             <ScrollView
                 bounces={false}
                 style={{
@@ -601,8 +623,17 @@ export default function Sheets() {
 
                         <Row style={{ gap: 7, marginBottom: 14 }}>
                             {(vm.invite.options || []).map((io, i) => (
-                                <Press key={i} onPress={io.go} style={{ flex: 1, paddingVertical: 11, borderRadius: 13, alignItems: 'center', borderWidth: 1, borderColor: col(io.bd), backgroundColor: col(io.bg) }}>
-                                    <T w={600} s={12} lh={1.2} c={col(io.fg)}>{io.name}</T>
+                                <Press
+                                    key={i}
+                                    onPress={io.go}
+                                    style={{ flex: 1, minWidth: 0, paddingVertical: 11, paddingHorizontal: 8, borderRadius: 13, alignItems: 'center', borderWidth: 1, borderColor: col(io.bd), backgroundColor: col(io.bg) }}
+                                >
+                                    {/* One truncated line. "Green Meadows Luxury Residency
+                                        Apartment Block A" used to wrap to four lines and
+                                        stretch this row into a different shape from its
+                                        neighbour; the code below it is the unambiguous bit
+                                        anyway. */}
+                                    <T w={600} s={12} lh={1.2} numberOfLines={1} c={col(io.fg)} style={{ textAlign: 'center' }}>{io.name}</T>
                                     <T mono w={600} s={9} lh={1} ls={0.06} c={col(io.fg)} style={{ opacity: 0.62, marginTop: 5 }}>{io.code}</T>
                                 </Press>
                             ))}
@@ -610,7 +641,7 @@ export default function Sheets() {
 
                         <View style={{ borderRadius: 20, backgroundColor: '#FFFFFF', padding: 18, alignItems: 'center', marginBottom: 10 }}>
                             <Image source={{ uri: vm.invite.qr }} style={{ width: 196, height: 196 }} resizeMode="contain" />
-                            <T w={700} s={15} lh={1} c="#0A0A0C" style={{ marginTop: 14 }}>{vm.invite.name}</T>
+                            <T w={700} s={15} lh={1.2} numberOfLines={2} c="#0A0A0C" style={{ marginTop: 14, textAlign: 'center' }}>{vm.invite.name}</T>
                             <T mono w={600} s={10} lh={1} ls={0.08} c="rgba(10,10,12,.5)" style={{ marginTop: 7 }}>{vm.invite.policy}</T>
                         </View>
 
@@ -648,7 +679,7 @@ export default function Sheets() {
                         {(vm.moveTargets || []).map((mt, i) => (
                             <View key={i} style={{ marginBottom: 14 }}>
                                 <Row align="baseline" style={{ gap: 9, marginBottom: 9 }}>
-                                    <T w={600} s={13} lh={1} c={t.fg}>{mt.name}</T>
+                                    <T w={600} s={13} lh={1.2} numberOfLines={1} c={t.fg} style={{ flexShrink: 1 }}>{mt.name}</T>
                                     <Eyebrow s={9} ls={0.06}>{mt.policy}</Eyebrow>
                                 </Row>
                                 {(mt.rooms || []).map((mr, j) => (

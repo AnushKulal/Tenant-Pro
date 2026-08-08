@@ -80,6 +80,10 @@ const INITIAL_STATE = {
   // Which join request the landlord has opened from the inbox.
   join: null,
 
+  // True while a sheet is playing its slide-down. The overlay stays set until the
+  // motion ends, so the sheet keeps its contents on the way out.
+  overlayClosing: false,
+
   // ── Finding a property by its invite code ──
   // The result of resolving a scanned QR or a typed code against the server. This
   // exists because the app used to look the code up in its own in-memory property
@@ -1002,7 +1006,9 @@ function deriveVm(s, api) {
         rent: nt.rent, setRent: (e) => put({ rent: evStr(e).replace(/[^0-9]/g, '') }),
         deposit: nt.deposit, setDeposit: (e) => put({ deposit: evStr(e).replace(/[^0-9]/g, '') }),
         rooms: openRooms.map((u) => ({
-          label: `${propName(u.prop)} · ${u.no}`,
+          // Room first: it is the thing being picked, so when a long property name
+          // has to be truncated the number is still the part you can read.
+          label: `${u.no} · ${propName(u.prop)}`,
           on: nt.unitId === u.id,
           // Tapping the chosen room again clears it, so "no room yet" stays reachable.
           go: () => put({ unitId: nt.unitId === u.id ? null : u.id, rent: nt.rent || String(Number(String(u.rent).replace(/[^0-9]/g, '')) || '') })
@@ -1324,8 +1330,16 @@ function deriveVm(s, api) {
     openMenu: () => set('overlay', 'menu'),
     openRecord: () => set('overlay', 'record'),
     openPay: () => set('overlay', 'pay'),
-    closeOverlay: () => set('overlay', null),
+    // Dismissing plays the slide-down BEFORE the overlay is cleared: the sheet has
+    // to stay mounted, with its contents, until the motion finishes. Sheets calls
+    // finishClose() on the last frame.
+    closeOverlay: () => (s.overlay ? setState({ overlayClosing: true }) : undefined),
+    finishClose: () => setState({ overlay: null, overlayClosing: false, docs: { ...INITIAL_STATE.docs } }),
+    // Open for as long as the sheet is on screen, including while it slides out.
     overlayOpen: !!s.overlay,
+    overlayClosing: !!s.overlayClosing,
+    // The open sheet's name — Sheets keys its entrance replay on it.
+    overlay: s.overlay || '',
     isSearch: s.overlay === 'search',
     isRecord: s.overlay === 'record',
     isPay: s.overlay === 'pay',
@@ -2896,6 +2910,9 @@ export function AppProvider({ children }) {
   const setState = useCallback((partial) => {
     setStateRaw((prev) => {
       const next = { ...prev, ...partial };
+      // Opening a sheet cancels a dismissal that is still animating, so a fast
+      // tap-close-tap-open cannot leave the new sheet mid-slide-out.
+      if (partial && partial.overlay) next.overlayClosing = false;
       const moving = partial && partial.route != null && partial.route !== prev.route;
       if (moving && !partial.keepHistory && !partial.history) {
         next.history = ENTRY_ROUTES.includes(partial.route)

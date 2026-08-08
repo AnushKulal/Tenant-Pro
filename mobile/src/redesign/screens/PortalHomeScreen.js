@@ -33,12 +33,13 @@ export default function PortalHomeScreen() {
                         paddingHorizontal: 13,
                         borderRadius: 999,
                         borderWidth: 1,
-                        borderColor: t.line,
-                        backgroundColor: t.ink2
+                        // Red, because it is the one destructive thing on this screen.
+                        borderColor: t.coral,
+                        backgroundColor: t.csoft
                     }}
                 >
-                    <Glyph name="log-out-outline" size={15} color={t.fg2} />
-                    <T mono w={600} s={10} ls={0.06} c={t.fg2}>SIGN OUT</T>
+                    <Glyph name="log-out-outline" size={15} color={t.coral} />
+                    <T mono w={600} s={10} ls={0.06} c={t.coral}>SIGN OUT</T>
                 </Press>
             </Row>
 

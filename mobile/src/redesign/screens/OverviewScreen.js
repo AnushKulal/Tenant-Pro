@@ -105,8 +105,11 @@ export default function OverviewScreen() {
 
             {/* Pending + Vacant — two columns */}
             <Row gap={8} align="stretch" style={{ marginBottom: 8 }}>
+                {/* `flex: 1` on the INNER view as well as the Press: the row stretches
+                    each Press to the tallest, but the card inside only grew to its own
+                    content, so a two-line subtitle made one tile visibly taller. */}
                 <Press onPress={vm.openOverdue} style={{ flex: 1 }}>
-                    <View style={{ borderRadius: 24, borderWidth: 1, borderColor: t.line, padding: 16, backgroundColor: col(vm.pendingBg) }}>
+                    <View style={{ flex: 1, borderRadius: 24, borderWidth: 1, borderColor: t.line, padding: 16, backgroundColor: col(vm.pendingBg) }}>
                         <View style={{ width: 30, height: 30, borderRadius: 10, alignItems: 'center', justifyContent: 'center', marginBottom: 14, backgroundColor: col(vm.pendingIconBg) }}>
                             <Glyph name={vm.pendingIcon} size={17} color={col(vm.pendingIconFg)} />
                         </View>
@@ -116,7 +119,7 @@ export default function OverviewScreen() {
                 </Press>
 
                 <Press onPress={vm.openVacant} style={{ flex: 1 }}>
-                    <View style={{ borderRadius: 24, borderWidth: 1, borderColor: t.line, padding: 16, backgroundColor: col(vm.vacantBg) }}>
+                    <View style={{ flex: 1, borderRadius: 24, borderWidth: 1, borderColor: t.line, padding: 16, backgroundColor: col(vm.vacantBg) }}>
                         <View style={{ width: 30, height: 30, borderRadius: 10, alignItems: 'center', justifyContent: 'center', marginBottom: 14, backgroundColor: col(vm.vacantIconBg) }}>
                             <Glyph name="key" size={16} color={col(vm.vacantIconFg)} />
                         </View>

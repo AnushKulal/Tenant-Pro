@@ -47,6 +47,48 @@ export function useSheetIn({ height = 900, duration = DUR.sheet, enabled = true 
     };
 }
 
+// A sheet that slides BOTH ways, and a scrim that fades with it.
+//
+// The enter animation was already there; dismissing simply unmounted the sheet, so
+// it vanished — motion in, nothing out, which reads as a glitch rather than a
+// gesture. `open` drives the direction: false plays the reverse and calls
+// `onClosed` when the last frame lands, which is what lets the caller keep the
+// sheet mounted (and its content rendered) until the motion has actually finished.
+//
+// `replayKey` re-arms the entrance: several sheets share one host, and switching
+// between them should slide the new one up rather than swap the contents in place.
+export function useSheet({ height = 900, duration = DUR.sheet, open = true, replayKey = '', onClosed } = {}) {
+    const t = useRef(new Animated.Value(open ? 1 : 0)).current;
+    const closed = useRef(onClosed);
+    closed.current = onClosed;
+
+    useEffect(() => {
+        // Snap back to off-screen so the new sheet rises rather than cross-fading.
+        if (open) t.setValue(0);
+    }, [replayKey, open, t]);
+
+    useEffect(() => {
+        const a = Animated.timing(t, {
+            toValue: open ? 1 : 0,
+            duration,
+            easing: EASE_SHEET,
+            useNativeDriver: true
+        });
+        a.start(({ finished }) => {
+            // Only report a COMPLETED close: a run cut short by another change has
+            // not dismissed anything, and unmounting there would drop a sheet the
+            // user is still looking at.
+            if (finished && !open && closed.current) closed.current();
+        });
+        return () => a.stop();
+    }, [t, open, duration]);
+
+    return {
+        sheet: { transform: [{ translateY: t.interpolate({ inputRange: [0, 1], outputRange: [height, 0] }) }] },
+        scrim: { opacity: t }
+    };
+}
+
 // The scrim behind a sheet fades in over the same beat.
 export function useFadeIn({ to = 1, duration = DUR.sheet, enabled = true } = {}) {
     const t = useRef(new Animated.Value(enabled ? 0 : to)).current;

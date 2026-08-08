@@ -23,6 +23,7 @@ import DeckDock from './DeckDock';
 import Sheets from './Sheets';
 import Toast from './Toast';
 import UpdateSheet from './UpdateSheet';
+import Loading from './Loading';
 
 import OnboardingScreen from './screens/OnboardingScreen';
 import PermissionsScreen from './screens/PermissionsScreen';
@@ -140,11 +141,7 @@ function Shell() {
     // once on mount). Hold on the brand mark rather than flashing a screen the
     // user may not be entitled to.
     if (state.route === 'boot') {
-        return (
-            <View style={{ flex: 1, backgroundColor: t.ink, alignItems: 'center', justifyContent: 'center' }}>
-                <Monogram size={64} />
-            </View>
-        );
+        return <Loading line="TENANTPRO" />;
     }
 
     // An owner's real data has not arrived yet. `state.data` still holds the seed
@@ -154,13 +151,7 @@ function Shell() {
     // were theirs.
     const awaitingOwnerData = vm.isOwner && !vm.live;
     if (awaitingOwnerData && vm.dataLoading) {
-        return (
-            <View style={{ flex: 1, backgroundColor: t.ink, alignItems: 'center', justifyContent: 'center', rowGap: 18 }}>
-                <Monogram size={54} />
-                <ActivityIndicator color={t.lime} />
-                <T mono w={600} s={9} ls={0.14} c={t.fg3}>LOADING YOUR PORTFOLIO</T>
-            </View>
-        );
+        return <Loading line="LOADING YOUR PORTFOLIO" />;
     }
     if (awaitingOwnerData && vm.hasDataError) {
         return (
@@ -187,13 +178,7 @@ function Shell() {
     // exactly what made a failed load look like a working app.
     const awaitingTenantData = vm.isTenantSession && !vm.tenantDataReady;
     if (awaitingTenantData && vm.dataLoading) {
-        return (
-            <View style={{ flex: 1, backgroundColor: t.ink, alignItems: 'center', justifyContent: 'center', rowGap: 18 }}>
-                <Monogram size={54} />
-                <ActivityIndicator color={t.lime} />
-                <T mono w={600} s={9} ls={0.14} c={t.fg3}>LOADING YOUR TENANCY</T>
-            </View>
-        );
+        return <Loading line="LOADING YOUR TENANCY" />;
     }
     if (awaitingTenantData && vm.hasDataError) {
         return (
@@ -245,9 +230,12 @@ function Shell() {
                 <View style={{ height: insets.bottom }} />
             )}
 
-            {/* overlays + toast paint above everything. Keyed by overlay so each
-                sheet replays the `tpsheet` slide-up when it opens. */}
-            <Sheets key={state.overlay || 'none'} />
+            {/* overlays + toast paint above everything.
+                NOT keyed any more: remounting on every overlay change threw the sheet
+                away the instant it was dismissed, which is why there was no exit
+                animation. Sheets replays its own entrance internally (see useSheet's
+                replayKey) and clears the overlay itself once the slide-down lands. */}
+            <Sheets />
             <Toast />
 
             {/* OTA prompt — v1's UpdateGate is bypassed in v2, so the redesign owns it. */}
