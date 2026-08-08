@@ -27,6 +27,31 @@ const ensureColumn = async (conn, table, column, definition) => {
     return true;
 };
 
+// Same problem one level along: schema.sql can widen an enum, but only for
+// databases being created from scratch — an existing column keeps its old set of
+// values and rejects the new one at INSERT time. MODIFY COLUMN is not idempotent
+// in any useful sense (it rewrites the column definition on every boot, and on a
+// large table that is a table copy), so the current COLUMN_TYPE is compared first
+// and the ALTER is skipped when it already matches. `expectedType` must be spelled
+// exactly as MySQL reports it: lowercase `enum(` and single-quoted values, no
+// spaces after the commas.
+const ensureColumnType = async (conn, table, column, expectedType, definition) => {
+    const [rows] = await conn.query(
+        `SELECT COLUMN_TYPE FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?`,
+        [table, column]
+    );
+    // No such column: this helper only widens what exists. Adding it is
+    // ensureColumn's job, and schema.sql's job on a fresh database.
+    if (rows.length === 0) return false;
+    if (String(rows[0].COLUMN_TYPE).toLowerCase() === expectedType.toLowerCase()) return false;
+    // Identifiers cannot be parameterised; both are hardcoded call sites below,
+    // never user input.
+    await conn.query(`ALTER TABLE \`${table}\` MODIFY COLUMN \`${column}\` ${definition}`);
+    console.log(`🔧 Migration: widened ${table}.${column}`);
+    return true;
+};
+
 const initDb = async () => {
     const ssl = sslOption();
     const conn = await mysql.createConnection({
@@ -55,6 +80,22 @@ const initDb = async () => {
         // already exists on every deployed database, so CREATE TABLE IF NOT EXISTS
         // will not add the column — this will.
         await ensureColumn(conn, 'maintenance_requests', 'image_url', 'varchar(500) DEFAULT NULL');
+
+        // maintenance_messages became the request's whole timeline rather than just
+        // its chat. Existing rows are all real messages, so the 'message' default
+        // backfills them correctly and the two status columns stay NULL for them.
+        await ensureColumn(conn, 'maintenance_messages', 'kind', "enum('message','status') NOT NULL DEFAULT 'message'");
+        await ensureColumn(conn, 'maintenance_messages', 'status_from', 'varchar(20) DEFAULT NULL');
+        await ensureColumn(conn, 'maintenance_messages', 'status_to', 'varchar(20) DEFAULT NULL');
+        // ...and its sender_role gained 'system'. Widening an enum never invalidates
+        // a stored value, so this is safe on a table with data in it.
+        await ensureColumnType(
+            conn,
+            'maintenance_messages',
+            'sender_role',
+            "enum('tenant','owner','system')",
+            "enum('tenant','owner','system') NOT NULL"
+        );
 
         console.log('✅ Database schema is up to date.');
     } finally {

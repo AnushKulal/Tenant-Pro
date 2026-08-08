@@ -83,17 +83,38 @@ const updateStatus = async (req, res) => {
 
         // Verify ownership before touching the row — matching on owner_id in the
         // check (rather than only in the UPDATE) is what makes a request that
-        // belongs to someone else a clean 404 instead of a silent no-op.
+        // belongs to someone else a clean 404 instead of a silent no-op. The
+        // current status comes back from this same query: the timeline event needs
+        // the value being moved away from, and reading it here costs nothing.
         const [check] = await db.query(
-            'SELECT id FROM maintenance_requests WHERE id = ? AND owner_id = ?',
+            'SELECT id, status FROM maintenance_requests WHERE id = ? AND owner_id = ?',
             [requestId, ownerId]
         );
         if (check.length === 0) {
             return res.status(404).json({ message: 'Request not found or unauthorized.' });
         }
 
+        const previous = check[0].status;
+
+        // Re-sending the status the request already has is not an error — clients
+        // retry, and a double-tap on "Resolved" should not look like a failure. But
+        // it must not leave a trail either: a timeline reading "Marked Resolved"
+        // three times over would be describing the network, not the tenancy.
+        if (previous === status) {
+            return res.status(200).json({ message: 'Status unchanged.', status });
+        }
+
         // updated_at is ON UPDATE current_timestamp, so it moves on its own here.
         await db.query('UPDATE maintenance_requests SET status = ? WHERE id = ?', [status, requestId]);
+
+        // Record the move in the request's thread so both sides can see WHEN it
+        // happened. Attributed to 'owner' rather than 'system' because a landlord
+        // decided it — from the tenant's side this is the landlord acting, and it
+        // belongs on the same side of the conversation as their replies.
+        // Written after the UPDATE and not wrapped with it: an event with no state
+        // change behind it would be a lie, whereas a state change whose event
+        // failed to write is merely an incomplete history.
+        await insertStatusEvent(requestId, previous, status);
 
         res.status(200).json({ message: 'Status updated.', status });
     } catch (error) {
@@ -104,11 +125,18 @@ const updateStatus = async (req, res) => {
 
 // --- Shared thread helpers (also used by tenantPortalController) ---
 
+// Named once because a POST reads its own row back (see insertMessage) and must
+// hand the client the same fields the following GET will — a client that renders a
+// status event from `kind` breaks if one of the two shapes is missing it.
+const THREAD_COLUMNS = 'id, sender_role, kind, body, status_from, status_to, created_at';
+
 // The thread on one request, oldest-first: a conversation reads top-to-bottom,
-// unlike the queue lists which are newest-first.
+// unlike the queue lists which are newest-first. Status events are interleaved
+// with the messages by the same ordering, which is the point of storing them in
+// this table — `kind` is how the client tells the two apart when drawing them.
 const fetchThread = async (requestId) => {
     const [messages] = await db.query(
-        `SELECT id, sender_role, body, created_at
+        `SELECT ${THREAD_COLUMNS}
          FROM maintenance_messages WHERE request_id = ?
          ORDER BY created_at ASC, id ASC`,
         [requestId]
@@ -141,10 +169,22 @@ const insertMessage = async (requestId, senderRole, text) => {
     );
 
     const [rows] = await db.query(
-        'SELECT id, sender_role, body, created_at FROM maintenance_messages WHERE id = ?',
+        `SELECT ${THREAD_COLUMNS} FROM maintenance_messages WHERE id = ?`,
         [result.insertId]
     );
     return rows[0];
+};
+
+// Appends a status change to a request's timeline. `body` carries a plain sentence
+// as well as the two status columns so that a client which knows nothing about
+// `kind` — an older build of the app, or a notification email — still shows
+// something a person can read instead of an empty bubble.
+const insertStatusEvent = async (requestId, from, to) => {
+    await db.query(
+        `INSERT INTO maintenance_messages (request_id, sender_role, kind, body, status_from, status_to)
+         VALUES (?, 'owner', 'status', ?, ?, ?)`,
+        [requestId, `Marked ${to}`, from || null, to]
+    );
 };
 
 // Resolves whether a request is this landlord's, so the message endpoints can't

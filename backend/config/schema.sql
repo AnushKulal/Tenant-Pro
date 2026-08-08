@@ -222,20 +222,113 @@ CREATE TABLE IF NOT EXISTS `maintenance_requests` (
   CONSTRAINT `maintenance_requests_ibfk_2` FOREIGN KEY (`owner_id`) REFERENCES `owners` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
--- 13. maintenance_messages (the back-and-forth on one request -> maintenance_requests)
--- Turns a request from a one-way report into a conversation: the tenant can add
--- detail and the landlord can reply without either side phoning the other.
+-- 13. maintenance_messages (one request's TIMELINE -> maintenance_requests)
+-- Despite the name this is not only the chat: it is the ordered record of
+-- everything that happened to a request. `kind` separates the two sorts of entry —
+-- 'message' is something a person typed, 'status' is the landlord moving the
+-- ticket along ("Open" -> "In Progress"), which previously left no trace at all.
+--
+-- Status events live HERE rather than in a history table of their own because the
+-- only thing anyone ever wants is the two interleaved: a single ordered read gives
+-- the tenant and the landlord the identical story ("you replied, then I started
+-- work, then you asked when"). Two tables would mean two queries and a merge in
+-- every client, and a merge is exactly where the two sides start disagreeing.
+--
 -- The sender is stored as a ROLE, not a user id, because the two participants of
 -- a thread are already fixed by maintenance_requests.tenant_id / owner_id — so a
 -- role is all the client needs to place a bubble left or right, and the thread
 -- stays readable even if the tenant's login account is later re-created.
+-- 'system' exists for entries no human authored (future automated events); a
+-- status change is NOT one of those — the landlord chose it, so it is stored as
+-- sender_role='owner' and reads as an action by them.
 CREATE TABLE IF NOT EXISTS `maintenance_messages` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `request_id` int(11) NOT NULL,
-  `sender_role` enum('tenant','owner') NOT NULL,
+  `sender_role` enum('tenant','owner','system') NOT NULL,
+  `kind` enum('message','status') NOT NULL DEFAULT 'message',
   `body` text NOT NULL,
+  -- Both endpoints of the transition are kept so a client can render the event
+  -- without re-deriving it from the row before it — which is impossible anyway
+  -- once messages are interleaved between two status changes.
+  `status_from` varchar(20) DEFAULT NULL,
+  `status_to` varchar(20) DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   PRIMARY KEY (`id`),
   KEY `request_id` (`request_id`),
   CONSTRAINT `maintenance_messages_ibfk_1` FOREIGN KEY (`request_id`) REFERENCES `maintenance_requests` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- 14. join_requests (a tenant asking a landlord to be let into a property)
+-- The missing first step of a tenancy: until now a landlord had to create the
+-- `tenants` row before the tenant's own login could see anything, and a tenant who
+-- had the property's code had no way to raise their hand. This table is that
+-- handshake, and accepting one is what finally sets tenant_users.status='Linked'
+-- (the 'Pending' value that enum has always carried was meant for exactly this).
+--
+-- owner_id is denormalised alongside property_id so the landlord's inbox is one
+-- indexed read instead of a join through properties on every poll.
+--
+-- unit_id is filled in ON ACCEPT, not on request: the tenant asks to join a
+-- PROPERTY (that is all the code identifies), and which room they end up in is the
+-- landlord's decision at the moment they accept. ON DELETE SET NULL because a room
+-- being deleted later must not erase the record that someone was admitted.
+--
+-- Deliberately NO unique key on (tenant_user_id, property_id, status): it would
+-- read as "one request per state" but actually forbids a second Rejected row,
+-- so a tenant rejected once could never re-apply after sorting things out with the
+-- landlord. Duplicates are prevented in joinController instead, which refuses a new
+-- request while a Pending one exists for that property — the only overlap that is
+-- genuinely wrong. Decided rows are history and may repeat.
+CREATE TABLE IF NOT EXISTS `join_requests` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `tenant_user_id` int(11) NOT NULL,
+  `owner_id` int(11) NOT NULL,
+  `property_id` int(11) NOT NULL,
+  `unit_id` int(11) DEFAULT NULL,
+  `status` enum('Pending','Accepted','Rejected') NOT NULL DEFAULT 'Pending',
+  `note` varchar(300) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  -- NULL for as long as the request is Pending, which is what makes "how long has
+  -- this been waiting" answerable without a separate event log.
+  `decided_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `tenant_user_id` (`tenant_user_id`),
+  KEY `owner_id` (`owner_id`),
+  KEY `property_id` (`property_id`),
+  KEY `unit_id` (`unit_id`),
+  CONSTRAINT `join_requests_ibfk_1` FOREIGN KEY (`tenant_user_id`) REFERENCES `tenant_users` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `join_requests_ibfk_2` FOREIGN KEY (`owner_id`) REFERENCES `owners` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `join_requests_ibfk_3` FOREIGN KEY (`property_id`) REFERENCES `properties` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `join_requests_ibfk_4` FOREIGN KEY (`unit_id`) REFERENCES `units` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- 17. tenant_documents (-> tenant_users, owners)
+-- The ID proofs a tenant uploads on their own profile, and the landlord's verdict
+-- on each. Keyed on tenant_users (the portal account) rather than tenants (the
+-- landlord's record), because the whole point is that a landlord can look at a
+-- stranger's ID *before* accepting them into a property — at which moment no
+-- tenants row exists yet.
+--
+-- `tenants.id_proof_url` and `tenants.aadhar` stay where they are: those are what
+-- the landlord typed in themselves, which is a different claim from a document
+-- the tenant supplied and someone checked.
+CREATE TABLE IF NOT EXISTS `tenant_documents` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `tenant_user_id` int(11) NOT NULL,
+  `doc_type` varchar(20) NOT NULL,
+  -- Optional: many people will not want to type the number, and a photo of the
+  -- card is the thing being verified either way.
+  `doc_number` varchar(64) DEFAULT NULL,
+  `file_url` varchar(500) NOT NULL,
+  `status` enum('Pending','Verified','Rejected') NOT NULL DEFAULT 'Pending',
+  -- Who decided, and when. NULL for as long as nobody has looked.
+  `verified_by` int(11) DEFAULT NULL,
+  `verified_at` timestamp NULL DEFAULT NULL,
+  `note` varchar(300) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `tenant_user_id` (`tenant_user_id`),
+  KEY `verified_by` (`verified_by`),
+  CONSTRAINT `tenant_documents_ibfk_1` FOREIGN KEY (`tenant_user_id`) REFERENCES `tenant_users` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `tenant_documents_ibfk_2` FOREIGN KEY (`verified_by`) REFERENCES `owners` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;

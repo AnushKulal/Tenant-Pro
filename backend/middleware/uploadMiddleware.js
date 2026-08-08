@@ -66,7 +66,10 @@ if (useCloudinary) {
                 {
                     folder: `tenantpro/${folderFor(file.fieldname)}`,
                     public_id: `${prefixFor(file.fieldname)}${Date.now()}-${Math.round(Math.random() * 1e9)}`,
-                    resource_type: 'image'
+                    // ID proofs are frequently PDFs, so let Cloudinary decide the
+                    // resource type for that field rather than forcing 'image'
+                    // (which rejects a PDF outright).
+                    resource_type: file.fieldname === 'document' ? 'auto' : 'image'
                 },
                 (err, result) => {
                     if (err) return cb(err);
@@ -98,12 +101,14 @@ if (useCloudinary) {
     });
 }
 
+// Images everywhere, plus PDF for the `document` field only — an Aadhaar or PAN
+// scan is very often a PDF, and rejecting it would push people into
+// screenshotting their own documents.
 const fileFilter = (req, file, cb) => {
-    if (file.mimetype.startsWith('image/')) {
-        cb(null, true);
-    } else {
-        cb(new Error('Not an image! Please upload an image file.'), false);
-    }
+    if (file.mimetype.startsWith('image/')) return cb(null, true);
+    if (file.fieldname === 'document' && file.mimetype === 'application/pdf') return cb(null, true);
+    const want = file.fieldname === 'document' ? 'an image or a PDF' : 'an image file';
+    cb(new Error(`Please upload ${want}.`), false);
 };
 
 const upload = multer({
