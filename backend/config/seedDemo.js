@@ -1,7 +1,25 @@
-// Seeds a ready-to-use DEMO account so the app can be shown off immediately, and
-// keeps it that way. This is a REAL owner account — nothing flags it as special —
-// but its data self-heals to a known, full state on every boot, so a demo always
-// starts from the same rich picture no matter what the last demo did to it.
+// The DEMO account: a REAL landlord account, backed by real rows in this database
+// exactly like any other. Nothing about it is faked in the app — sign in as the demo
+// and the screens read the same endpoints a paying customer's screens read.
+//
+// IT BEHAVES LIKE A REAL ACCOUNT. Whatever you do during a demo — record a payment,
+// accept an applicant, edit a room, delete a property — sticks. Boot does not touch
+// an account that has data in it.
+//
+// This used to work the other way round: the full picture was rebuilt on EVERY boot.
+// Since Render's free tier sleeps and wakes constantly, that meant a restart in the
+// middle of a demo quietly deleted the payments, expenses, requests and join
+// decisions you had just made, and put every edited property, room and tenant back to
+// its seeded values. It looked like the app was ignoring you.
+//
+// Now there are two separate paths:
+//
+//   ensureDemoAccount()  runs at boot. Guarantees the account can be SIGNED INTO, and
+//                        builds the full picture only when there is nothing to lose —
+//                        a brand-new database, or an account somebody emptied.
+//   resetDemoData()      the destructive rebuild, ON DEMAND ONLY, via
+//                        POST /api/owner/demo/reset. Run it before a client meeting
+//                        and you get the rich, current-dated picture back.
 //
 //   Landlord login:  demo@gmail.com   /  Kajal@2004   (landlord portal)
 //   Tenant login:    demo@gmail.com   /  Kajal@2004   (tenant portal — SAME
@@ -13,19 +31,22 @@
 //                    so the landlord's bell has real people in it during a demo —
 //                    and so the flow can also be shown from the applicant's side.
 //
-// Design notes:
-//   • Structure (properties/units/tenants) is created-if-missing and then UPDATED
-//     to known values, so it never duplicates and never drifts.
-//   • Decisions are undone too: accepting an applicant during a demo creates a real
-//     tenant record and links their login, and the reset removes both, so the next
-//     demo starts with the requests still waiting.
-//   • Financial history (payments, expenses) is DELETED and rebuilt every boot,
-//     scoped to demo-owned rows only. That is what makes it self-healing: recording
-//     a payment during a demo does not permanently alter the account.
-//   • Dates are computed relative to "now" at runtime, so the six-month revenue
-//     chart and the dues always look current — never a fixed year that ages.
-//   • Every query is scoped to the demo owner / its tenants / its properties. It
-//     never reads or writes another account's data.
+// Design notes, all of which apply to resetDemoData rather than to boot:
+//   • Structure (properties/units/tenants) is created-if-missing and then UPDATED to
+//     known values, so a reset never duplicates and never drifts.
+//   • Decisions are undone: accepting an applicant creates a real tenant record and
+//     links their login, and a reset removes both, so the requests are waiting again.
+//   • Financial history (payments, expenses) is DELETED and rebuilt, scoped to
+//     demo-owned rows only.
+//   • Dates are computed relative to "now" AT RESET TIME, so the six-month revenue
+//     chart and the dues read as current — never a fixed year that ages. This is the
+//     reason to reset before a demo rather than to leave it for months.
+//   • Credentials are the ONE thing repaired on every boot, because the demo login is
+//     printed on the landing page and handed to clients: an account nobody can sign
+//     into is worse than one with stale numbers in it. That touches passwords and
+//     account links, never data.
+//   • Every query is scoped to the demo owner / its tenants / its properties. It never
+//     reads or writes another account's data.
 const db = require('../config/db');
 const bcrypt = require('bcryptjs');
 
@@ -137,17 +158,45 @@ const ensureOwner = async () => {
         ownerId = res.insertId;
     } else {
         ownerId = existing[0].id;
-        // Self-heal the display fields (name/photo) without touching the password.
-        await db.query('UPDATE owners SET name = ?, profile_pic = ? WHERE id = ?', ['Demo Landlord', IMG.owner, ownerId]);
+        // Deliberately does NOT overwrite the name or photo. This runs on every boot,
+        // and Render's free tier restarts constantly, so rewriting them would revert
+        // a profile edit made during a demo — the exact "my changes don't stick"
+        // problem. resetDemoData() restores them when asked.
     }
 
-    // UNIQUE(owner_id) makes this a clean upsert.
+    // Payment settings are created if absent and then left alone, for the same
+    // reason: a landlord who set their own UPI during a demo keeps it.
+    // UNIQUE(owner_id) makes the INSERT idempotent on its own.
     await db.query(
-        `INSERT INTO payment_settings (owner_id, upi_id, upi_number) VALUES (?, ?, ?)
-         ON DUPLICATE KEY UPDATE upi_id = VALUES(upi_id), upi_number = VALUES(upi_number)`,
+        `INSERT IGNORE INTO payment_settings (owner_id, upi_id, upi_number) VALUES (?, ?, ?)`,
         [ownerId, 'demo@okhdfcbank', DEMO_PHONE]
     );
     return ownerId;
+};
+
+// Has anybody put anything in this account yet? One property is enough: it means
+// the rich picture has been built at least once, so boot must not touch it.
+const demoHasData = async (ownerId) => {
+    const [rows] = await db.query('SELECT COUNT(*) AS n FROM properties WHERE owner_id = ?', [ownerId]);
+    return Number(rows[0].n) > 0;
+};
+
+// Reads and writes the single-row demo_state marker, which is what lets the app say
+// "last reset 3 days ago" and what tells a reset apart from a first build.
+const readDemoState = async () => {
+    const [rows] = await db.query('SELECT owner_id, last_reset_at, reset_count FROM demo_state WHERE id = 1');
+    return rows[0] || null;
+};
+
+const stampDemoState = async (ownerId) => {
+    await db.query(
+        `INSERT INTO demo_state (id, owner_id, last_reset_at, reset_count)
+         VALUES (1, ?, NOW(), 1)
+         ON DUPLICATE KEY UPDATE owner_id = VALUES(owner_id),
+                                 last_reset_at = NOW(),
+                                 reset_count = reset_count + 1`,
+        [ownerId]
+    );
 };
 
 const ensureProperties = async (ownerId) => {
@@ -577,31 +626,134 @@ const step = async (label, fn) => {
     }
 };
 
-const seedDemo = async () => {
+// The destructive rebuild. Everything the demo account should look like for a
+// client walkthrough, with dates computed from "now" so the six-month chart and the
+// dues always read as current.
+//
+// This is ON DEMAND ONLY. It used to run on every boot, which is why demo changes
+// never stuck: Render's free tier sleeps and wakes constantly, and each wake quietly
+// deleted the payments, expenses, requests and join decisions from the demo you were
+// halfway through, and put every edited property, room and tenant back.
+// Clears everything the demo owner has, so a reset rebuilds onto a clean slate
+// instead of layering the seed on top of the leftovers.
+//
+// This exists because the "ensure" steps below match seed rows BY NAME. Rename
+// "Sunrise PG" to "Anush Towers" during a demo and the next reset does not recognise
+// it: the rename survives AND a fresh "Sunrise PG" appears next to it. Same for a
+// renamed tenant, and any room or property added by hand stayed forever. Three
+// properties and seven tenants is not the picture you want to put in front of a
+// client, so a reset now genuinely resets.
+//
+// SAFETY: every statement is scoped to this owner_id, which callers obtain from
+// ensureOwner() — the row matched on DEMO_EMAIL. demoController additionally refuses
+// any caller whose own email is not DEMO_EMAIL, so a real landlord's data can never
+// reach this function.
+//
+// Deletion order follows the foreign keys. properties CASCADE to units and expenses;
+// tenants CASCADE to payments and maintenance_requests (and those to their messages).
+// leases would block a tenant delete because its FK has no ON DELETE clause, so it
+// goes first — nothing writes that table today, but a reset that starts failing the
+// day something does would be a nasty surprise.
+const wipeDemoData = async (ownerId) => {
+    // Unlink the portal logins first. tenant_users.tenant_id has no foreign key, so
+    // deleting the tenants would otherwise leave it pointing at a row that is gone —
+    // and a tenant signing in would resolve to nothing.
+    await db.query(
+        `UPDATE tenant_users SET tenant_id = NULL, status = 'Unlinked'
+         WHERE tenant_id IN (SELECT id FROM tenants WHERE owner_id = ?)`,
+        [ownerId]
+    );
+
+    await db.query(
+        `DELETE FROM leases WHERE tenant_id IN (SELECT id FROM tenants WHERE owner_id = ?)`,
+        [ownerId]
+    );
+    // Cascades: payments, maintenance_requests -> maintenance_messages.
+    await db.query('DELETE FROM tenants WHERE owner_id = ?', [ownerId]);
+    await db.query('DELETE FROM join_requests WHERE owner_id = ?', [ownerId]);
+    // Cascades: units, expenses.
+    await db.query('DELETE FROM properties WHERE owner_id = ?', [ownerId]);
+
+    // The applicants' uploaded IDs. Keyed on tenant_users rather than on this owner,
+    // so nothing above reaches them; reseedJoinRequests puts them back.
+    await db.query(
+        `DELETE FROM tenant_documents WHERE tenant_user_id IN
+           (SELECT id FROM tenant_users WHERE email IN (?, ?, ?))`,
+        ['meera.demo@gmail.com', 'vikram.demo@gmail.com', 'anjali.demo@gmail.com']
+    );
+};
+
+const resetDemoData = async () => {
+    const ownerId = await ensureOwner();
+    await wipeDemoData(ownerId);
+    const propIds = await ensureProperties(ownerId);
+    const unitIds = await ensureUnits(propIds);
+    const tenantIds = await ensureTenants(ownerId, unitIds);
+
+    // Put the landlord's own profile back too — a reset is a request for the whole
+    // picture, and this is the one place allowed to overwrite it.
+    await db.query('UPDATE owners SET name = ?, profile_pic = ? WHERE id = ?', ['Demo Landlord', IMG.owner, ownerId]);
+    await db.query(
+        `INSERT INTO payment_settings (owner_id, upi_id, upi_number) VALUES (?, ?, ?)
+         ON DUPLICATE KEY UPDATE upi_id = VALUES(upi_id), upi_number = VALUES(upi_number)`,
+        [ownerId, 'demo@okhdfcbank', DEMO_PHONE]
+    );
+
+    // The tenant-portal LOGIN goes first, right after tenants exist. It used to run
+    // last, so any earlier step that threw left it uncreated — exactly the "can't log
+    // into the tenant portal" symptom. Isolating the steps below keeps the login
+    // independent of them.
+    await step('tenant-login', () => ensureDemoTenantLogin(tenantIds));
+    await step('payments', () => reseedPayments(tenantIds));
+    await step('expenses', () => reseedExpenses(propIds));
+    await step('requests', () => reseedRequests(ownerId, tenantIds));
+    await step('join-requests', () => reseedJoinRequests(ownerId, propIds));
+    await stampDemoState(ownerId);
+
+    return { ownerId, properties: Object.keys(propIds).length, tenants: Object.keys(tenantIds).length };
+};
+
+// What runs at boot. Guarantees the demo can be LOGGED INTO, and builds the full
+// picture only when there is nothing there to lose — a brand-new database, or an
+// account somebody emptied. An account with data in it is left completely alone, so
+// a restart in the middle of a demo is invisible.
+const ensureDemoAccount = async () => {
     try {
         const ownerId = await ensureOwner();
-        const propIds = await ensureProperties(ownerId);
-        const unitIds = await ensureUnits(propIds);
-        const tenantIds = await ensureTenants(ownerId, unitIds);
 
-        // Seed the tenant-portal LOGIN first, right after tenants exist — before the
-        // financial/requests refresh. It used to run last, so any earlier step that
-        // threw (a bad row, a transient error) left the demo tenant login uncreated,
-        // which is exactly the "can't log into the tenant portal" symptom. Ordering
-        // it here, plus isolating the steps below, makes the login independent of
-        // them.
-        await step('tenant-login', () => ensureDemoTenantLogin(tenantIds));
-        await step('payments', () => reseedPayments(tenantIds));
-        await step('expenses', () => reseedExpenses(propIds));
-        await step('requests', () => reseedRequests(ownerId, tenantIds));
-        await step('join-requests', () => reseedJoinRequests(ownerId, propIds));
+        if (await demoHasData(ownerId)) {
+            // Credentials still get repaired every boot, because the demo login is
+            // written on the landing page and handed to clients — a demo nobody can
+            // sign into is worse than a stale one. This touches passwords and links,
+            // never data.
+            const [tenantRows] = await db.query(
+                `SELECT t.name, t.id FROM tenants t WHERE t.owner_id = ? AND t.status = 'Active'
+                 ORDER BY t.id LIMIT 1`,
+                [ownerId]
+            );
+            const tenantIds = tenantRows.length ? { [tenantRows[0].name]: tenantRows[0].id } : {};
+            await step('tenant-login', () => ensureDemoTenantLogin(tenantIds));
 
+            const state = await readDemoState();
+            const when = state?.last_reset_at
+                ? new Date(state.last_reset_at).toISOString().slice(0, 10)
+                : 'never';
+            console.log(`🏠 Demo account is live and untouched by this boot (last reset: ${when}). Changes made during a demo persist; reset it from Settings when you want the full picture back.`);
+            return;
+        }
+
+        console.log('🆕 Demo account is empty — building the full picture once.');
+        await resetDemoData();
         console.log('✅ Demo account ready — landlord demo@gmail.com / Kajal@2004, tenant tenant@gmail.com / Tenant@2004');
     } catch (err) {
-        // Never block boot on demo seeding — the app must serve real accounts even
-        // if the demo refresh hits a transient DB error.
-        console.error('❌ Demo seed failed (non-fatal):', err.message);
+        // Never block boot on the demo — the app must serve real accounts even if this
+        // hits a transient DB error.
+        console.error('❌ Demo setup failed (non-fatal):', err.message);
     }
 };
 
-module.exports = seedDemo;
+module.exports = ensureDemoAccount;
+module.exports.ensureDemoAccount = ensureDemoAccount;
+module.exports.resetDemoData = resetDemoData;
+module.exports.readDemoState = readDemoState;
+module.exports.DEMO_EMAIL = DEMO_EMAIL;

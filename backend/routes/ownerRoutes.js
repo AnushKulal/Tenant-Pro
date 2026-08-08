@@ -17,6 +17,7 @@ const {
     getApplicantDocuments,
     decideDocument
 } = require('../controllers/documentController');
+const { getDemoStatus, resetDemo } = require('../controllers/demoController');
 const { protect } = require('../middleware/authMiddleware');
 const upload = require('../middleware/uploadMiddleware');
 
@@ -56,5 +57,13 @@ router.get('/tenants/:id/documents', protect, getTenantDocuments);
 router.get('/join-requests/:id/documents', protect, getApplicantDocuments);
 // The manual check itself: verified or rejected, with an optional note.
 router.put('/documents/:id', protect, decideDocument);
+
+// --- Demo account ---
+// The demo is a real account that KEEPS whatever a demo does to it, so restoring its
+// rich picture is an explicit action rather than something boot does behind your back.
+// GET answers for every landlord (`is_demo` tells the app whether to show the control);
+// POST refuses anyone but the demo account, since it deletes payments and history.
+router.get('/demo', protect, getDemoStatus);
+router.post('/demo/reset', protect, resetDemo);
 
 module.exports = router;
