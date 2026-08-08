@@ -48,6 +48,14 @@ export function mapProperty(p) {
         type: `${String(p.property_type || 'PROPERTY').toUpperCase()} · ${Number(p.units) || 0} UNITS`,
         address: [p.address, p.locality, p.city, p.pincode].filter(Boolean).join(', '),
         code: propCode(p),
+        // The raw columns as stored, for the edit form. `address` above is a joined
+        // display string; putting that back into the address field would write the
+        // locality, city and pincode into it as well.
+        propType: p.property_type || 'PG',
+        addressRaw: p.address || '',
+        localityRaw: p.locality || '',
+        cityRaw: p.city || '',
+        pincodeRaw: p.pincode != null ? String(p.pincode) : '',
         // Not modelled by the backend — left neutral so the UI omits them.
         policy: '', policyIcon: 'business-outline',
         rating: '', reviews: '',

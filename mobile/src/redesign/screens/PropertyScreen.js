@@ -30,7 +30,9 @@ export default function PropertyScreen() {
                             <T mono w={600} s={9} lh={1} ls={0.06} c={t.accent}>{place.policy}</T>
                         </Row>
                     </Row>
-                    <T w={700} s={26} lh={1.05} style={{ letterSpacing: -1.1, marginTop: 9 }}>{place.name}</T>
+                    {/* Long names wrap to two lines and then truncate, rather than
+                        pushing the rest of the card around. */}
+                    <T w={700} s={26} lh={1.1} numberOfLines={2} style={{ letterSpacing: -1.1, marginTop: 9 }}>{place.name}</T>
                     <Row align="flex-start" gap={8} style={{ marginTop: 11 }}>
                         <Glyph name="location-outline" size={15} color={t.fg3} style={{ marginTop: 2 }} />
                         <T w={400} s={13} lh={1.5} c={t.fg2} style={{ flex: 1 }}>{place.address}</T>
@@ -44,6 +46,24 @@ export default function PropertyScreen() {
                             <Row gap={7} style={{ paddingVertical: 10, paddingHorizontal: 14, borderRadius: 999, backgroundColor: t.lime }}>
                                 <Glyph name="qr-code" size={15} color={t.on} />
                                 <T w={600} s={11} lh={1} c={t.on}>Invite tenant</T>
+                            </Row>
+                        </Press>
+                    </Row>
+
+                    {/* Edit and delete. Both endpoints existed from the start; nothing
+                        in the app called them, so a landlord could add a property and
+                        then never correct its name, address or photo, or remove it. */}
+                    <Row gap={8} style={{ marginTop: 12 }}>
+                        <Press onPress={vm.openEditProperty} style={{ flex: 1 }}>
+                            <Row gap={7} justify="center" style={{ paddingVertical: 12, borderRadius: 13, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line }}>
+                                <Glyph name="create-outline" size={15} color={t.accent} />
+                                <T w={600} s={11.5} lh={1} c={t.fg}>Edit property</T>
+                            </Row>
+                        </Press>
+                        <Press onPress={vm.askDeleteProperty}>
+                            <Row gap={6} justify="center" style={{ paddingVertical: 12, paddingHorizontal: 15, borderRadius: 13, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line }}>
+                                <Glyph name="trash-outline" size={15} color={t.coral} />
+                                <T w={600} s={11.5} lh={1} c={t.coral}>Delete</T>
                             </Row>
                         </Press>
                     </Row>

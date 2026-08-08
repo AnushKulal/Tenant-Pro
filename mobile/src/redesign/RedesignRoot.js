@@ -230,12 +230,9 @@ function Shell() {
                 <View style={{ height: insets.bottom }} />
             )}
 
-            {/* overlays + toast paint above everything.
-                NOT keyed any more: remounting on every overlay change threw the sheet
-                away the instant it was dismissed, which is why there was no exit
-                animation. Sheets replays its own entrance internally (see useSheet's
-                replayKey) and clears the overlay itself once the slide-down lands. */}
-            <Sheets />
+            {/* overlays + toast paint above everything. Keyed by overlay so each
+                sheet replays the `tpsheet` slide-up when it opens. */}
+            <Sheets key={state.overlay || 'none'} />
             <Toast />
 
             {/* OTA prompt — v1's UpdateGate is bypassed in v2, so the redesign owns it. */}

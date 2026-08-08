@@ -9,7 +9,7 @@ import { useVm } from './AppContext';
 import { useT } from './ThemeContext';
 import { grotesk } from './theme';
 import { T, Eyebrow, Row, Press, Glyph, Field, Avatar } from './ui';
-import { useSheetIn, useFadeIn, useSheet } from './motion';
+import { useSheetIn, useFadeIn } from './motion';
 
 // ── The conversation on a maintenance request ────────────────────────────────
 // One component, both sides: the landlord's ticket sheet and the tenant's request
@@ -244,17 +244,8 @@ export default function Sheets() {
     // sheet replays the motion (see the key on <Sheets/> usage in RedesignRoot).
     const H = Dimensions.get('window').height;
     const SHEET_MAX = Math.round(H * 0.88);
-    // Slides both ways now. Dismissing used to unmount the sheet outright, so it
-    // simply vanished — motion in, nothing out. `replayKey` re-arms the entrance
-    // when one sheet is replaced by another; `onClosed` clears the overlay only once
-    // the slide-down has actually landed, which is what keeps the contents on screen
-    // for the whole exit instead of emptying halfway through.
-    const { sheet, scrim } = useSheet({
-        height: H,
-        open: !vm.overlayClosing,
-        replayKey: vm.overlay || '',
-        onClosed: vm.finishClose
-    });
+    const sheetIn = useSheetIn({ height: H });
+    const scrimIn = useFadeIn();
 
     if (!vm.overlayOpen) return null;
 
@@ -269,14 +260,14 @@ export default function Sheets() {
 
     return (
         <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'flex-end', zIndex: 60, elevation: 24 }}>
-            <Animated.View style={[{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }, scrim]}>
+            <Animated.View style={[{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }, scrimIn]}>
             <Press
                 onPress={vm.closeOverlay}
                 style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(4,4,6,0.6)' }}
             />
             </Animated.View>
 
-            <Animated.View style={[{ position: 'absolute', left: 0, right: 0, bottom: 0, maxHeight: SHEET_MAX }, sheet]}>
+            <Animated.View style={[{ position: 'absolute', left: 0, right: 0, bottom: 0, maxHeight: SHEET_MAX }, sheetIn]}>
             <ScrollView
                 bounces={false}
                 style={{
@@ -1354,6 +1345,87 @@ export default function Sheets() {
                 )}
 
                 {/* ── Add a property ──────────────────────────────────── */}
+                {/* ── Edit a property ────────────────────────────────── */}
+                {vm.isEditProperty && vm.editProperty && (
+                    <View>
+                        <T w={700} s={20} lh={1} style={{ letterSpacing: -0.8 }}>{vm.editProperty.title}</T>
+                        <Eyebrow s={10} ls={0.08} style={{ marginTop: 7, marginBottom: 16 }}>NAME, ADDRESS, TYPE AND PHOTO</Eyebrow>
+
+                        <FormError form={vm.editProperty} t={t} />
+
+                        <Field label="NAME" icon="business-outline" value={vm.editProperty.name} onChangeText={vm.editProperty.setName} placeholder="Sunrise PG" autoCapitalize="words" editable={!vm.editProperty.busy} style={{ marginBottom: 12 }} />
+
+                        <Eyebrow s={9} ls={0.12} c={t.fg3} style={{ marginBottom: 9 }}>TYPE</Eyebrow>
+                        <Chips items={vm.editProperty.types} t={t} />
+
+                        <Field label="ADDRESS" icon="location-outline" value={vm.editProperty.address} onChangeText={vm.editProperty.setAddress} placeholder="12, 5th Cross" autoCapitalize="words" editable={!vm.editProperty.busy} style={{ marginBottom: 10 }} />
+                        <Field label="LOCALITY" icon="map-outline" value={vm.editProperty.locality} onChangeText={vm.editProperty.setLocality} placeholder="Koramangala" autoCapitalize="words" editable={!vm.editProperty.busy} style={{ marginBottom: 10 }} />
+                        <Field label="CITY" icon="business-outline" value={vm.editProperty.city} onChangeText={vm.editProperty.setCity} placeholder="Bengaluru" autoCapitalize="words" editable={!vm.editProperty.busy} style={{ marginBottom: 10 }} />
+                        <Field label="PINCODE" icon="mail-outline" value={vm.editProperty.pincode} onChangeText={vm.editProperty.setPincode} placeholder="560034" keyboardType="number-pad" maxLength={6} editable={!vm.editProperty.busy} style={{ marginBottom: 12 }} />
+
+                        {/* The current photo shows until a new one is picked, so it is
+                            obvious that leaving it alone keeps it. */}
+                        {vm.editProperty.hasPhoto ? (
+                            <Row gap={10} style={{ marginBottom: 12 }}>
+                                <Image source={{ uri: vm.editProperty.photo }} style={{ width: 72, height: 72, borderRadius: 16, backgroundColor: t.ink3 }} resizeMode="cover" />
+                                <View style={{ flex: 1, minWidth: 0 }}>
+                                    <T w={400} s={12} lh={1.45} c={t.fg2}>{vm.editProperty.photoNote}</T>
+                                    <Row gap={8} style={{ marginTop: 9 }}>
+                                        <Press onPress={vm.editProperty.takePhoto} style={{ paddingVertical: 8, paddingHorizontal: 12, borderRadius: 11, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line }}>
+                                            <T w={600} s={11.5} c={t.fg2}>Take one</T>
+                                        </Press>
+                                        <Press onPress={vm.editProperty.pickPhoto} style={{ paddingVertical: 8, paddingHorizontal: 12, borderRadius: 11, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line }}>
+                                            <T w={600} s={11.5} c={t.fg2}>Choose one</T>
+                                        </Press>
+                                    </Row>
+                                </View>
+                            </Row>
+                        ) : (
+                            <PhotoPick form={vm.editProperty} t={t} label="Add a photo of the building" />
+                        )}
+
+                        <FormActions form={vm.editProperty} onCancel={vm.editProperty.cancel} label="Save changes" t={t} />
+                    </View>
+                )}
+
+                {/* ── Delete a property ──────────────────────────────── */}
+                {vm.isDeleteProperty && vm.deleteProperty && (
+                    <View>
+                        <Row align="flex-start" style={{ gap: 12, marginBottom: 16 }}>
+                            <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: t.csoft, alignItems: 'center', justifyContent: 'center', marginTop: 2 }}>
+                                <Glyph name="trash-outline" size={20} color={t.coral} />
+                            </View>
+                            <View style={{ flex: 1, minWidth: 0 }}>
+                                <T w={700} s={20} lh={1.15} numberOfLines={2} style={{ letterSpacing: -0.7 }}>
+                                    {`Delete ${vm.deleteProperty.name}?`}
+                                </T>
+                                <T w={400} s={13} lh={1.5} c={t.fg2} style={{ marginTop: 7 }}>{vm.deleteProperty.line}</T>
+                            </View>
+                        </Row>
+
+                        {/* Said before the request rather than after it fails. */}
+                        {vm.deleteProperty.blocked ? (
+                            <Row gap={9} align="flex-start" style={{ paddingVertical: 12, paddingHorizontal: 13, borderRadius: 14, backgroundColor: t.asoft, marginBottom: 14 }}>
+                                <Glyph name="information-circle-outline" size={15} color={t.amber} />
+                                <T w={500} s={12} lh={1.45} c={t.amber} style={{ flex: 1 }}>{vm.deleteProperty.blockedLine}</T>
+                            </Row>
+                        ) : null}
+
+                        <Row style={{ gap: 8 }}>
+                            <Press onPress={vm.deleteProperty.cancel} style={{ flex: 1, paddingVertical: 15, borderRadius: 999, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line, alignItems: 'center' }}>
+                                <T w={600} s={14} lh={1} c={t.fg}>Keep it</T>
+                            </Press>
+                            <Press
+                                onPress={vm.deleteProperty.blocked ? undefined : vm.deleteProperty.confirm}
+                                disabled={vm.deleteProperty.blocked}
+                                style={{ flex: 1, paddingVertical: 15, borderRadius: 999, backgroundColor: vm.deleteProperty.blocked ? t.ink3 : t.coral, borderWidth: 1, borderColor: vm.deleteProperty.blocked ? t.line : t.coral, alignItems: 'center' }}
+                            >
+                                <T w={700} s={14} lh={1} c={vm.deleteProperty.blocked ? t.fg3 : '#fff'}>Delete</T>
+                            </Press>
+                        </Row>
+                    </View>
+                )}
+
                 {vm.isNewProperty && vm.newProperty && (
                     <View>
                         <T w={700} s={20} lh={1} style={{ letterSpacing: -0.8 }}>Add a property</T>

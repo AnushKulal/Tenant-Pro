@@ -63,6 +63,10 @@ const inr = (n) => {
 };
 
 // ── Initial state (ported verbatim from Component.state) ──
+// Editing an existing property carries its id; everything else matches the create
+// form, so both use the same sheet body.
+const BLANK_EDIT_PROPERTY = { id: null, name: '', type: 'PG', address: '', locality: '', city: '', pincode: '', photo: null, busy: false, error: '' };
+
 const INITIAL_STATE = {
   route: 'boot', overlay: null, filter: 'all', who: 'amit', method: 'UPI', toast: '',
   theme: null, pref: 'dark', q: '', pq: '', place: 'sunrise', ticket: 1, tstatus: {},
@@ -80,9 +84,9 @@ const INITIAL_STATE = {
   // Which join request the landlord has opened from the inbox.
   join: null,
 
-  // True while a sheet is playing its slide-down. The overlay stays set until the
-  // motion ends, so the sheet keeps its contents on the way out.
-  overlayClosing: false,
+  // The property being edited (a copy of its current values, so cancelling leaves
+  // the real one untouched).
+  ep: { ...BLANK_EDIT_PROPERTY },
 
   // ── Finding a property by its invite code ──
   // The result of resolving a scanned QR or a typed code against the server. This
@@ -913,6 +917,78 @@ function deriveVm(s, api) {
     // rather than a viewer for data entered somewhere else. Each is a sheet, each
     // validates the fields its endpoint actually requires, and each takes an
     // optional photo.
+    // ── Edit / delete a property ──────────────────────────────────────────────
+    // A landlord could add a property and open it, but never correct the name, the
+    // address or the photo, and never remove one — the endpoints existed, nothing
+    // called them. Seeded from what is stored, because the update replaces every
+    // text column and a blank field would erase it.
+    openEditProperty: () => setState({
+      overlay: 'editproperty',
+      ep: {
+        ...BLANK_EDIT_PROPERTY,
+        id: place.id,
+        name: place.name || '',
+        type: place.propType || 'PG',
+        address: place.addressRaw || '',
+        locality: place.localityRaw || '',
+        city: place.cityRaw || '',
+        pincode: place.pincodeRaw || ''
+      }
+    }),
+    isEditProperty: s.overlay === 'editproperty',
+    editProperty: (() => {
+      const ep = s.ep || BLANK_EDIT_PROPERTY;
+      const put = (patch) => setState({ ep: { ...ep, ...patch, error: '' } });
+      return {
+        title: 'Edit property',
+        name: ep.name, setName: (e) => put({ name: evStr(e) }),
+        address: ep.address, setAddress: (e) => put({ address: evStr(e) }),
+        locality: ep.locality, setLocality: (e) => put({ locality: evStr(e) }),
+        city: ep.city, setCity: (e) => put({ city: evStr(e) }),
+        pincode: ep.pincode, setPincode: (e) => put({ pincode: evStr(e).replace(/[^0-9]/g, '') }),
+        types: PROPERTY_TYPES.map((k) => ({ label: k, on: ep.type === k, go: () => put({ type: k }) })),
+        // The existing photo shows until a new one is picked, so it is obvious that
+        // leaving it alone keeps it.
+        photo: ep.photo ? ep.photo.uri : (place.img || null),
+        hasPhoto: !!(ep.photo || place.img),
+        photoNote: ep.photo ? 'New photo — save to replace the old one.' : 'Pick a new one to replace it.',
+        pickPhoto: () => api.pickPhotoFor('ep', 'library'),
+        takePhoto: () => api.pickPhotoFor('ep', 'camera'),
+        clearPhoto: () => put({ photo: null }),
+        error: ep.error, hasError: !!ep.error,
+        busy: !!ep.busy,
+        canSubmit: !!ep.name.trim() && !ep.busy,
+        submit: () => {
+          if (!ep.name.trim()) { setState({ ep: { ...ep, error: 'A property needs a name.' } }); return; }
+          api.saveProperty();
+        },
+        cancel: () => setState({ overlay: null, ep: { ...BLANK_EDIT_PROPERTY } })
+      };
+    })(),
+
+    // Deleting is behind a confirmation, and the confirmation says what it will take
+    // with it — the rooms go too, which is not obvious from the word "delete".
+    askDeleteProperty: () => setState({ overlay: 'delproperty' }),
+    isDeleteProperty: s.overlay === 'delproperty',
+    deleteProperty: (() => {
+      const rooms = UNITS.filter((u) => u.prop === place.id);
+      const living = rooms.reduce((a, u) => a + occupantsOf(u.no).length, 0);
+      return {
+        name: place.name || '',
+        // The server refuses this outright; saying so first is kinder than a failed
+        // request, and the count tells them what to do about it.
+        blocked: living > 0,
+        blockedLine: living
+          ? `${living} ${living === 1 ? 'tenant is' : 'tenants are'} still living here. Move them out first — TenantPro will not delete a property with people in it.`
+          : '',
+        line: rooms.length
+          ? `This also deletes ${rooms.length} ${rooms.length === 1 ? 'room' : 'rooms'}. Payment history stays in your ledger.`
+          : 'This property has no rooms yet.',
+        confirm: () => api.deleteProperty(place.id, place.name),
+        cancel: () => setState({ overlay: null })
+      };
+    })(),
+
     addProperty: () => setState({ overlay: 'newproperty', np: { ...BLANK_PROPERTY } }),
     isNewProperty: s.overlay === 'newproperty',
     newProperty: (() => {
@@ -1330,16 +1406,8 @@ function deriveVm(s, api) {
     openMenu: () => set('overlay', 'menu'),
     openRecord: () => set('overlay', 'record'),
     openPay: () => set('overlay', 'pay'),
-    // Dismissing plays the slide-down BEFORE the overlay is cleared: the sheet has
-    // to stay mounted, with its contents, until the motion finishes. Sheets calls
-    // finishClose() on the last frame.
-    closeOverlay: () => (s.overlay ? setState({ overlayClosing: true }) : undefined),
-    finishClose: () => setState({ overlay: null, overlayClosing: false, docs: { ...INITIAL_STATE.docs } }),
-    // Open for as long as the sheet is on screen, including while it slides out.
+    closeOverlay: () => set('overlay', null),
     overlayOpen: !!s.overlay,
-    overlayClosing: !!s.overlayClosing,
-    // The open sheet's name — Sheets keys its entrance replay on it.
-    overlay: s.overlay || '',
     isSearch: s.overlay === 'search',
     isRecord: s.overlay === 'record',
     isPay: s.overlay === 'pay',
@@ -2910,9 +2978,6 @@ export function AppProvider({ children }) {
   const setState = useCallback((partial) => {
     setStateRaw((prev) => {
       const next = { ...prev, ...partial };
-      // Opening a sheet cancels a dismissal that is still animating, so a fast
-      // tap-close-tap-open cannot leave the new sheet mid-slide-out.
-      if (partial && partial.overlay) next.overlayClosing = false;
       const moving = partial && partial.route != null && partial.route !== prev.route;
       if (moving && !partial.keepHistory && !partial.history) {
         next.history = ENTRY_ROUTES.includes(partial.route)
@@ -3625,6 +3690,40 @@ export function AppProvider({ children }) {
       : { np: { ...stateRef.current.np, busy: false } });
   }, [setState, ownerWrite]);
 
+  // Edit a property in place. The endpoint replaces every text column, so the form
+  // is seeded with what is already stored — sending a blank field would erase it.
+  const saveProperty = useCallback(async () => {
+    const ep = stateRef.current.ep;
+    if (ep.busy || ep.id == null) return;
+    const form = new FormData();
+    put(form, 'name', ep.name.trim());
+    put(form, 'property_type', ep.type);
+    put(form, 'address', ep.address.trim());
+    put(form, 'locality', ep.locality.trim());
+    put(form, 'city', ep.city.trim());
+    put(form, 'pincode', ep.pincode.trim());
+    // Only sent when a NEW one was picked: the endpoint leaves image_url alone
+    // otherwise, so not sending it is what keeps the existing photo.
+    if (ep.photo) form.append('property_image', filePart(ep.photo, 'property.jpg'));
+    setState({ ep: { ...ep, busy: true, error: '' } });
+    const ok = await ownerWrite(() => apiProps.update(ep.id, form), {
+      done: `${ep.name.trim()} updated`, failed: 'Could not save those changes.'
+    });
+    setState(ok
+      ? { ep: { ...BLANK_EDIT_PROPERTY }, overlay: null }
+      : { ep: { ...stateRef.current.ep, busy: false } });
+  }, [setState, ownerWrite]);
+
+  // Delete a property. The server refuses while it still has active tenants and
+  // says so, which is the check that matters — this just reports what it said.
+  const deleteProperty = useCallback(async (id, name) => {
+    if (id == null) return;
+    setState({ overlay: null });
+    await ownerWrite(() => apiProps.remove(id), {
+      done: `${name || 'Property'} deleted`, failed: 'Could not delete that property.'
+    });
+  }, [setState, ownerWrite]);
+
   const createUnit = useCallback(async () => {
     const nu = stateRef.current.nu;
     if (nu.busy) return;
@@ -3887,7 +3986,7 @@ export function AppProvider({ children }) {
       loadOwnerData, loadTenantData, loadThread, sendReply, setRequestStatus,
       pickRequestPhoto, createRequest, requestResetCode, submitNewPassword,
       recordPayment, saveTenantRent, assignTenant, moveTenantOut, deleteTenant, savePaymentSettings,
-      pickPhotoFor, createProperty, createUnit, createTenantRecord, goBackOneStep,
+      pickPhotoFor, createProperty, saveProperty, deleteProperty, createUnit, createTenantRecord, goBackOneStep,
       decideJoin, requestToJoin, askPermission, finishPermits,
       loadDocs, decideDoc, loadMyDocs, pickDocPhoto, addMyDoc, removeMyDoc,
       lookupProperty
@@ -3897,7 +3996,7 @@ export function AppProvider({ children }) {
       loadOwnerData, loadTenantData, loadThread, sendReply, setRequestStatus,
       pickRequestPhoto, createRequest, requestResetCode, submitNewPassword,
       recordPayment, saveTenantRent, assignTenant, moveTenantOut, deleteTenant, savePaymentSettings,
-      pickPhotoFor, createProperty, createUnit, createTenantRecord, goBackOneStep,
+      pickPhotoFor, createProperty, saveProperty, deleteProperty, createUnit, createTenantRecord, goBackOneStep,
       decideJoin, requestToJoin, askPermission, finishPermits,
       loadDocs, decideDoc, loadMyDocs, pickDocPhoto, addMyDoc, removeMyDoc,
       lookupProperty
