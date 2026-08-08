@@ -289,4 +289,36 @@ export function Wordmark({ mono = 38, s = 20, gap = 10, showMonogram = true, sty
     );
 }
 
+// The EMAIL / MOBILE segmented switch on the sign-in screens. Both sides of the
+// app accept either identifier, so both sides get the same control — it was only
+// ever on the tenant screen because that is where the prototype drew it.
+//
+// `thumbX` is a CSS calc string carried by the view-model ("calc(50% + 0px)"),
+// which React Native cannot use as a length. Read the percentage out of it and
+// place the thumb from that, so the vm stays the single source of which side is
+// selected.
+export function IdToggle({ thumbX, emailFg, mobileFg, onEmail, onMobile, style }) {
+    const t = useT();
+    const col = (v) => (v && (v[0] === '#' || v.startsWith('rgb')) ? v : t[v]);
+    const pct = String(thumbX || '').match(/(\d+)%/);
+    const left = pct && Number(pct[1]) >= 50 ? '50%' : 4;
+
+    return (
+        <View
+            style={[
+                { position: 'relative', flexDirection: 'row', padding: 4, borderRadius: 15, backgroundColor: t.ink2, borderWidth: 1, borderColor: t.line, overflow: 'hidden' },
+                style
+            ]}
+        >
+            <View style={{ position: 'absolute', top: 4, bottom: 4, left, width: '48%', borderRadius: 11, backgroundColor: t.fg }} />
+            <Press onPress={onEmail} style={{ flex: 1, paddingVertical: 11, alignItems: 'center', justifyContent: 'center' }}>
+                <T mono w={600} s={10} lh={1} ls={0.08} c={col(emailFg)}>EMAIL</T>
+            </Press>
+            <Press onPress={onMobile} style={{ flex: 1, paddingVertical: 11, alignItems: 'center', justifyContent: 'center' }}>
+                <T mono w={600} s={10} lh={1} ls={0.08} c={col(mobileFg)}>MOBILE</T>
+            </Press>
+        </View>
+    );
+}
+
 export const S = StyleSheet.create({ flex1: { flex: 1 }, center: { alignItems: 'center', justifyContent: 'center' } });

@@ -234,7 +234,14 @@ const getJoinRequests = async (req, res) => {
                     jr.note, jr.created_at, jr.decided_at,
                     tu.name AS requester_name, tu.email AS requester_email, tu.phone AS requester_phone,
                     p.name AS property_name,
-                    u.unit_number
+                    u.unit_number,
+                    -- Whether this stranger has put an ID up, and whether anyone has
+                    -- checked it. Subqueries rather than a join for the same reason as
+                    -- the tenant list: one document per row would duplicate requests.
+                    (SELECT COUNT(*) FROM tenant_documents d
+                      WHERE d.tenant_user_id = jr.tenant_user_id) AS doc_count,
+                    (SELECT COUNT(*) FROM tenant_documents d
+                      WHERE d.tenant_user_id = jr.tenant_user_id AND d.status = 'Verified') AS doc_verified
              FROM join_requests jr
              LEFT JOIN tenant_users tu ON jr.tenant_user_id = tu.id
              LEFT JOIN properties p ON jr.property_id = p.id

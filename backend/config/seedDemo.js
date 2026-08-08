@@ -392,6 +392,23 @@ const APPLICANTS = [
 ];
 const APPLICANT_PASSWORD = 'Tenant@2004';
 
+// Demo ID proofs, one per applicant, deliberately in three different states so the
+// landlord's inbox shows all three badges at once: verified, waiting to be checked,
+// and nothing on file.
+//
+// `file` is a placeholder image rather than a real scan, for the obvious reason —
+// there is no such thing as a demo Aadhaar card, and putting a realistic-looking
+// one in a seed script would be creating a fake government document. It is a
+// picture that says what it is.
+const DEMO_ID_IMAGE = 'https://placehold.co/900x560/1a1a1f/c8f751/png?text=DEMO+ID+DOCUMENT';
+const APPLICANT_DOCS = {
+    // email → [doc_type, doc_number, status]
+    'meera.demo@gmail.com': ['aadhaar', '2345 6789 0123', 'Verified'],
+    'vikram.demo@gmail.com': ['pan', 'BQXPS4321L', 'Pending']
+    // Anjali has none on purpose: "NO ID ON FILE" is a state a landlord has to
+    // recognise, and a demo where everybody is documented never shows it.
+};
+
 const reseedJoinRequests = async (ownerId, propIds) => {
     const emails = APPLICANTS.map((a) => a[1]);
     const phones = APPLICANTS.map((a) => a[2]);
@@ -452,6 +469,26 @@ const reseedJoinRequests = async (ownerId, propIds) => {
              VALUES (?, ?, ?, 'Pending', ?, ?)`,
             [rows[0].id, ownerId, propertyId, note || null, hoursFromNow(-hoursAgo)]
         );
+
+        // The ID proof, if this applicant is meant to have one. Deleted first so a
+        // re-run does not stack duplicates — the accounts survive between boots,
+        // and ON DELETE CASCADE only fires when the account itself goes.
+        await db.query('DELETE FROM tenant_documents WHERE tenant_user_id = ?', [rows[0].id]);
+        const spec = APPLICANT_DOCS[email];
+        if (spec) {
+            const [docType, docNumber, status] = spec;
+            await db.query(
+                `INSERT INTO tenant_documents
+                    (tenant_user_id, doc_type, doc_number, file_url, status, verified_by, verified_at, created_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                [
+                    rows[0].id, docType, docNumber, DEMO_ID_IMAGE, status,
+                    status === 'Verified' ? ownerId : null,
+                    status === 'Verified' ? hoursFromNow(-1) : null,
+                    hoursFromNow(-hoursAgo)
+                ]
+            );
+        }
         seeded += 1;
     }
     console.log(`🙋 Demo join requests reseeded — ${seeded} waiting on a decision.`);

@@ -20,7 +20,7 @@ import {
   units as apiUnits, tenants as apiTenants, portal as apiPortal, payments as apiPayments,
   setToken, mediaUrl
 } from './api';
-import { mapOwnerData, mapPortalRequest } from './mapping';
+import { mapOwnerData, mapPortalRequest, mapDocument } from './mapping';
 import {
   loadSession, saveOwnerSession, saveTenantSession, clearSession,
   hasOnboarded, setOnboarded, hasSeenPermits, setPermitsSeen
@@ -64,6 +64,21 @@ const INITIAL_STATE = {
   joining: false,
   // Which join request the landlord has opened from the inbox.
   join: null,
+
+  // ── ID documents ──
+  // `docs` is whichever person's documents the landlord currently has open; it is
+  // fetched per view rather than bundled into the dashboard payload, because an ID
+  // proof is the most sensitive row in the database and should not be shipped to a
+  // client that has not asked to look at one.
+  // `key` identifies the open view ('tenant:7' / 'join:3') so a late response for
+  // a person the landlord has navigated away from is discarded, not rendered.
+  docs: { key: '', from: null, list: [], summary: null, person: null, noAccount: false, loading: false, error: '', deciding: 0 },
+  // The tenant's own documents, and the add form.
+  myDocs: { list: [], summary: null, loading: false, error: '', loaded: false },
+  docForm: { type: 'aadhaar', number: '', photo: null, error: '', busy: false },
+  // True while the tenant is in the "you must add an ID" step of registration,
+  // which is what makes the document mandatory rather than merely offered.
+  docGate: false,
 
   // ── Device permissions (the one-time primer) ──
   // What the OS has told us about each thing the app can ask for. 'unknown' = we
@@ -345,6 +360,13 @@ function deriveVm(s, api) {
   const callNumber = (phone, label) => {
     const url = `tel:${String(phone).replace(/[^0-9+]/g, '')}`;
     Linking.openURL(url).catch(() => flash(`Could not start a call to ${label}`));
+  };
+  // Hand a file to the phone. Used for ID documents, which are as often PDFs as
+  // photos — the system viewer zooms, rotates and shares; an <Image> does none of
+  // that and shows a PDF as a blank box.
+  const openLink = (url) => {
+    if (!url) { flash('That file is missing.'); return; }
+    Linking.openURL(url).catch(() => copyText(url, 'Could not open the file — its link is copied'));
   };
 
   // The landlord contact, resolved once: from /tenant-portal/me when the tenancy is
@@ -982,6 +1004,14 @@ function deriveVm(s, api) {
       };
     }),
     tenantIdLabel: s.idmode === 'mobile' ? 'MOBILE NUMBER' : 'EMAIL',
+    // Role-neutral version of the same thing: both sign-in screens use the
+    // EMAIL/MOBILE switch now, and both endpoints accept either identifier, so the
+    // field's label, hint and keyboard come from one place.
+    idField: {
+      label: s.idmode === 'mobile' ? 'MOBILE NUMBER' : 'EMAIL',
+      placeholder: s.idmode === 'mobile' ? '98765 43210' : 'you@gmail.com',
+      keyboard: s.idmode === 'mobile' ? 'phone-pad' : 'email-address'
+    },
     tenantIdValue: s.authId,
     // Both endpoints must be the SAME computed type or the transition never starts.
     idThumbX: s.idmode === 'mobile' ? 'calc(50% + 0px)' : 'calc(0% + 4px)',
@@ -1007,12 +1037,11 @@ function deriveVm(s, api) {
     authError: s.authError,
     hasAuthError: !!s.authError,
     // ── Hints that follow the failure ──
-    // No account with these details: the answer is to make one, so offer it right
-    // there in lime rather than making them find "Create account" at the bottom.
+    // No account with these details. The error already says so in words, so this
+    // only lights up the "Create account" link that is already at the foot of the
+    // screen — a second card repeating the same sentence with its own button was
+    // more furniture than help.
     authOfferSignup: s.authCode === 'NOT_REGISTERED',
-    authSignupLine: s.route === 'tlogin'
-      ? 'No tenant account uses these details yet.'
-      : 'No landlord account uses these details yet.',
     // Three wrong passwords in a row: stop letting them guess a fourth time.
     authOfferReset: s.authFails >= 3 && s.authCode !== 'NOT_REGISTERED',
     authResetLine: 'That is three attempts. Reset your password instead of guessing.',
@@ -1635,7 +1664,15 @@ function deriveVm(s, api) {
             : flash(`No number on file for ${j.name}`)),
           // Open the decision sheet, where a room can be chosen.
           open: () => setState({ overlay: 'joindecide', join: j.id }),
-          decline: () => api.decideJoin({ id: j.id, decision: 'reject', name: j.name })
+          decline: () => api.decideJoin({ id: j.id, decision: 'reject', name: j.name }),
+          // Whether this stranger has put an ID up, and a way straight to it. The
+          // whole point of showing it here is that it answers "should I accept
+          // this?" before the decision, not after.
+          idState: (j.idProof && j.idProof.state) || 'none',
+          idLabel: (j.idProof && j.idProof.label) || 'NO ID ON FILE',
+          idFg: (j.idProof && j.idProof.fg) || 'fg3',
+          idIcon: (j.idProof && j.idProof.icon) || 'shield-outline',
+          seeId: () => api.loadDocs('join', j.id)
         }))
       };
     })(),
@@ -1680,6 +1717,14 @@ function deriveVm(s, api) {
           return u ? { id: u.id, no: u.no, label: `${u.no} · ${u.rent}` } : null;
         })(),
         noRoomsLine: 'Every room in this property is full. You can still accept them and assign a room once one frees up.',
+        idState: (j.idProof && j.idProof.state) || 'none',
+        idLabel: (j.idProof && j.idProof.label) || 'NO ID ON FILE',
+        idFg: (j.idProof && j.idProof.fg) || 'fg3',
+        idIcon: (j.idProof && j.idProof.icon) || 'shield-outline',
+        idHint: (j.idProof && j.idProof.state) === 'none'
+          ? 'They have not uploaded an ID yet. You can still accept them, or ask them to add one first.'
+          : 'Look at what they uploaded before you decide.',
+        seeId: () => api.loadDocs('join', j.id),
         call: () => (j.phone ? callNumber(j.phone, j.name) : flash(`No number on file for ${j.name}`)),
         message: () => (j.phone
           ? messageNumber(j.phone, j.name, `Hi ${String(j.name).split(' ')[0]}, about your request to join ${j.property} on TenantPro — `)
@@ -1700,6 +1745,66 @@ function deriveVm(s, api) {
           api.decideJoin({ id: j.id, decision: 'reject', name: j.name });
         },
         busy: !!s.writing
+      };
+    })(),
+
+    // ── ID documents (landlord's view) ────────────────────────────────────────
+    // One sheet serves both entry points — a tenant's detail screen and an
+    // applicant in the bell — because the landlord is doing the same thing either
+    // way: looking at what was uploaded and recording whether it checks out.
+    //
+    // Files are handed to the phone rather than drawn in a viewer: an ID proof is
+    // often a PDF, and the system viewer can zoom, rotate and share in ways a
+    // hand-rolled <Image> cannot.
+    isDocs: s.overlay === 'docs',
+    docs: (() => {
+      const d = s.docs || { list: [], loading: false, error: '' };
+      const who = d.person || {};
+      const sum = d.summary || { total: 0, verified: 0, pending: 0 };
+      return {
+        loading: !!d.loading,
+        error: d.error || '',
+        hasError: !!d.error,
+        name: who.name || 'This person',
+        initials: initialsOf(who.name),
+        phone: who.phone || '',
+        phoneLabel: fmtPhone(who.phone),
+        // A tenant the landlord typed in themselves has no portal account, so there
+        // is nowhere a document could have come from. Say that, rather than showing
+        // an empty list that reads as "they ignored the request".
+        noAccount: !!d.noAccount,
+        noAccountLine: 'They have not signed in to TenantPro yet, so there is nothing for them to have uploaded. Share your property code and they can add an ID from their own profile.',
+        empty: !d.loading && !d.error && !d.noAccount && d.list.length === 0,
+        emptyLine: 'Nothing uploaded yet. Ask them to add a government ID from their profile — Aadhaar, PAN, voter ID, licence or passport.',
+        summaryLine: sum.total
+          ? `${sum.total} ${sum.total === 1 ? 'document' : 'documents'} · ${sum.verified} verified`
+          : '',
+        verified: sum.verified > 0,
+        rows: d.list.map((x) => ({
+          id: x.id,
+          label: x.label,
+          number: x.number,
+          hasNumber: !!x.number,
+          url: x.url,
+          isPdf: x.isPdf,
+          status: x.status.toUpperCase(),
+          statusFg: x.statusFg,
+          pending: x.pending,
+          verified: x.verified,
+          rejected: x.rejected,
+          age: `ADDED ${x.age}`,
+          by: x.by ? `${x.verified ? 'Verified' : 'Rejected'} by ${x.by} ${x.decidedAge}`.trim() : '',
+          note: x.note,
+          hasNote: !!x.note,
+          busy: s.docs.deciding === x.id,
+          // Opens in whatever the phone uses for images and PDFs.
+          open: () => (x.url ? openLink(x.url) : flash('That file is missing.')),
+          verify: () => api.decideDoc(x.id, 'verified'),
+          reject: () => api.decideDoc(x.id, 'rejected'),
+          // Undo, for the landlord who tapped the wrong one.
+          reopen: () => api.decideDoc(x.id, 'pending')
+        })),
+        close: () => setState({ overlay: d.from || null, docs: { ...INITIAL_STATE.docs } })
       };
     })(),
 
@@ -1819,10 +1924,29 @@ function deriveVm(s, api) {
           dot: missed ? 'coral' : 'lime'
         };
       }),
-      docs: [
-        { icon: 'card-outline', label: 'AADHAAR' },
-        { icon: 'document-text-outline', label: 'AGREEMENT' }
-      ]
+      // The prototype listed two invented document tiles ("AADHAAR", "AGREEMENT")
+      // that were the same for everyone. This is the real thing: what this tenant
+      // has actually uploaded, and a way in to look at it and mark it verified.
+      idProof: (() => {
+        const b = who.idProof || null;
+        const state = (b && b.state) || 'none';
+        return {
+          state,
+          label: (b && b.label) || 'NO ID ON FILE',
+          fg: (b && b.fg) || 'fg3',
+          icon: (b && b.icon) || 'shield-outline',
+          verified: state === 'verified',
+          line: state === 'verified'
+            ? 'You have checked their ID.'
+            : state === 'pending'
+              ? 'They have uploaded an ID. Open it to check it and mark it verified.'
+              : 'Nothing uploaded yet. They add one from their own profile.',
+          cta: state === 'none' ? 'Documents' : 'See documents',
+          // Read from the server on open, rather than shipping every tenant's ID
+          // proof out with the dashboard.
+          go: () => api.loadDocs('tenant', who.id)
+        };
+      })()
     },
 
     methods: ['UPI', 'CASH', 'BANK'].map((m) => {
@@ -2007,9 +2131,126 @@ function deriveVm(s, api) {
     findLine: me.unit ? 'Scan, enter a code, or search by name or area.' : 'Scan an invite QR, enter a property ID, or search.',
     isHelp: s.route === 'thelp',
     isStay: s.route === 'tstay',
+    // ── ID documents (the tenant's own) ───────────────────────────────────────
+    // A government ID is required to hold a TenantPro tenant account: a landlord is
+    // being asked to hand over a room, and "who is this person" is the first thing
+    // they need answered. The requirement is enforced as a step of registration
+    // (see `docGate`) rather than a field on the signup form, because the upload
+    // needs the token that registering hands back — a file attached to the
+    // registration call itself would be lost if the account was created and the
+    // upload then failed.
+    isTDocs: s.route === 'tdocs',
+    goTDocs: () => { api.loadMyDocs(); go('tdocs'); },
+    // For the screen's own mount effect: the registration gate routes straight to
+    // 'tdocs' without going through goTDocs, so the list has to be able to fetch
+    // itself. Guarded so a re-render cannot start a second request.
+    loadMyDocsOnce: () => {
+      if (!s.myDocs.loaded && !s.myDocs.loading) api.loadMyDocs();
+    },
+    tdocs: (() => {
+      const md = s.myDocs || { list: [], loading: false, error: '', loaded: false };
+      const f = s.docForm || { type: 'aadhaar', number: '', photo: null, error: '', busy: false };
+      const sum = md.summary || { total: 0, verified: 0, pending: 0, has_any: false };
+      const gate = !!s.docGate;
+      return {
+        loading: !!md.loading && !md.loaded,
+        error: md.error || '',
+        hasError: !!md.error,
+        // In gate mode the screen is the last step of signing up, so it says so and
+        // offers no way past until the server confirms a document is stored.
+        gate,
+        title: gate ? 'One last thing.' : 'My documents',
+        blurb: gate
+          ? 'Add a government ID so a landlord can confirm who you are before giving you a room. Aadhaar, PAN, voter ID, licence or passport — any one is enough.'
+          : 'Your landlord can see these and mark them verified. Add another whenever you need to.',
+        summaryLine: sum.total
+          ? `${sum.total} ${sum.total === 1 ? 'document' : 'documents'} · ${sum.verified} verified`
+          : 'Nothing added yet',
+        // The gate lifts on the first stored document, verified or not: whether a
+        // landlord has got round to checking it is not the tenant's to fix.
+        canContinue: !gate || !!sum.has_any,
+        continueLine: sum.has_any
+          ? 'You are all set.'
+          : 'Add one document to finish setting up your account.',
+        continue: () => {
+          if (s.docGate && !sum.has_any) { flash('Add a document to continue'); return; }
+          setState({ docGate: false, route: 'portal' });
+        },
+        empty: md.loaded && !md.list.length,
+        rows: md.list.map((x) => ({
+          id: x.id,
+          label: x.label,
+          number: x.number,
+          hasNumber: !!x.number,
+          url: x.url,
+          isPdf: x.isPdf,
+          status: x.status.toUpperCase(),
+          statusFg: x.statusFg,
+          verified: x.verified,
+          rejected: x.rejected,
+          age: `ADDED ${x.age}`,
+          note: x.note,
+          hasNote: !!x.note,
+          by: x.by ? `${x.verified ? 'Verified' : 'Rejected'} by ${x.by} ${x.decidedAge}`.trim() : '',
+          open: () => (x.url ? openLink(x.url) : flash('That file is missing.')),
+          // A verified document cannot be withdrawn — the verdict is a record of
+          // what was checked, and deleting the evidence would leave the badge
+          // standing on nothing. The server refuses it too; this just does not
+          // offer the button.
+          canRemove: !x.verified,
+          remove: () => api.removeMyDoc(x.id)
+        })),
+        // The add form.
+        form: {
+          types: Object.entries({
+            aadhaar: 'Aadhaar',
+            pan: 'PAN',
+            voter: 'Voter ID',
+            dl: 'Licence',
+            passport: 'Passport',
+            other: 'Other'
+          }).map(([k, label]) => ({
+            key: k,
+            label,
+            on: f.type === k,
+            go: () => setState({ docForm: { ...f, type: k, error: '' } })
+          })),
+          number: f.number,
+          // Optional on purpose: the photo of the card is the thing being checked,
+          // and demanding the number as well is one more reason not to bother.
+          numberLabel: 'DOCUMENT NUMBER (OPTIONAL)',
+          setNumber: (e) => setState({ docForm: { ...f, number: evStr(e).toUpperCase().slice(0, 32), error: '' } }),
+          photo: f.photo,
+          hasPhoto: !!f.photo,
+          photoUri: f.photo ? f.photo.uri : null,
+          pick: () => api.pickDocPhoto(),
+          pickLabel: f.photo ? 'Change the photo' : 'Attach a photo',
+          error: f.error || '',
+          hasError: !!f.error,
+          busy: !!f.busy,
+          canSubmit: !!f.photo && !f.busy,
+          submitLabel: f.busy ? 'Saving…' : 'Add this document',
+          submit: () => api.addMyDoc()
+        }
+      };
+    })(),
+    // A nudge in the portal for accounts that predate the requirement. Not a block:
+    // they are already someone's tenant, and locking them out of their own rent
+    // details would punish them for our schema changing.
+    idNag: (() => {
+      const sum = (TD && TD.me && TD.me.id_proof) || null;
+      if (!sum || sum.has_any) return null;
+      return {
+        line: 'Your landlord cannot verify who you are until you add a government ID.',
+        cta: 'Add an ID',
+        go: () => { api.loadMyDocs(); go('tdocs'); }
+      };
+    })(),
+
     isTMe: s.route === 'tme',
-    tenantSide: ['portal', 'tfind', 'thelp', 'tstay', 'tme', 'tcheckout', 'tsettings'].includes(s.route),
-    showTenantDock: ['portal', 'tfind', 'thelp', 'tstay', 'tme', 'tsettings'].includes(s.route),
+    tenantSide: ['portal', 'tfind', 'thelp', 'tstay', 'tme', 'tcheckout', 'tsettings', 'tdocs'].includes(s.route),
+    showTenantDock: ['portal', 'tfind', 'thelp', 'tstay', 'tme', 'tsettings'].includes(s.route)
+      || (s.route === 'tdocs' && !s.docGate),
     goTMe: () => go('tme'),
     goStay: () => go('tstay'),
     tmeOn: s.route === 'tme' ? '1' : '0',
@@ -2712,6 +2953,192 @@ export function AppProvider({ children }) {
     );
   }, [ownerWrite]);
 
+  // ── ID documents ───────────────────────────────────────────────────────────
+  // Read on demand, never bundled into the dashboard: a government ID is the most
+  // sensitive thing here, so it travels only when somebody has opened the screen
+  // that shows it. Every response is checked against the view that is still open,
+  // so a slow reply for one person can never paint under another's name.
+  const loadDocs = useCallback(async (kind, id) => {
+    if (id == null) return;
+    const key = `${kind}:${id}`;
+    // Where we came from, so closing returns there. Opening documents from the join
+    // inbox replaced that sheet, and closing dumped the landlord on the dashboard
+    // mid-way through triaging a queue of applicants.
+    const from = stateRef.current.overlay === 'docs' ? stateRef.current.docs.from : stateRef.current.overlay;
+    setState({
+      overlay: 'docs',
+      docs: { key, from: from || null, list: [], summary: null, person: null, noAccount: false, loading: true, error: '', deciding: 0 }
+    });
+    try {
+      const res = kind === 'join'
+        ? await apiOwner.applicantDocuments(id)
+        : await apiOwner.tenantDocuments(id);
+      if (stateRef.current.docs.key !== key) return;
+      const now = new Date();
+      setState({
+        docs: {
+          key,
+          from,
+          list: (res.documents || []).map((d) => mapDocument(d, now)),
+          summary: res.summary || null,
+          person: res.person || null,
+          noAccount: !!res.no_account,
+          loading: false,
+          error: '',
+          deciding: 0
+        }
+      });
+    } catch (e) {
+      if (stateRef.current.docs.key !== key) return;
+      setState({
+        docs: {
+          key,
+          from,
+          list: [],
+          summary: null,
+          person: null,
+          noAccount: false,
+          loading: false,
+          error: errText(e, 'Could not load the documents.'),
+          deciding: 0
+        }
+      });
+    }
+  }, [setState]);
+
+  // The landlord's manual check. Refreshes the open list from the response, then
+  // reloads the portfolio so the ID badge on the tenant list agrees with it — the
+  // badge is derived from these same rows, so leaving it stale would show
+  // "NO ID ON FILE" beside a document that was just verified.
+  const decideDoc = useCallback(async (docId, decision) => {
+    if (docId == null) return;
+    const key = stateRef.current.docs.key;
+    setState({ docs: { ...stateRef.current.docs, deciding: docId, error: '' } });
+    try {
+      const res = await apiOwner.decideDocument(docId, decision);
+      const now = new Date();
+      if (stateRef.current.docs.key === key) {
+        setState({
+          docs: {
+            ...stateRef.current.docs,
+            list: (res.documents || []).map((d) => mapDocument(d, now)),
+            summary: res.summary || null,
+            deciding: 0
+          }
+        });
+      }
+      flash(res.message || 'Saved');
+      loadOwnerData({ refresh: true });
+    } catch (e) {
+      if (stateRef.current.docs.key !== key) return;
+      setState({
+        docs: {
+          ...stateRef.current.docs,
+          deciding: 0,
+          error: errText(e, 'Could not save that decision.')
+        }
+      });
+    }
+  }, [setState, flash, loadOwnerData]);
+
+  // ── The tenant's own documents ─────────────────────────────────────────────
+  const loadMyDocs = useCallback(async () => {
+    setState({ myDocs: { ...stateRef.current.myDocs, loading: true, error: '' } });
+    try {
+      const res = await apiPortal.documents();
+      const now = new Date();
+      setState({
+        myDocs: {
+          list: (res.documents || []).map((d) => mapDocument(d, now)),
+          summary: res.summary || null,
+          loading: false,
+          error: '',
+          loaded: true
+        }
+      });
+    } catch (e) {
+      setState({
+        myDocs: {
+          ...stateRef.current.myDocs,
+          loading: false,
+          loaded: true,
+          error: errText(e, 'Could not load your documents.')
+        }
+      });
+    }
+  }, [setState]);
+
+  // Pick the file to upload. Camera first would be the nicer default, but the
+  // library also covers "I already have a scan of my PAN card", which is how most
+  // people actually hold their ID.
+  const pickDocPhoto = useCallback(async () => {
+    try {
+      const picker = require('expo-image-picker');
+      const perm = await picker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) { flash('Photo access is needed to attach a document'); return; }
+      const res = await picker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.8 });
+      if (res.canceled || !res.assets || !res.assets[0]) return;
+      setState({ docForm: { ...stateRef.current.docForm, photo: res.assets[0], error: '' } });
+    } catch (e) {
+      flash('Could not open your photos');
+    }
+  }, [setState, flash]);
+
+  const addMyDoc = useCallback(async () => {
+    const f = stateRef.current.docForm;
+    if (!f.photo) {
+      setState({ docForm: { ...f, error: 'Attach a photo of the document first.' } });
+      return;
+    }
+    setState({ docForm: { ...f, busy: true, error: '' } });
+    try {
+      const form = new FormData();
+      form.append('doc_type', f.type);
+      form.append('doc_number', f.number || '');
+      form.append('document', filePart(f.photo, `id-${Date.now()}.jpg`));
+      const res = await apiPortal.addDocument(form);
+      const now = new Date();
+      setState({
+        docForm: { type: 'aadhaar', number: '', photo: null, error: '', busy: false },
+        myDocs: {
+          list: (res.documents || []).map((d) => mapDocument(d, now)),
+          summary: res.summary || null,
+          loading: false,
+          error: '',
+          loaded: true
+        },
+        // One document satisfies the registration requirement, so the gate lifts as
+        // soon as the server confirms it stored one — not when we merely sent it.
+        docGate: (res.summary && res.summary.has_any) ? false : stateRef.current.docGate
+      });
+      flash(res.message || 'Document added');
+    } catch (e) {
+      setState({
+        docForm: { ...stateRef.current.docForm, busy: false, error: errText(e, 'Could not save the document.') }
+      });
+    }
+  }, [setState, flash]);
+
+  const removeMyDoc = useCallback(async (docId) => {
+    if (docId == null) return;
+    try {
+      const res = await apiPortal.removeDocument(docId);
+      const now = new Date();
+      setState({
+        myDocs: {
+          list: (res.documents || []).map((d) => mapDocument(d, now)),
+          summary: res.summary || null,
+          loading: false,
+          error: '',
+          loaded: true
+        }
+      });
+      flash(res.message || 'Removed');
+    } catch (e) {
+      flash(errText(e, 'Could not remove that document.'));
+    }
+  }, [setState, flash]);
+
   // ── Device permissions ─────────────────────────────────────────────────────
   // Asked from the primer screen, one at a time, each right next to the sentence
   // that says what it is for — which is both what Android and iOS ask for and
@@ -3020,7 +3447,13 @@ export function AppProvider({ children }) {
         setState({
           session: { role: asTenant ? 'tenant' : 'owner', token: res.token, user },
           authBusy: false, authPw: '', authError: '',
-          route: asTenant ? 'portal' : 'home'
+          // A new tenant goes to the ID step, not the portal. This is what makes the
+          // document required: the account exists, but it is not finished until one
+          // is on file, and `docGate` is what the screen reads to refuse a way past.
+          // It has to happen here rather than as a field on the signup form because
+          // uploading needs the token that registering just returned.
+          docGate: asTenant,
+          route: asTenant ? 'tdocs' : 'home'
         });
         flash('Account created');
       } else {
@@ -3050,7 +3483,8 @@ export function AppProvider({ children }) {
       pickRequestPhoto, createRequest, requestResetCode, submitNewPassword,
       recordPayment, saveTenantRent, assignTenant, moveTenantOut, deleteTenant, savePaymentSettings,
       pickPhotoFor, createProperty, createUnit, createTenantRecord, goBackOneStep,
-      decideJoin, requestToJoin, askPermission, finishPermits
+      decideJoin, requestToJoin, askPermission, finishPermits,
+      loadDocs, decideDoc, loadMyDocs, pickDocPhoto, addMyDoc, removeMyDoc
     }),
     [
       setState, set, go, flash, signIn, register, signOut, resolveSession,
@@ -3058,7 +3492,8 @@ export function AppProvider({ children }) {
       pickRequestPhoto, createRequest, requestResetCode, submitNewPassword,
       recordPayment, saveTenantRent, assignTenant, moveTenantOut, deleteTenant, savePaymentSettings,
       pickPhotoFor, createProperty, createUnit, createTenantRecord, goBackOneStep,
-      decideJoin, requestToJoin, askPermission, finishPermits
+      decideJoin, requestToJoin, askPermission, finishPermits,
+      loadDocs, decideDoc, loadMyDocs, pickDocPhoto, addMyDoc, removeMyDoc
     ]
   );
 

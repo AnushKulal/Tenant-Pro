@@ -18,6 +18,11 @@ const {
     createJoinRequest,
     getMyJoinRequests
 } = require('../controllers/joinController');
+const {
+    getMyDocuments,
+    addMyDocument,
+    deleteMyDocument
+} = require('../controllers/documentController');
 
 router.use(protect);
 
@@ -39,5 +44,12 @@ router.post('/requests/:id/messages', createRequestMessage);
 // tenant token check; the landlord decides at /api/owner/join-requests/:id.
 router.post('/join-requests', createJoinRequest);
 router.get('/join-requests', getMyJoinRequests);
+
+// --- ID documents ---
+// Like join requests, these work BEFORE the account is linked to a tenant record:
+// a landlord is expected to look at an ID as part of deciding whether to link it.
+router.get('/documents', getMyDocuments);
+router.post('/documents', upload.single('document'), addMyDocument);
+router.delete('/documents/:id', deleteMyDocument);
 
 module.exports = router;

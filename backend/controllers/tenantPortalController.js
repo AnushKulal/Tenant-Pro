@@ -12,6 +12,9 @@ const { getFileUrl } = require('../middleware/uploadMiddleware');
 // Message reads/writes are shared with the owner side so a thread behaves
 // identically whichever end of it you are standing at.
 const { fetchThread, insertMessage, cleanBody } = require('./requestController');
+// The ID-proof summary rides along with /me so the portal knows on its first call
+// whether this account still owes a document — one source of that answer, not two.
+const { fetchDocuments, summarise } = require('./documentController');
 
 // Resolves the logged-in tenant_users account to its linked landlord tenant row,
 // with the unit, property and the owner's UPI settings joined in. Returns null if
@@ -64,12 +67,19 @@ const getMe = async (req, res) => {
             return res.status(404).json({ message: 'Account not found.' });
         }
 
+        // The ID state matters MORE before a tenancy exists than after: an unlinked
+        // account is exactly the one about to ask a landlord to take them in.
+        const documents = await fetchDocuments(req.user.id);
+        const idProof = summarise(documents);
+
         // Not yet linked to a unit by a landlord: the portal shows a friendly
         // "ask your landlord to link you" state rather than empty data.
         if (!ctx.tenant_id) {
             return res.status(200).json({
                 linked: false,
-                account: { name: ctx.name || req.user.email, email: req.user.email }
+                account: { name: ctx.name || req.user.email, email: req.user.email },
+                id_proof: idProof,
+                documents
             });
         }
 
@@ -116,7 +126,9 @@ const getMe = async (req, res) => {
                 upi_id: ctx.upi_id,
                 upi_number: ctx.upi_number,
                 qr_code_url: ctx.qr_code_url
-            }
+            },
+            id_proof: idProof,
+            documents
         });
     } catch (err) {
         console.error('Tenant portal getMe error:', err.message);

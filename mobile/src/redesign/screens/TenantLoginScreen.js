@@ -2,17 +2,11 @@ import React from 'react';
 import { View, ScrollView } from 'react-native';
 import { useVm } from '../AppContext';
 import { useT } from '../ThemeContext';
-import { T, Eyebrow, Row, Press, Glyph, Monogram, Divider, Field } from '../ui';
+import { T, Eyebrow, Row, Press, Glyph, Monogram, Divider, Field, IdToggle } from '../ui';
 
 export default function TenantLoginScreen() {
     const vm = useVm();
     const t = useT();
-    const col = (v) => (v && (v[0] === '#' || v.startsWith('rgb')) ? v : t[v]);
-
-    // idThumbX is a CSS calc string (e.g. "calc(0% + 4px)" / "calc(50% - 4px)").
-    // Approximate the thumb position from the percentage it carries.
-    const pct = String(vm.idThumbX || '').match(/(\d+)%/);
-    const thumbLeft = pct && Number(pct[1]) >= 50 ? '50%' : 4;
 
     return (
         <ScrollView
@@ -34,27 +28,24 @@ export default function TenantLoginScreen() {
 
                 <T w={700} s={36} lh={1.02} style={{ letterSpacing: -1.8, marginBottom: 26 }}>Hello again,{'\n'}Rahul.</T>
 
-                {/* EMAIL / MOBILE toggle */}
-                <View style={{ position: 'relative', flexDirection: 'row', padding: 4, borderRadius: 15, backgroundColor: t.ink2, borderWidth: 1, borderColor: t.line, marginBottom: 14, overflow: 'hidden' }}>
-                    <View style={{ position: 'absolute', top: 4, bottom: 4, left: thumbLeft, width: '48%', borderRadius: 11, backgroundColor: t.fg }} />
-                    <Press onPress={vm.setEmailMode} style={{ flex: 1, paddingVertical: 11, alignItems: 'center', justifyContent: 'center' }}>
-                        <T mono w={600} s={10} lh={1} ls={0.08} c={col(vm.emailFg)}>EMAIL</T>
-                    </Press>
-                    <Press onPress={vm.setMobileMode} style={{ flex: 1, paddingVertical: 11, alignItems: 'center', justifyContent: 'center' }}>
-                        <T mono w={600} s={10} lh={1} ls={0.08} c={col(vm.mobileFg)}>MOBILE</T>
-                    </Press>
-                </View>
+                <IdToggle
+                    thumbX={vm.idThumbX}
+                    emailFg={vm.emailFg}
+                    mobileFg={vm.mobileFg}
+                    onEmail={vm.setEmailMode}
+                    onMobile={vm.setMobileMode}
+                    style={{ marginBottom: 14 }}
+                />
 
-                {/* Tenant identifier field. Keyed on the mode so switching
-                    EMAIL/MOBILE re-mounts it with the right keyboard. */}
+                {/* Keyed on the mode so switching re-mounts with the right keyboard. */}
                 <Field
-                    key={vm.tenantIdLabel}
-                    label={vm.tenantIdLabel}
+                    key={vm.idField.label}
+                    label={vm.idField.label}
                     icon="person-outline"
                     value={vm.authId}
                     onChangeText={vm.setAuthId}
-                    placeholder={vm.tenantIdLabel === 'EMAIL' ? 'demo@gmail.com' : '98765 43210'}
-                    keyboardType={vm.tenantIdLabel === 'EMAIL' ? 'email-address' : 'phone-pad'}
+                    placeholder={vm.idField.placeholder}
+                    keyboardType={vm.idField.keyboard}
                     style={{ marginBottom: 10 }}
                 />
 
@@ -77,19 +68,6 @@ export default function TenantLoginScreen() {
                     </Row>
                 ) : null}
 
-
-                {vm.authOfferSignup ? (
-                    <View style={{ marginBottom: 12, paddingVertical: 13, paddingHorizontal: 14, borderRadius: 16, backgroundColor: t.vsoft, borderWidth: 1, borderColor: t.line }}>
-                        <T w={500} s={12.5} lh={1.45} c={t.fg2} style={{ marginBottom: 11 }}>{vm.authSignupLine}</T>
-                        <Press
-                            onPress={vm.goSignup}
-                            style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', columnGap: 7, paddingVertical: 13, borderRadius: 999, backgroundColor: t.lime }}
-                        >
-                            <Glyph name="person-add" size={16} color={t.on} />
-                            <T w={700} s={13.5} c={t.on}>Create an account</T>
-                        </Press>
-                    </View>
-                ) : null}
 
                 {vm.authOfferReset ? (
                     <View style={{ marginBottom: 12, paddingVertical: 13, paddingHorizontal: 14, borderRadius: 16, backgroundColor: t.asoft, borderWidth: 1, borderColor: t.line }}>
@@ -153,7 +131,13 @@ export default function TenantLoginScreen() {
                         <T w={500} s={13} c={t.fg2}>Forgot password?</T>
                     </Press>
                     <Press onPress={vm.goSignup}>
-                        <T w={600} s={13} c={t.accent}>Create account</T>
+                        <T
+                            w={vm.authOfferSignup ? 700 : 600}
+                            s={13}
+                            c={vm.authOfferSignup ? t.lime : t.accent}
+                        >
+                            Create account
+                        </T>
                     </Press>
                 </Row>
             </View>

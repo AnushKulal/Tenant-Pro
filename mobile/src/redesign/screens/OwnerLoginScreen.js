@@ -2,7 +2,7 @@ import React from 'react';
 import { View, ScrollView } from 'react-native';
 import { useVm } from '../AppContext';
 import { useT } from '../ThemeContext';
-import { T, Eyebrow, Row, Press, Glyph, Monogram, Divider, Field } from '../ui';
+import { T, Eyebrow, Row, Press, Glyph, Monogram, Divider, Field, IdToggle } from '../ui';
 
 export default function OwnerLoginScreen() {
     const vm = useVm();
@@ -27,13 +27,27 @@ export default function OwnerLoginScreen() {
 
                 <T w={700} s={36} lh={1.02} style={{ letterSpacing: -1.8, marginBottom: 26 }}>Welcome{'\n'}back.</T>
 
+                {/* Same EMAIL / MOBILE switch the tenant screen has: /auth/login
+                    accepts either identifier, so one field with a mode beats a
+                    vague "email or phone" box that guesses at the keyboard. */}
+                <IdToggle
+                    thumbX={vm.idThumbX}
+                    emailFg={vm.emailFg}
+                    mobileFg={vm.mobileFg}
+                    onEmail={vm.setEmailMode}
+                    onMobile={vm.setMobileMode}
+                    style={{ marginBottom: 14 }}
+                />
+
+                {/* Keyed on the mode so switching re-mounts with the right keyboard. */}
                 <Field
-                    label="EMAIL OR PHONE"
-                    icon="mail-outline"
+                    key={vm.idField.label}
+                    label={vm.idField.label}
+                    icon="person-outline"
                     value={vm.authId}
                     onChangeText={vm.setAuthId}
-                    placeholder="demo@gmail.com"
-                    keyboardType="email-address"
+                    placeholder={vm.idField.placeholder}
+                    keyboardType={vm.idField.keyboard}
                     style={{ marginBottom: 10 }}
                 />
 
@@ -56,19 +70,6 @@ export default function OwnerLoginScreen() {
                     </Row>
                 ) : null}
 
-
-                {vm.authOfferSignup ? (
-                    <View style={{ marginBottom: 12, paddingVertical: 13, paddingHorizontal: 14, borderRadius: 16, backgroundColor: t.vsoft, borderWidth: 1, borderColor: t.line }}>
-                        <T w={500} s={12.5} lh={1.45} c={t.fg2} style={{ marginBottom: 11 }}>{vm.authSignupLine}</T>
-                        <Press
-                            onPress={vm.goSignup}
-                            style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', columnGap: 7, paddingVertical: 13, borderRadius: 999, backgroundColor: t.lime }}
-                        >
-                            <Glyph name="person-add" size={16} color={t.on} />
-                            <T w={700} s={13.5} c={t.on}>Create an account</T>
-                        </Press>
-                    </View>
-                ) : null}
 
                 {vm.authOfferReset ? (
                     <View style={{ marginBottom: 12, paddingVertical: 13, paddingHorizontal: 14, borderRadius: 16, backgroundColor: t.asoft, borderWidth: 1, borderColor: t.line }}>
@@ -118,7 +119,13 @@ export default function OwnerLoginScreen() {
                         <T w={500} s={13} c={t.fg2}>Forgot password?</T>
                     </Press>
                     <Press onPress={vm.goSignup}>
-                        <T w={600} s={13} c={t.accent}>Create account</T>
+                        <T
+                            w={vm.authOfferSignup ? 700 : 600}
+                            s={13}
+                            c={vm.authOfferSignup ? t.lime : t.accent}
+                        >
+                            Create account
+                        </T>
                     </Press>
                 </Row>
             </View>

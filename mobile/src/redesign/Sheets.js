@@ -909,6 +909,117 @@ export default function Sheets() {
                     </View>
                 )}
 
+                {/* ── ID documents (landlord's view) ──────────────────── */}
+                {vm.isDocs && vm.docs && (
+                    <View>
+                        <Row gap={13} style={{ marginBottom: 16 }}>
+                            <Avatar initials={vm.docs.initials} size={46} radius={16} />
+                            <View style={{ flex: 1, minWidth: 0 }}>
+                                <T w={700} s={19} lh={1.15} style={{ letterSpacing: -0.7 }} numberOfLines={1}>{vm.docs.name}</T>
+                                <Eyebrow s={9} ls={0.08} c={t.fg3} style={{ marginTop: 5 }}>
+                                    {vm.docs.summaryLine || 'ID DOCUMENTS'}
+                                </Eyebrow>
+                            </View>
+                            {vm.docs.verified ? <Glyph name="shield-checkmark" size={20} color={t.pos} /> : null}
+                        </Row>
+
+                        {vm.docs.loading ? (
+                            <View style={{ alignItems: 'center', paddingVertical: 30, rowGap: 12 }}>
+                                <ActivityIndicator color={t.lime} />
+                                <Eyebrow s={9} ls={0.12} c={t.fg3}>LOADING DOCUMENTS</Eyebrow>
+                            </View>
+                        ) : null}
+
+                        {vm.docs.hasError ? (
+                            <Row gap={8} align="flex-start" style={{ marginBottom: 14, paddingVertical: 11, paddingHorizontal: 12, borderRadius: 13, backgroundColor: t.csoft }}>
+                                <Glyph name="alert-circle" size={15} color={t.coral} />
+                                <T w={500} s={12.5} lh={1.45} c={t.coral} style={{ flex: 1 }}>{vm.docs.error}</T>
+                            </Row>
+                        ) : null}
+
+                        {vm.docs.noAccount ? (
+                            <View style={{ paddingVertical: 18, paddingHorizontal: 14, borderRadius: 16, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line, marginBottom: 14 }}>
+                                <Glyph name="person-outline" size={20} color={t.fg3} />
+                                <T w={400} s={13} lh={1.5} c={t.fg2} style={{ marginTop: 10 }}>{vm.docs.noAccountLine}</T>
+                            </View>
+                        ) : null}
+
+                        {vm.docs.empty ? (
+                            <View style={{ alignItems: 'center', paddingVertical: 22, paddingHorizontal: 10, marginBottom: 8 }}>
+                                <View style={{ width: 52, height: 52, borderRadius: 18, backgroundColor: t.ink3, alignItems: 'center', justifyContent: 'center', marginBottom: 13 }}>
+                                    <Glyph name="shield-outline" size={23} color={t.fg3} />
+                                </View>
+                                <T w={400} s={13} lh={1.5} c={t.fg2} style={{ textAlign: 'center' }}>{vm.docs.emptyLine}</T>
+                            </View>
+                        ) : null}
+
+                        <View style={{ rowGap: 8, marginBottom: 14 }}>
+                            {vm.docs.rows.map((d) => (
+                                <View
+                                    key={d.id}
+                                    style={{ borderRadius: 18, backgroundColor: t.ink3, borderWidth: 1, borderColor: d.verified ? t.pos : t.line, padding: 14 }}
+                                >
+                                    {/* Tapping opens the file in whatever the phone uses for
+                                        images and PDFs — it can zoom and rotate, which is what
+                                        reading an ID card actually needs. */}
+                                    <Press onPress={d.open}>
+                                        <Row gap={12}>
+                                            <View style={{ width: 42, height: 42, borderRadius: 14, backgroundColor: t.vsoft, alignItems: 'center', justifyContent: 'center' }}>
+                                                <Glyph name={d.isPdf ? 'document-text' : 'image'} size={18} color={t.accent} />
+                                            </View>
+                                            <View style={{ flex: 1, minWidth: 0 }}>
+                                                <T w={600} s={14.5} lh={1.2} numberOfLines={1}>{d.label}</T>
+                                                {d.hasNumber ? (
+                                                    <T mono w={600} s={9} lh={1.4} ls={0.08} c={t.fg2} numberOfLines={1} style={{ marginTop: 4 }}>{d.number}</T>
+                                                ) : null}
+                                                <Eyebrow s={9} ls={0.06} c={t.fg3} style={{ marginTop: 3 }}>{d.age}</Eyebrow>
+                                            </View>
+                                            <T mono w={600} s={8} lh={1} ls={0.08} c={col(d.statusFg)}>{d.status}</T>
+                                        </Row>
+                                    </Press>
+
+                                    {d.by ? (
+                                        <Eyebrow s={9} ls={0.06} c={t.fg3} style={{ marginTop: 10 }}>{d.by}</Eyebrow>
+                                    ) : null}
+
+                                    {d.busy ? (
+                                        <View style={{ paddingVertical: 12 }}><ActivityIndicator color={t.lime} /></View>
+                                    ) : (
+                                        <Row gap={7} style={{ marginTop: 11 }}>
+                                            <Press onPress={d.open} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', columnGap: 6, paddingVertical: 11, borderRadius: 13, backgroundColor: t.ink2, borderWidth: 1, borderColor: t.line }}>
+                                                <Glyph name="eye-outline" size={14} color={t.accent} />
+                                                <T w={600} s={12} c={t.fg}>Open</T>
+                                            </Press>
+                                            {d.verified || d.rejected ? (
+                                                <Press onPress={d.reopen} style={{ paddingVertical: 11, paddingHorizontal: 15, borderRadius: 13, backgroundColor: t.ink2, borderWidth: 1, borderColor: t.line }}>
+                                                    <T w={600} s={12} c={t.fg2}>Undo</T>
+                                                </Press>
+                                            ) : (
+                                                <>
+                                                    <Press onPress={d.reject} style={{ paddingVertical: 11, paddingHorizontal: 15, borderRadius: 13, backgroundColor: t.ink2, borderWidth: 1, borderColor: t.line }}>
+                                                        <T w={600} s={12} c={t.fg2}>Reject</T>
+                                                    </Press>
+                                                    <Press onPress={d.verify} style={{ flex: 1, alignItems: 'center', paddingVertical: 11, borderRadius: 13, backgroundColor: t.lime }}>
+                                                        <T w={700} s={12.5} c={t.on}>Verify</T>
+                                                    </Press>
+                                                </>
+                                            )}
+                                        </Row>
+                                    )}
+
+                                    {d.hasNote ? (
+                                        <T w={400} s={12} lh={1.45} c={t.fg2} style={{ marginTop: 10 }}>{d.note}</T>
+                                    ) : null}
+                                </View>
+                            ))}
+                        </View>
+
+                        <Press onPress={vm.docs.close} style={{ paddingVertical: 15, borderRadius: 999, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line, alignItems: 'center' }}>
+                            <T w={600} s={14} c={t.fg}>Close</T>
+                        </Press>
+                    </View>
+                )}
+
                 {/* ── Requests to join (owner inbox) ──────────────────── */}
                 {vm.isJoins && vm.joins && (
                     <View>
@@ -973,6 +1084,18 @@ export default function Sheets() {
                                                 <T w={600} s={12} c={t.fg}>Message</T>
                                             </Press>
                                         </Row>
+
+                                        {/* And check who they are. A stranger asking for a
+                                            room is exactly who an ID proof is for. */}
+                                        <Press
+                                            onPress={j.seeId}
+                                            style={{ marginTop: 7, flexDirection: 'row', alignItems: 'center', columnGap: 7, paddingVertical: 11, paddingHorizontal: 12, borderRadius: 13, backgroundColor: t.ink2, borderWidth: 1, borderColor: t.line }}
+                                        >
+                                            <Glyph name={j.idIcon} size={14} color={col(j.idFg)} />
+                                            <T mono w={600} s={9} ls={0.08} c={col(j.idFg)} style={{ flex: 1 }}>{j.idLabel}</T>
+                                            <T w={600} s={11.5} c={t.fg2}>See ID</T>
+                                            <Glyph name="chevron-forward" size={13} color={t.fg3} />
+                                        </Press>
 
                                         {j.pending ? (
                                             <Row gap={7} style={{ marginTop: 7 }}>
@@ -1046,6 +1169,22 @@ export default function Sheets() {
                                 <T w={400} s={13} lh={1.5} c={t.fg2}>{vm.joinDecide.note}</T>
                             </View>
                         ) : null}
+
+                        {/* Who is this? The ID goes ABOVE the room picker, because it is
+                            the question that decides whether to place them at all. */}
+                        <Press
+                            onPress={vm.joinDecide.seeId}
+                            style={{ marginBottom: 14, padding: 14, borderRadius: 16, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line }}
+                        >
+                            <Row gap={10}>
+                                <Glyph name={vm.joinDecide.idIcon} size={16} color={col(vm.joinDecide.idFg)} />
+                                <View style={{ flex: 1, minWidth: 0 }}>
+                                    <Eyebrow s={9} ls={0.1} c={col(vm.joinDecide.idFg)}>{vm.joinDecide.idLabel}</Eyebrow>
+                                    <T w={400} s={12.5} lh={1.45} c={t.fg2} style={{ marginTop: 6 }}>{vm.joinDecide.idHint}</T>
+                                </View>
+                                <Glyph name="chevron-forward" size={15} color={t.fg3} />
+                            </Row>
+                        </Press>
 
                         <Eyebrow s={9} ls={0.12} c={t.fg3} style={{ marginBottom: 9 }}>PUT THEM IN A ROOM — OPTIONAL</Eyebrow>
                         {vm.joinDecide.hasRooms ? (

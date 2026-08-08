@@ -107,17 +107,25 @@ export default function TenantDetailScreen() {
                 ))}
             </Card>
 
-            {/* Documents */}
+            {/* Documents — the tenant's real ID proofs, and the way in to verify them */}
             <Card radius={22} pad={0} style={{ paddingVertical: 16, paddingHorizontal: 18 }}>
-                <Eyebrow s={9} ls={0.12} c={t.fg3} style={{ marginBottom: 12 }}>DOCUMENTS</Eyebrow>
-                <Row gap={8} align="stretch">
-                    {(who.docs || []).map((d, i) => (
-                        <View key={i} style={{ flex: 1, borderRadius: 14, borderWidth: 1, borderColor: t.line, backgroundColor: t.ink3, paddingVertical: 12, paddingHorizontal: 10, rowGap: 9, alignItems: 'flex-start' }}>
-                            <Glyph name={d.icon} size={17} color={t.accent} />
-                            <Eyebrow s={10} ls={0.05} c={t.fg2}>{d.label}</Eyebrow>
-                        </View>
-                    ))}
+                <Row justify="space-between" style={{ marginBottom: 10 }}>
+                    <Eyebrow s={9} ls={0.12} c={t.fg3}>DOCUMENTS</Eyebrow>
+                    <Row gap={5}>
+                        <Glyph name={who.idProof.icon} size={13} color={col(who.idProof.fg)} />
+                        <Eyebrow s={9} ls={0.08} c={col(who.idProof.fg)}>{who.idProof.label}</Eyebrow>
+                    </Row>
                 </Row>
+
+                <T w={400} s={12.5} lh={1.45} c={t.fg2} style={{ marginBottom: 12 }}>{who.idProof.line}</T>
+
+                <Press
+                    onPress={who.idProof.go}
+                    style={{ paddingVertical: 13, borderRadius: 14, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', columnGap: 7 }}
+                >
+                    <Glyph name="folder-open-outline" size={15} color={t.accent} />
+                    <T w={600} s={12.5} c={t.fg}>{who.idProof.cta}</T>
+                </Press>
             </Card>
         </ScrollView>
     );

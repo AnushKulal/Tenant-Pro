@@ -133,6 +133,21 @@ export default function MeScreen() {
                         </Press>
                     </Row>
 
+                    {/* ID proofs. Its own row rather than a third button, because the
+                        nudge below it needs the width to say why it matters. */}
+                    <Press onPress={vm.goTDocs} style={{ width: '100%', padding: 15, borderRadius: 18, backgroundColor: t.ink2, borderWidth: 1, borderColor: vm.idNag ? t.amber : t.line, marginBottom: 8 }}>
+                        <Row gap={10}>
+                            <Glyph name={vm.idNag ? 'shield-outline' : 'shield-checkmark-outline'} size={16} color={vm.idNag ? t.amber : t.accent} />
+                            <View style={{ flex: 1, minWidth: 0 }}>
+                                <T w={600} s={13} lh={1.2} c={t.fg}>My documents</T>
+                                {vm.idNag ? (
+                                    <T w={400} s={11.5} lh={1.4} c={t.amber} style={{ marginTop: 5 }}>{vm.idNag.line}</T>
+                                ) : null}
+                            </View>
+                            <Glyph name="chevron-forward" size={15} color={t.fg3} />
+                        </Row>
+                    </Press>
+
                     {/* Sign out */}
                     <Press onPress={vm.askSignOut} style={{ width: '100%', padding: 15, borderRadius: 18, borderWidth: 1, borderColor: t.line, alignItems: 'center' }}>
                         <T w={600} s={13} lh={1} c={t.coral}>Sign out</T>

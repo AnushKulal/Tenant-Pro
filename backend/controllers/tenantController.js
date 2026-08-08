@@ -141,13 +141,26 @@ const getAllTenants = async (req, res) => {
     try {
         const ownerId = req.user.id;
 
-        // Fetch all tenants, and gracefully join unit/property info IF they have a room
+        // Fetch all tenants, and gracefully join unit/property info IF they have a room.
+        //
+        // The three ID-document columns are correlated subqueries rather than joins
+        // on purpose: tenant_users.tenant_id is not unique, so joining it would
+        // duplicate a tenant row per linked account and per document, quietly
+        // multiplying everyone's rent in any caller that sums this list.
         const query = `
             SELECT 
                 t.*, 
                 u.unit_number, 
                 p.id as property_id,
-                p.name as property_name 
+                p.name as property_name,
+                (SELECT tu.id FROM tenant_users tu
+                  WHERE tu.tenant_id = t.id ORDER BY tu.id LIMIT 1) AS tenant_user_id,
+                (SELECT COUNT(*) FROM tenant_documents d
+                  JOIN tenant_users tu ON d.tenant_user_id = tu.id
+                  WHERE tu.tenant_id = t.id) AS doc_count,
+                (SELECT COUNT(*) FROM tenant_documents d
+                  JOIN tenant_users tu ON d.tenant_user_id = tu.id
+                  WHERE tu.tenant_id = t.id AND d.status = 'Verified') AS doc_verified
             FROM tenants t
             LEFT JOIN units u ON t.unit_id = u.id
             LEFT JOIN properties p ON u.property_id = p.id

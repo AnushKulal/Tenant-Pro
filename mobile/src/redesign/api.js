@@ -62,6 +62,13 @@ export const owner = {
     joinRequests: (status = 'all') => body(http.get('/owner/join-requests', { params: { status } })),
     decideJoinRequest: (id, decision, unitId) => body(
         http.put(`/owner/join-requests/${id}`, { decision, ...(unitId != null ? { unit_id: unitId } : {}) })
+    ),
+    // ID proofs. Two read paths because there are two moments a landlord needs to
+    // see one: for somebody already their tenant, and for a stranger asking to be.
+    tenantDocuments: (tenantId) => body(http.get(`/owner/tenants/${tenantId}/documents`)),
+    applicantDocuments: (joinId) => body(http.get(`/owner/join-requests/${joinId}/documents`)),
+    decideDocument: (id, decision, note) => body(
+        http.put(`/owner/documents/${id}`, { decision, ...(note ? { note } : {}) })
     )
 };
 
@@ -114,7 +121,12 @@ export const portal = {
     sendRequestMessage: (id, text) => body(http.post(`/tenant-portal/requests/${id}/messages`, { body: text })),
     // Ask a landlord to be let into a property, by its code, and see the answer.
     joinRequests: () => body(http.get('/tenant-portal/join-requests')),
-    requestJoin: (payload) => body(http.post('/tenant-portal/join-requests', payload))
+    requestJoin: (payload) => body(http.post('/tenant-portal/join-requests', payload)),
+    // The tenant's own ID proofs. `addDocument` always carries a file, so it is
+    // always multipart.
+    documents: () => body(http.get('/tenant-portal/documents')),
+    addDocument: (form) => body(http.post('/tenant-portal/documents', form, MULTIPART)),
+    removeDocument: (id) => body(http.delete(`/tenant-portal/documents/${id}`))
 };
 
 export default http;

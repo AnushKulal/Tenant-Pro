@@ -301,3 +301,34 @@ CREATE TABLE IF NOT EXISTS `join_requests` (
   CONSTRAINT `join_requests_ibfk_3` FOREIGN KEY (`property_id`) REFERENCES `properties` (`id`) ON DELETE CASCADE,
   CONSTRAINT `join_requests_ibfk_4` FOREIGN KEY (`unit_id`) REFERENCES `units` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- 17. tenant_documents (-> tenant_users, owners)
+-- The ID proofs a tenant uploads on their own profile, and the landlord's verdict
+-- on each. Keyed on tenant_users (the portal account) rather than tenants (the
+-- landlord's record), because the whole point is that a landlord can look at a
+-- stranger's ID *before* accepting them into a property — at which moment no
+-- tenants row exists yet.
+--
+-- `tenants.id_proof_url` and `tenants.aadhar` stay where they are: those are what
+-- the landlord typed in themselves, which is a different claim from a document
+-- the tenant supplied and someone checked.
+CREATE TABLE IF NOT EXISTS `tenant_documents` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `tenant_user_id` int(11) NOT NULL,
+  `doc_type` varchar(20) NOT NULL,
+  -- Optional: many people will not want to type the number, and a photo of the
+  -- card is the thing being verified either way.
+  `doc_number` varchar(64) DEFAULT NULL,
+  `file_url` varchar(500) NOT NULL,
+  `status` enum('Pending','Verified','Rejected') NOT NULL DEFAULT 'Pending',
+  -- Who decided, and when. NULL for as long as nobody has looked.
+  `verified_by` int(11) DEFAULT NULL,
+  `verified_at` timestamp NULL DEFAULT NULL,
+  `note` varchar(300) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `tenant_user_id` (`tenant_user_id`),
+  KEY `verified_by` (`verified_by`),
+  CONSTRAINT `tenant_documents_ibfk_1` FOREIGN KEY (`tenant_user_id`) REFERENCES `tenant_users` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `tenant_documents_ibfk_2` FOREIGN KEY (`verified_by`) REFERENCES `owners` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;

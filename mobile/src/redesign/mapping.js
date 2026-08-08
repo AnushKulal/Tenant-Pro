@@ -145,6 +145,44 @@ export function mapPortalRequest(r) {
 // /owner/join-requests rows → what the landlord's inbox shows. The requester is a
 // `tenant_users` account, not a tenant record yet — that is the whole point of the
 // request — so their name and contact come off the login account.
+// The ID-proof badge. Both the tenant list and the join inbox get the same three
+// states from the same two counts, so a landlord reads one vocabulary everywhere.
+// Colours are token keys, resolved by the screens.
+export function idBadge(count, verified) {
+    const n = Number(count) || 0;
+    const v = Number(verified) || 0;
+    if (v > 0) return { state: 'verified', label: 'ID VERIFIED', fg: 'pos', icon: 'shield-checkmark', count: n, verified: v };
+    if (n > 0) return { state: 'pending', label: `${n} ID TO CHECK`, fg: 'amber', icon: 'shield-outline', count: n, verified: 0 };
+    return { state: 'none', label: 'NO ID ON FILE', fg: 'fg3', icon: 'shield-outline', count: 0, verified: 0 };
+}
+
+// One uploaded document as the sheets render it. `open` is left to the caller: the
+// file may be a PDF, so it is handed to the phone rather than drawn inline.
+export function mapDocument(d, now) {
+    const made = asDate(d.created_at);
+    const decided = asDate(d.verified_at);
+    const status = d.status || 'Pending';
+    return {
+        id: d.id,
+        type: d.doc_type || 'other',
+        label: d.doc_label || 'ID document',
+        number: d.doc_number || '',
+        url: mediaUrl(d.file_url),
+        // Cheap but reliable: a PDF cannot be shown in an <Image>, so the row shows
+        // a document glyph instead of a broken thumbnail.
+        isPdf: /\.pdf($|\?)/i.test(String(d.file_url || '')),
+        status,
+        pending: status === 'Pending',
+        verified: status === 'Verified',
+        rejected: status === 'Rejected',
+        statusFg: status === 'Verified' ? 'pos' : status === 'Rejected' ? 'coral' : 'amber',
+        note: d.note || '',
+        by: d.verified_by_name || '',
+        age: ageLabel(made, now),
+        decidedAge: decided ? ageLabel(decided, now) : ''
+    };
+}
+
 export function mapJoinRequest(r, now) {
     const created = asDate(r.created_at);
     return {
@@ -159,7 +197,11 @@ export function mapJoinRequest(r, now) {
         pending: (r.status || 'Pending') === 'Pending',
         note: r.note || '',
         age: ageLabel(created, now),
-        askedOn: created ? `${created.getDate()} ${MON_TITLE[created.getMonth()]} ${created.getFullYear()}` : ''
+        askedOn: created ? `${created.getDate()} ${MON_TITLE[created.getMonth()]} ${created.getFullYear()}` : '',
+        // Whether this stranger has put an ID up at all — the first thing worth
+        // knowing before letting them into a building. NOT called `id`: that is
+        // already this request's primary key.
+        idProof: idBadge(r.doc_count, r.doc_verified)
     };
 }
 
@@ -201,7 +243,12 @@ export function mapTenant(t, payments, now) {
         since: `${movedIn ? monthDiff(movedIn, now) : 0} mo`,
         phone: t.phone || '',
         email: t.email || '',
-        propertyId: t.property_id != null ? String(t.property_id) : null
+        propertyId: t.property_id != null ? String(t.property_id) : null,
+        // NULL when the landlord typed this tenant in by hand and they have never
+        // signed in — there is then nowhere for a document to have come from, which
+        // the documents sheet reports rather than showing an empty list.
+        userId: t.tenant_user_id != null ? String(t.tenant_user_id) : null,
+        idProof: idBadge(t.doc_count, t.doc_verified)
     };
 }
 
