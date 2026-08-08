@@ -49,7 +49,8 @@ export default function SettingsScreen() {
       {/* UPI ID */}
       <View style={{ borderRadius: 20, backgroundColor: t.ink2, borderWidth: 1, borderColor: t.line, padding: 16, marginBottom: 8 }}>
         <Eyebrow s={10} ls={0.1} c={t.fg3}>UPI ID</Eyebrow>
-        <T w={600} s={14} c={t.fg} style={{ marginTop: 10 }}>demo@okhdfcbank</T>
+        <T w={600} s={14} c={vm.upiCard.isSet ? t.fg : t.fg3} style={{ marginTop: 10 }}>{vm.upiCard.value}</T>
+        <T w={400} s={12} lh={1.45} c={t.fg3} style={{ marginTop: 6 }}>{vm.upiCard.hint}</T>
       </View>
 
       {/* Settings rows */}

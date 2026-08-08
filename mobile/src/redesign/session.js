@@ -15,7 +15,11 @@ const K = {
     // with anything v1 stores, and deliberately NOT cleared on sign-out — the
     // intro explains the product, so a returning user should not sit through it
     // again just because they signed out.
-    onboarded: 'v2_onboarded'
+    onboarded: 'v2_onboarded',
+    // v2-only: whether the one-time "what TenantPro uses" primer has been shown.
+    // Separate from `onboarded` so it can be added to installs that already
+    // finished the intro, and so it survives sign-out for the same reason.
+    permits: 'v2_permits'
 };
 
 export async function saveOwnerSession(token, owner) {
@@ -51,6 +55,14 @@ export async function hasOnboarded() {
 
 export async function setOnboarded() {
     try { await AsyncStorage.setItem(K.onboarded, '1'); } catch (e) { /* best effort */ }
+}
+
+export async function hasSeenPermits() {
+    try { return (await AsyncStorage.getItem(K.permits)) === '1'; } catch (e) { return false; }
+}
+
+export async function setPermitsSeen() {
+    try { await AsyncStorage.setItem(K.permits, '1'); } catch (e) { /* best effort */ }
 }
 
 function safeParse(s) {

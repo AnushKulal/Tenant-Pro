@@ -68,12 +68,14 @@ export default function TenantSettingsScreen() {
             {/* Settings rows */}
             <View style={{ borderRadius: 22, backgroundColor: t.ink2, borderWidth: 1, borderColor: t.line, overflow: 'hidden', marginBottom: 8 }}>
                 {(vm.tenantSettingsRows || []).map((ts, i) => (
-                    <Row key={i} gap={13} style={{ paddingVertical: 15, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: t.line }}>
-                        <IconChip name={ts.icon} size={15} color={t.accent} bg={t.vsoft} box={30} radius={10} />
-                        <T w={500} s={14} lh={1.2} style={{ flex: 1 }}>{ts.label}</T>
-                        <Eyebrow s={9} ls={0.06} c={t.fg3}>{ts.meta}</Eyebrow>
-                        <Glyph name="chevron-forward" size={15} color={t.fg3} />
-                    </Row>
+                    <Press key={i} onPress={ts.go}>
+                        <Row gap={13} style={{ paddingVertical: 15, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: t.line }}>
+                            <IconChip name={ts.icon} size={15} color={t.accent} bg={t.vsoft} box={30} radius={10} />
+                            <T w={500} s={14} lh={1.2} style={{ flex: 1 }}>{ts.label}</T>
+                            <Eyebrow s={9} ls={0.06} c={t.fg3}>{ts.meta}</Eyebrow>
+                            <Glyph name="chevron-forward" size={15} color={t.fg3} />
+                        </Row>
+                    </Press>
                 ))}
             </View>
 

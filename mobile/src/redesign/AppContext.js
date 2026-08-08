@@ -21,7 +21,10 @@ import {
   setToken, mediaUrl
 } from './api';
 import { mapOwnerData, mapPortalRequest } from './mapping';
-import { loadSession, saveOwnerSession, saveTenantSession, clearSession, hasOnboarded, setOnboarded } from './session';
+import {
+  loadSession, saveOwnerSession, saveTenantSession, clearSession,
+  hasOnboarded, setOnboarded, hasSeenPermits, setPermitsSeen
+} from './session';
 
 // Indian-grouped rupee magnitude (e.g. 1234567 -> "12,34,567") WITHOUT
 // Number.prototype.toLocaleString('en-IN'): that relies on Intl, which the
@@ -61,6 +64,15 @@ const INITIAL_STATE = {
   joining: false,
   // Which join request the landlord has opened from the inbox.
   join: null,
+
+  // ── Device permissions (the one-time primer) ──
+  // What the OS has told us about each thing the app can ask for. 'unknown' = we
+  // have not asked in this session; 'missing' = the native module that owns the
+  // permission is not in this build, so there is nothing to ask (an OTA update
+  // cannot add native code). Kept in memory only: the OS is the real record, and
+  // a cached "granted" would go stale the moment the user changes it in Settings.
+  perms: { camera: 'unknown', photos: 'unknown' },
+  permBusy: '',
 
   // ── Navigation history ──
   // Every route change pushes the route being left, so the phone's back gesture
@@ -883,8 +895,70 @@ function deriveVm(s, api) {
     })(),
 
     isOnboarding: s.route === 'onboarding',
-    // Marks the intro as seen (persisted) and hands off to the role picker.
-    finishOnboarding: () => { setOnboarded(); go('role'); },
+    // Marks the intro as seen (persisted) and hands off to the permissions primer.
+    finishOnboarding: () => { setOnboarded(); go('permits'); },
+
+    // ── The permissions primer ────────────────────────────────────────────────
+    // Shown once, between the intro and the role picker, and reachable again from
+    // Settings. Two things it deliberately does NOT do: ask the OS for anything
+    // on its own (each row is a button, because a prompt nobody expected is the
+    // one people deny), and claim a permission for placing calls — `tel:` hands
+    // the number to the dialer, which needs no permission at all. Saying so is
+    // more use to the reader than a switch that does nothing.
+    isPermits: s.route === 'permits',
+    permits: (() => {
+      const P = s.perms || {};
+      const LABEL = { granted: 'ALLOWED', denied: 'NOT ALLOWED', missing: 'NOT IN THIS BUILD', unknown: '' };
+      const FG = { granted: 'pos', denied: 'amber', missing: 'fg3', unknown: 'fg3' };
+      const NOTE = {
+        missing: 'The scanner is not in this build yet — it switches on by itself after the next app update.',
+        denied: 'You can turn it on later in your phone’s settings, or ask again here.'
+      };
+      const rows = [
+        {
+          key: 'camera',
+          icon: 'qr-code-outline',
+          title: 'Camera',
+          why: 'To scan a property’s invite QR when you join one. Typing the code by hand works too, so this is optional.'
+        },
+        {
+          key: 'photos',
+          icon: 'image-outline',
+          title: 'Photos',
+          why: 'To attach a picture to a maintenance request, and to set your profile photo.'
+        }
+      ].map((r) => {
+        const st = P[r.key] || 'unknown';
+        return {
+          ...r,
+          state: st,
+          stateLabel: LABEL[st] || '',
+          stateFg: FG[st] || 'fg3',
+          // 'granted' and 'missing' are both terminal: there is nothing left to ask.
+          settled: st === 'granted' || st === 'missing',
+          busy: s.permBusy === r.key,
+          cta: st === 'denied' ? 'Ask again' : 'Allow',
+          note: NOTE[st] || '',
+          ask: () => api.askPermission(r.key)
+        };
+      });
+      const granted = rows.filter((r) => r.state === 'granted').length;
+      return {
+        rows,
+        // No button: nothing to grant, only something to explain.
+        info: [{
+          key: 'calls',
+          icon: 'call-outline',
+          title: 'Calls & messages',
+          why: 'Tapping a number opens your dialer or messages app with it filled in. TenantPro never places the call itself, so there is no permission to give.'
+        }],
+        granted,
+        allSettled: rows.every((r) => r.settled),
+        doneLabel: granted ? 'Continue' : 'Not now',
+        done: () => api.finishPermits()
+      };
+    })(),
+    goPermits: () => go('permits'),
     goRole: () => go('role'),
     goLogin: () => go('login'),
     goHome: () => go('home'),
@@ -1824,6 +1898,17 @@ function deriveVm(s, api) {
       };
     }),
 
+    // What the Settings screen shows in its UPI card. The prototype printed a
+    // literal demo handle here, which on a real account would tell the landlord
+    // that rent is going somewhere it is not.
+    upiCard: {
+      value: PAY.upiId || PAY.upiNumber || 'Not set up yet',
+      isSet: !!(PAY.upiId || PAY.upiNumber),
+      hint: PAY.upiId || PAY.upiNumber
+        ? 'This is what tenants see when they pay.'
+        : 'Tenants have nothing to pay into until you add a UPI ID or number.'
+    },
+
     settingsRows: [
       // Only the first row does anything yet; the rest are named but unbuilt, and
       // say so when tapped rather than looking broken.
@@ -1838,6 +1923,12 @@ function deriveVm(s, api) {
       },
       { label: 'Notifications', icon: 'notifications-outline', meta: 'ON' },
       { label: 'Rent reminders', icon: 'alarm-outline', meta: '3 DAYS' },
+      {
+        label: 'App permissions',
+        icon: 'shield-checkmark-outline',
+        meta: 'CAMERA · PHOTOS',
+        go: () => setState({ route: 'permits', overlay: null })
+      },
       { label: 'Documentation', icon: 'book-outline', meta: '' },
       { label: 'Help & support', icon: 'help-buoy-outline', meta: TICKETS.length ? `${shownTickets.length} OPEN` : '', go: () => setState({ route: 'support', overlay: null }) },
       { label: 'Terms of service', icon: 'shield-checkmark-outline', meta: '' }
@@ -1995,10 +2086,18 @@ function deriveVm(s, api) {
       { label: 'Rent reminders', icon: 'alarm-outline', meta: '3 DAYS' },
       { label: 'Notifications', icon: 'notifications-outline', meta: 'ON' },
       { label: 'Autopay', icon: 'repeat-outline', meta: 'OFF' },
+      {
+        label: 'App permissions',
+        icon: 'shield-checkmark-outline',
+        meta: 'CAMERA · PHOTOS',
+        go: () => setState({ route: 'permits', overlay: null })
+      },
       { label: 'Language', icon: 'globe-outline', meta: 'ENGLISH' },
       { label: 'Help & support', icon: 'help-buoy-outline', meta: '' },
       { label: 'Terms of service', icon: 'shield-checkmark-outline', meta: '' }
-    ],
+      // Same treatment as the owner's list: a row that is not built yet says so
+      // when tapped instead of silently doing nothing.
+    ].map((r) => ({ ...r, go: r.go || (() => flash(`${r.label} — not built yet`)) })),
     myInvite: {
       qr: myProp ? `https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=6&data=${encodeURIComponent(`https://tenantpro.app/join/${myProp.code}`)}` : '',
       beds: myProp ? (() => {
@@ -2613,6 +2712,54 @@ export function AppProvider({ children }) {
     );
   }, [ownerWrite]);
 
+  // ── Device permissions ─────────────────────────────────────────────────────
+  // Asked from the primer screen, one at a time, each right next to the sentence
+  // that says what it is for — which is both what Android and iOS ask for and
+  // what actually gets granted. Both modules are required lazily: expo-camera is
+  // native and absent from any APK built before it was added, and a top-level
+  // import would take the screen down there instead of degrading to "not in this
+  // build".
+  const askPermission = useCallback(async (kind) => {
+    setState({ permBusy: kind });
+    const done = (result) => setState({
+      perms: { ...stateRef.current.perms, [kind]: result },
+      permBusy: ''
+    });
+    try {
+      if (kind === 'camera') {
+        const cam = require('expo-camera');
+        if (!cam || !cam.Camera) { done('missing'); return; }
+        const res = await cam.Camera.requestCameraPermissionsAsync();
+        done(res && res.granted ? 'granted' : 'denied');
+        return;
+      }
+      const picker = require('expo-image-picker');
+      const res = await picker.requestMediaLibraryPermissionsAsync();
+      done(res && res.granted ? 'granted' : 'denied');
+    } catch (e) {
+      // A throw here means the native module is not in this build at all.
+      done('missing');
+    }
+  }, [setState]);
+
+  // Leaving the primer — whether every switch was flipped or none of them were.
+  // The flag is written either way: nagging on every launch is what makes people
+  // deny things outright, and each permission is asked for again in context at
+  // the moment it is needed.
+  const finishPermits = useCallback(() => {
+    setPermitsSeen();
+    // Reached from the first-run flow this leads to the role picker; reached from
+    // Settings by somebody already signed in it must not dump them back at a
+    // sign-in screen, so it retraces the step they came from instead.
+    const sess = stateRef.current.session;
+    if (sess && sess.role) {
+      if (goBackOneStep()) return;
+      setState({ route: sess.role === 'owner' ? 'settings' : 'tsettings' });
+      return;
+    }
+    setState({ route: 'role' });
+  }, [setState, goBackOneStep]);
+
   // ── Creating things ────────────────────────────────────────────────────────
   // All three go out as multipart because each endpoint also accepts a photo.
   // A blank string is appended rather than omitted for optional text so the
@@ -2796,10 +2943,13 @@ export function AppProvider({ children }) {
         else loadTenantData();
       } else {
         setToken(null);
-        // Signed out: first-time users get the intro; everyone else goes straight
-        // to the role picker.
-        const seen = await hasOnboarded();
-        setState({ session: null, route: seen ? 'role' : 'onboarding' });
+        // Signed out: first-time users get the intro, then the one-time
+        // permissions primer, then the role picker. The primer is checked
+        // separately so an install that already finished the intro still sees it
+        // once — otherwise the people most likely to hit the QR scanner (existing
+        // users) would be the only ones never told what it needs.
+        const [seen, permits] = await Promise.all([hasOnboarded(), hasSeenPermits()]);
+        setState({ session: null, route: !seen ? 'onboarding' : (permits ? 'role' : 'permits') });
       }
     } catch (e) {
       setToken(null);
@@ -2900,7 +3050,7 @@ export function AppProvider({ children }) {
       pickRequestPhoto, createRequest, requestResetCode, submitNewPassword,
       recordPayment, saveTenantRent, assignTenant, moveTenantOut, deleteTenant, savePaymentSettings,
       pickPhotoFor, createProperty, createUnit, createTenantRecord, goBackOneStep,
-      decideJoin, requestToJoin
+      decideJoin, requestToJoin, askPermission, finishPermits
     }),
     [
       setState, set, go, flash, signIn, register, signOut, resolveSession,
@@ -2908,7 +3058,7 @@ export function AppProvider({ children }) {
       pickRequestPhoto, createRequest, requestResetCode, submitNewPassword,
       recordPayment, saveTenantRent, assignTenant, moveTenantOut, deleteTenant, savePaymentSettings,
       pickPhotoFor, createProperty, createUnit, createTenantRecord, goBackOneStep,
-      decideJoin, requestToJoin
+      decideJoin, requestToJoin, askPermission, finishPermits
     ]
   );
 

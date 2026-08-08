@@ -25,6 +25,7 @@ import Toast from './Toast';
 import UpdateSheet from './UpdateSheet';
 
 import OnboardingScreen from './screens/OnboardingScreen';
+import PermissionsScreen from './screens/PermissionsScreen';
 import RoleScreen from './screens/RoleScreen';
 import OwnerLoginScreen from './screens/OwnerLoginScreen';
 import CreateAccountScreen from './screens/CreateAccountScreen';
@@ -51,6 +52,7 @@ import TenantSettingsScreen from './screens/TenantSettingsScreen';
 // route (state.route) → screen component. Mirrors the route flags in deriveVm().
 const SCREENS = {
     onboarding: OnboardingScreen,
+    permits: PermissionsScreen,
     role: RoleScreen,
     login: OwnerLoginScreen,
     signup: CreateAccountScreen,
