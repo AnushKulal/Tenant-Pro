@@ -1,7 +1,7 @@
 // File: backend/src/routes/ownerRoutes.js
 const express = require('express');
 const router = express.Router();
-const { updateProfile, getDashboardStats, getAllTransactions } = require('../controllers/ownerController');
+const { updateProfile, getDashboardStats, getAllTransactions, getPulse } = require('../controllers/ownerController');
 const {
     getRequests,
     updateStatus,
@@ -26,6 +26,10 @@ const upload = require('../middleware/uploadMiddleware');
 // 2. Parse Form Data and save Image (upload.single)
 // 3. Execute logic (updateProfile)
 router.put('/profile', protect, upload.single('profile_pic'), updateProfile);
+
+// Polled every few seconds while the app is open, so it must stay cheap: counts and
+// a stamp, nothing else. The client only reloads the real data when the stamp moves.
+router.get('/pulse', protect, getPulse);
 
 router.get('/dashboard', protect, getDashboardStats);
 

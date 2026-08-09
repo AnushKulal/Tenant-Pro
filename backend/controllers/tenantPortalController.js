@@ -194,6 +194,77 @@ const getPayments = async (req, res) => {
     }
 };
 
+// GET /api/tenant-portal/pulse — the tenant's side of the same idea.
+//
+// A tenant is waiting on two things the landlord does elsewhere: being accepted into
+// a property, and having a declared payment confirmed. Neither produces any signal
+// on this phone today, which is why the screen goes stale until you pull it down.
+//
+// The counts differ from the landlord's because the interesting events differ.
+// `linked` is in the stamp because going from unlinked to linked changes the WHOLE
+// portal — it is the difference between "ask to join somewhere" and "here is your
+// room" — and that transition must never need a manual refresh.
+const getPulse = async (req, res) => {
+    try {
+        if (req.user?.role !== 'tenant') {
+            return res.status(403).json({ message: 'Tenant access only.' });
+        }
+        const ctx = await loadTenantContext(req.user.id);
+
+        // Not linked yet: the only thing worth watching is whether that changed, plus
+        // how their join requests are going. Scoped to tenant_users, since there is no
+        // tenants row to scope to.
+        if (!ctx?.tenant_id) {
+            const [j] = await db.query(
+                `SELECT
+                    SUM(status = 'Pending')  AS pending,
+                    SUM(status = 'Accepted') AS accepted,
+                    SUM(status = 'Rejected') AS rejected
+                 FROM join_requests WHERE tenant_user_id = ?`,
+                [req.user.id]
+            );
+            const p = {
+                linked: 0,
+                joins_pending: Number(j[0]?.pending) || 0,
+                joins_accepted: Number(j[0]?.accepted) || 0,
+                joins_rejected: Number(j[0]?.rejected) || 0
+            };
+            return res.status(200).json({
+                ...p,
+                stamp: ['0', p.joins_pending, p.joins_accepted, p.joins_rejected, 0, 0, 0].join('.')
+            });
+        }
+
+        const [rows] = await db.query(
+            `SELECT
+                (SELECT COUNT(*) FROM payments
+                  WHERE tenant_id = ? AND status = 'Confirmed')                 AS payments_confirmed,
+                (SELECT COUNT(*) FROM payments
+                  WHERE tenant_id = ? AND status = 'Declared')                  AS payments_awaiting,
+                (SELECT COUNT(*) FROM payments
+                  WHERE tenant_id = ? AND status = 'Rejected')                  AS payments_rejected,
+                (SELECT COUNT(*) FROM maintenance_requests
+                  WHERE tenant_id = ?)                                          AS requests,
+                (SELECT COUNT(*) FROM maintenance_messages m
+                    JOIN maintenance_requests r ON m.request_id = r.id
+                  WHERE r.tenant_id = ?)                                        AS messages,
+                (SELECT COUNT(*) FROM tenant_documents
+                  WHERE tenant_user_id = ? AND status = 'Verified')             AS docs_verified`,
+            [ctx.tenant_id, ctx.tenant_id, ctx.tenant_id, ctx.tenant_id, ctx.tenant_id, req.user.id]
+        );
+        const p = { linked: 1, ...rows[0] };
+        const stamp = [
+            1, p.payments_confirmed, p.payments_awaiting, p.payments_rejected,
+            p.requests, p.messages, p.docs_verified
+        ].map((n) => Number(n) || 0).join('.');
+        res.status(200).json({ ...p, stamp });
+    } catch (err) {
+        // Quiet, like the owner's: it runs on a timer and the next tick retries.
+        console.error('Tenant portal pulse error:', err.message);
+        res.status(500).json({ message: 'Could not read updates.' });
+    }
+};
+
 // POST /api/tenant-portal/payments — "I have paid this."
 //
 // This does NOT record money received. It records a CLAIM, which the landlord then
@@ -409,6 +480,7 @@ const createRequestMessage = async (req, res) => {
 
 module.exports = {
     getMe,
+    getPulse,
     getPayments,
     declarePayment,
     getRequests,
