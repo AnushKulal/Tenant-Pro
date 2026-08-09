@@ -1,5 +1,6 @@
 const db = require('../config/db');
 const { getFileUrl } = require('../middleware/uploadMiddleware');
+const { endGuestIdentity } = require('./guestController');
 
 // --- 1. ADD TENANT ---
 const addTenant = async (req, res) => {
@@ -128,6 +129,12 @@ const moveOutTenant = async (req, res) => {
                 await db.query('UPDATE units SET status = ? WHERE id = ?', ['Vacant', unitId]);
             }
         }
+
+        // A guest's ID was only ever valid for this stay, so it retires with it --
+        // otherwise "a guest ID that lasts as long as you are in the property" is
+        // just a code that never expires. Guests only: a full account keeps its
+        // existing behaviour, because its identity was never tied to one tenancy.
+        await endGuestIdentity(tenantId);
 
         res.status(200).json({ message: "Tenant successfully removed from unit." });
     } catch (error) {
@@ -306,6 +313,12 @@ const deleteTenant = async (req, res) => {
                 await db.query('UPDATE units SET status = ? WHERE id = ?', ['Vacant', unitId]);
             }
         }
+
+        // Same as moving out: the stay is over, so a guest identity tied to it goes
+        // too. tenant_users.tenant_id has no foreign key, so nothing would have
+        // cleared it on its own -- the guest would keep a working ID pointing at a
+        // tenancy row that no longer exists.
+        await endGuestIdentity(tenantId);
 
         res.status(200).json({ message: "Tenant permanently deleted." });
     } catch (error) {

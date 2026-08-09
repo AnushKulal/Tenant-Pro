@@ -28,12 +28,18 @@ const loadTenantContext = async (userId) => {
         `SELECT
             tu.id            AS user_id,
             tu.status        AS link_status,
+            tu.name          AS account_name,
+            tu.email         AS account_email,
+            tu.phone         AS account_phone,
+            tu.is_guest      AS is_guest,
+            tu.guest_code    AS guest_code,
             t.id             AS tenant_id,
             t.name, t.phone, t.email, t.company, t.image_url,
             t.deposit, t.rent_share, t.credit_score, t.move_in_date,
             t.billing_cycle, t.next_rent_due, t.status AS tenancy_status,
             u.id AS unit_id, u.unit_number, u.room_type, u.base_rent,
             p.id AS property_id, p.name AS property_name, p.address, p.locality, p.city, p.image_url AS property_image,
+            p.property_type, p.latitude AS property_lat, p.longitude AS property_lon,
             o.id AS owner_id, o.name AS owner_name, o.phone AS owner_phone, o.email AS owner_email,
             ps.upi_id, ps.upi_number, ps.qr_code_url
          FROM tenant_users tu
@@ -75,12 +81,34 @@ const getMe = async (req, res) => {
         const documents = await fetchDocuments(req.user.id);
         const idProof = summarise(documents);
 
+        // Who this account IS, independent of any tenancy. Sent in both branches
+        // because a guest needs it in both: their guest code is their name before a
+        // landlord accepts them and their identity after, and the prompt to finish
+        // the profile has to appear either way.
+        //
+        // `ctx.name` is the TENANTS row's name and is NULL until a landlord accepts
+        // them, which is why the account's own name is now selected separately. The
+        // old code fell back to req.user.email — fine for a registered tenant, but a
+        // guest has no email at all, so an unlinked guest had a blank name.
+        const guest = {
+            is_guest: !!ctx.is_guest,
+            code: ctx.guest_code || null,
+            // What finishing the profile actually buys, said once, here, so the app
+            // does not invent its own version of the reason.
+            why: 'Add your name, email and a password so you can sign in from any phone, recover your account, and your landlord sees who you are.'
+        };
+
         // Not yet linked to a unit by a landlord: the portal shows a friendly
         // "ask your landlord to link you" state rather than empty data.
         if (!ctx.tenant_id) {
             return res.status(200).json({
                 linked: false,
-                account: { name: ctx.name || req.user.email, email: req.user.email },
+                account: {
+                    name: ctx.name || ctx.account_name || req.user.email,
+                    email: ctx.account_email || null,
+                    phone: ctx.account_phone || null
+                },
+                guest,
                 id_proof: idProof,
                 documents
             });
@@ -115,6 +143,12 @@ const getMe = async (req, res) => {
                 locality: ctx.locality,
                 city: ctx.city,
                 property_image: ctx.property_image,
+                // Sent so the tenant can get DIRECTIONS to their own front door.
+                // Null until the landlord pins it; the app shows nothing rather than
+                // routing somebody to a guess.
+                property_type: ctx.property_type,
+                latitude: ctx.property_lat,
+                longitude: ctx.property_lon,
                 deposit: ctx.deposit
             },
             rent: {
@@ -135,6 +169,7 @@ const getMe = async (req, res) => {
                 upi_number: ctx.upi_number,
                 qr_code_url: ctx.qr_code_url
             },
+            guest,
             id_proof: idProof,
             documents
         });

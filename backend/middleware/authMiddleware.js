@@ -1,23 +1,46 @@
 // File: backend/middleware/authMiddleware.js
 const jwt = require('jsonwebtoken');
 
+// A missing JWT_SECRET used to fall back to the literal string 'your_secret_key'
+// — a value that is in this file, in the git history, and in every tutorial this
+// line was copied from. Anyone could sign their own token with it and be admitted
+// as any user. Verification now uses the real secret only, and its absence is
+// shouted at boot rather than silently downgrading every account's security.
+const SECRET = process.env.JWT_SECRET || '';
+if (!SECRET) {
+    console.error('🚨 JWT_SECRET is not set. Every authenticated request will be refused until it is.');
+}
+
 const protect = (req, res, next) => {
-    let token;
-    
-    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
-        try {
-            token = req.headers.authorization.split(' ')[1];
-            const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_secret_key'); // Use your actual secret
-            
-            req.user = decoded; // Attach the decoded payload (like { id: 1 }) to req
-            next();
-        } catch (error) {
-            res.status(401).json({ message: 'Not authorized, token failed' });
-        }
+    // Rewritten because the original could answer the SAME REQUEST TWICE.
+    //
+    // It assigned `token` inside a try, responded 401 in the catch WITHOUT
+    // returning, and then fell through to `if (!token)`. With a header of exactly
+    // "Bearer" (no value) the split yields undefined, jwt.verify throws, the catch
+    // sends a 401 — and then `!token` is true, so it sends a second one. Express
+    // throws ERR_HTTP_HEADERS_SENT at that point, which is an unhandled error on a
+    // path every single authenticated request goes through. Found in a server log,
+    // not by a test.
+    //
+    // Every branch now returns, so exactly one response leaves this function.
+    const header = req.headers.authorization || '';
+    if (!header.startsWith('Bearer ')) {
+        return res.status(401).json({ message: 'Not authorized, no token' });
     }
 
+    const token = header.slice('Bearer '.length).trim();
     if (!token) {
-        res.status(401).json({ message: 'Not authorized, no token' });
+        return res.status(401).json({ message: 'Not authorized, no token' });
+    }
+    if (!SECRET) {
+        return res.status(500).json({ message: 'Server is not configured for sign-in yet.' });
+    }
+
+    try {
+        req.user = jwt.verify(token, SECRET); // { id, email, role? }
+        return next();
+    } catch (error) {
+        return res.status(401).json({ message: 'Not authorized, token failed' });
     }
 };
 

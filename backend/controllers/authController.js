@@ -163,6 +163,36 @@ const maskEmail = (addr = '') => {
     return `${shown}@${domain}`;
 };
 
+// An identifier can match more than one row once guests exist: a guest is created
+// from a phone number alone, and the same person may later register properly with
+// that number. Without an ORDER BY, which row came back was whatever the storage
+// engine felt like returning — so the same reset request could behave differently
+// on two consecutive calls. Rows that actually HAVE an email sort first, because
+// those are the only ones a reset can be delivered to. Valid on `owners` too,
+// where email is NOT NULL and the clause is simply a no-op.
+const ACCOUNT_PREFERENCE = 'ORDER BY (email IS NULL), id';
+
+// Guest accounts have no email and no password — that is the whole point of them
+// (see guestController). Password reset used to walk straight into that: it read
+// `email` as NULL, tried to INSERT it into password_resets.email, which is NOT
+// NULL, and the caller got "Server error. Please try again." with an
+// ER_BAD_NULL_ERROR in the log. Reproduced against a real database before fixing.
+//
+// A guest cannot be given a reset code, so say what they should do instead rather
+// than failing. Returns null when the account is fine, or the body to send back.
+const emailless = (account) => {
+    if (account.email) return null;
+    return account.is_guest
+        ? {
+            code: 'GUEST_ACCOUNT',
+            message: 'This is a guest account, so it has no password. Sign in with your guest ID and phone number instead.'
+        }
+        : {
+            code: 'NO_EMAIL',
+            message: 'There is no email address on this account, so a reset code cannot be sent. Please contact support.'
+        };
+};
+
 // --- Forgot Password: email a 6-digit reset code ---
 const forgotPassword = async (req, res) => {
     try {
@@ -188,7 +218,10 @@ const forgotPassword = async (req, res) => {
         // account's own email: that is where the code is sent, and it keeps one row
         // per account no matter which identifier was typed.
         const [owners] = await db.query(
-            `SELECT id, name, email FROM \`${target.table}\` WHERE email = ? OR phone = ?`,
+            `SELECT id, name, email${target.table === 'tenant_users' ? ', is_guest' : ', 0 AS is_guest'}
+               FROM \`${target.table}\`
+              WHERE email = ? OR phone = ?
+              ${ACCOUNT_PREFERENCE}`,
             [login, login]
         );
 
@@ -203,6 +236,9 @@ const forgotPassword = async (req, res) => {
                 message: `No ${target.role === 'tenant' ? 'tenant' : 'landlord'} account is registered with these details.`
             });
         }
+
+        const noEmail = emailless(owners[0]);
+        if (noEmail) return res.status(409).json(noEmail);
 
         {
             // The code always goes to the account's registered email, never to
@@ -285,7 +321,10 @@ const resetPassword = async (req, res) => {
         // account's own email, so someone cannot present a code alongside a different
         // address and have the reset land somewhere else.
         const [accounts] = await db.query(
-            `SELECT email FROM \`${target.table}\` WHERE email = ? OR phone = ?`,
+            `SELECT email${target.table === 'tenant_users' ? ', is_guest' : ', 0 AS is_guest'}
+               FROM \`${target.table}\`
+              WHERE email = ? OR phone = ?
+              ${ACCOUNT_PREFERENCE}`,
             [login, login]
         );
         if (accounts.length === 0) {
@@ -294,6 +333,15 @@ const resetPassword = async (req, res) => {
                 message: 'No account is registered with these details.'
             });
         }
+
+        // Without this the guest case failed CONFUSINGLY rather than loudly: the
+        // code lookup ran `WHERE email = NULL`, which in SQL matches nothing no
+        // matter what is stored, so a guest was told "Invalid or expired code" for
+        // a code that was never issuable in the first place. Same answer as the
+        // request step now, so the two halves of the flow cannot disagree.
+        const noEmail = emailless(accounts[0]);
+        if (noEmail) return res.status(409).json(noEmail);
+
         const accountEmail = accounts[0].email;
 
         // The role is part of the match, so a code issued for one account type can

@@ -2,23 +2,41 @@
 const db = require('../config/db');
 const { getFileUrl } = require('../middleware/uploadMiddleware');
 
+// A coordinate, or null. Sent as form fields (the property form is multipart because
+// it carries a photo), so they arrive as strings — "" for "not pinned", which
+// Number() would helpfully turn into 0, i.e. a point in the Gulf of Guinea.
+//
+// Out-of-range values are also refused rather than clamped: a latitude of 200 is a
+// bug in the caller, and storing 90 instead would hide it behind a pin in the Arctic.
+const coord = (raw, limit) => {
+    if (raw === undefined || raw === null || String(raw).trim() === '') return null;
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return null;
+    if (Math.abs(n) > limit) return null;
+    return n;
+};
+const asLat = (v) => coord(v, 90);
+const asLon = (v) => coord(v, 180);
+
 // Add a new property
 const addProperty = async (req, res) => {
     try {
         const ownerId = req.user.id; // Comes from your auth middleware
         const { name, property_type, address, locality, city, pincode } = req.body;
-        
+        const latitude = asLat(req.body.latitude);
+        const longitude = asLon(req.body.longitude);
+
         // If an image was uploaded, store its path. Otherwise, leave it null.
         const image_url = getFileUrl(req.file);
 
         const query = `
             INSERT INTO properties 
-            (owner_id, name, property_type, address, locality, city, pincode, image_url) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            (owner_id, name, property_type, address, locality, city, pincode, latitude, longitude, image_url) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
         
         const [result] = await db.query(query, [
-            ownerId, name, property_type, address, locality, city, pincode, image_url
+            ownerId, name, property_type, address, locality, city, pincode, latitude, longitude, image_url
         ]);
 
         res.status(201).json({
@@ -78,6 +96,15 @@ const updateProperty = async (req, res) => {
             SET name = ?, property_type = ?, address = ?, locality = ?, city = ?, pincode = ?
         `;
         let values = [name, property_type, address, locality, city, pincode];
+
+        // The pin is only written when the caller sent one. An edit submitted without
+        // opening the map omits these fields entirely, and treating that as "clear the
+        // pin" would silently un-locate a property every time its name was corrected.
+        // Sending an empty string IS how you deliberately clear it.
+        if (req.body.latitude !== undefined || req.body.longitude !== undefined) {
+            query += `, latitude = ?, longitude = ?`;
+            values.push(asLat(req.body.latitude), asLon(req.body.longitude));
+        }
 
         // 3. Handle Image Upload (if a new one was selected)
         if (req.file) {
