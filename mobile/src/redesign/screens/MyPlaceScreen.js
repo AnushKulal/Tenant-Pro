@@ -63,6 +63,26 @@ export default function MyPlaceScreen() {
                                 <Glyph name="location-outline" size={15} color={t.fg3} style={{ marginTop: 2 }} />
                                 <T w={400} s={13} lh={1.5} c={t.fg2} style={{ flex: 1 }}>{me.address}</T>
                             </Row>
+
+                            {/* The other half of the landlord pinning the property:
+                                a tenant tapping Directions and being routed to their
+                                own front door. Only when it HAS been pinned — sending
+                                somebody to a guessed coordinate is worse than saying
+                                there isn't one. */}
+                            {vm.myWay.pinned ? (
+                                <Press
+                                    onPress={vm.myWay.go}
+                                    style={{ marginTop: 14, paddingVertical: 13, borderRadius: 14, backgroundColor: t.lime, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', columnGap: 8 }}
+                                >
+                                    <Glyph name="navigate" size={16} color={t.on} />
+                                    <T w={700} s={13.5} c={t.on}>{vm.myWay.label}</T>
+                                </Press>
+                            ) : (
+                                <Row gap={8} align="flex-start" style={{ marginTop: 14 }}>
+                                    <Glyph name="information-circle-outline" size={14} color={t.fg3} />
+                                    <T w={400} s={11.5} lh={1.45} c={t.fg3} style={{ flex: 1 }}>{vm.myWay.missingLine}</T>
+                                </Row>
+                            )}
                         </View>
                     </View>
 

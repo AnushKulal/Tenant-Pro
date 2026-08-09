@@ -39,6 +39,14 @@
         {
           "cameraPermission": "TenantPro uses the camera to scan a property's invite QR code."
         }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "TenantPro uses your location only while you are placing a property on the map, so the pin can start where you are standing.",
+          "locationWhenInUsePermission": "TenantPro uses your location only while you are placing a property on the map, so the pin can start where you are standing.",
+          "isAndroidBackgroundLocationEnabled": false
+        }
       ]
     ],
     "extra": {

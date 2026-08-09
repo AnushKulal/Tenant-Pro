@@ -61,6 +61,17 @@ export default function PinPickScreen() {
                     autoCapitalize="words"
                     right={p.searching ? <ActivityIndicator size="small" color={t.fg3} /> : undefined}
                 />
+
+                {/* Asking for location HERE rather than on the primer screen is the
+                    point: the request arrives with the reason visible on screen,
+                    which is the version people grant. On a build without the module
+                    it says so instead of doing nothing. */}
+                <Press onPress={p.useHere} style={{ marginTop: 8, alignSelf: 'flex-start' }}>
+                    <Row gap={7} style={{ paddingVertical: 9, paddingHorizontal: 13, borderRadius: 999, backgroundColor: t.ink2, borderWidth: 1, borderColor: t.line }}>
+                        <Glyph name="locate" size={14} color={t.accent} />
+                        <T w={600} s={12} lh={1} c={t.fg}>{p.hereLabel}</T>
+                    </Row>
+                </Press>
             </View>
 
             {/* Results sit over the map rather than pushing it down, so choosing one

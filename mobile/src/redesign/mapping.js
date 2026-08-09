@@ -91,6 +91,8 @@ export function mapMyPlace(me) {
                 city: home.city,
                 image_url: home.property_image,
                 property_type: home.property_type,
+                latitude: home.latitude,
+                longitude: home.longitude,
                 units: 1
             }),
             // The room type is the closest thing the backend has to the design's

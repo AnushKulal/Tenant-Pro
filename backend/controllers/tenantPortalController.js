@@ -39,6 +39,7 @@ const loadTenantContext = async (userId) => {
             t.billing_cycle, t.next_rent_due, t.status AS tenancy_status,
             u.id AS unit_id, u.unit_number, u.room_type, u.base_rent,
             p.id AS property_id, p.name AS property_name, p.address, p.locality, p.city, p.image_url AS property_image,
+            p.property_type, p.latitude AS property_lat, p.longitude AS property_lon,
             o.id AS owner_id, o.name AS owner_name, o.phone AS owner_phone, o.email AS owner_email,
             ps.upi_id, ps.upi_number, ps.qr_code_url
          FROM tenant_users tu
@@ -142,6 +143,12 @@ const getMe = async (req, res) => {
                 locality: ctx.locality,
                 city: ctx.city,
                 property_image: ctx.property_image,
+                // Sent so the tenant can get DIRECTIONS to their own front door.
+                // Null until the landlord pins it; the app shows nothing rather than
+                // routing somebody to a guess.
+                property_type: ctx.property_type,
+                latitude: ctx.property_lat,
+                longitude: ctx.property_lon,
                 deposit: ctx.deposit
             },
             rent: {

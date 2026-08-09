@@ -1401,7 +1401,7 @@ function deriveVm(s, api) {
       const LABEL = { granted: 'ALLOWED', denied: 'NOT ALLOWED', missing: 'NOT IN THIS BUILD', unknown: '' };
       const FG = { granted: 'pos', denied: 'amber', missing: 'fg3', unknown: 'fg3' };
       const NOTE = {
-        missing: 'The scanner is not in this build yet — it switches on by itself after the next app update.',
+        missing: 'Not in this build yet — it switches on by itself after the next app update.',
         denied: 'You can turn it on later in your phone’s settings, or ask again here.'
       };
       const rows = [
@@ -1416,6 +1416,12 @@ function deriveVm(s, api) {
           icon: 'image-outline',
           title: 'Photos',
           why: 'To attach a picture to a maintenance request, and to set your profile photo.'
+        },
+        {
+          key: 'location',
+          icon: 'location-outline',
+          title: 'Location',
+          why: 'Only while you are placing a property on the map, so the pin can start where you are standing. Searching or dragging works without it, and TenantPro never follows you around.'
         }
       ].map((r) => {
         const st = P[r.key] || 'unknown';
@@ -1440,7 +1446,7 @@ function deriveVm(s, api) {
           key: 'calls',
           icon: 'call-outline',
           title: 'Calls & messages',
-          why: 'Tapping a number opens your dialer or messages app with it filled in. TenantPro never places the call itself, so there is no permission to give.'
+          why: 'Tapping a number opens your dialer or messages app with it filled in, and you send it. TenantPro never places the call or sends the message itself, and never reads your contacts — so there is no permission to give, and none is asked for.'
         }],
         granted,
         allSettled: rows.every((r) => r.settled),
@@ -1605,6 +1611,12 @@ function deriveVm(s, api) {
         // When it lifts. Worth one reverse-geocode to say what is under the pin.
         settle: (c) => { put({ lat: c.lat, lon: c.lon, address: null }); api.describePin(c.lat, c.lon); },
 
+        // Start where the landlord is standing — usually the right answer, since
+        // somebody adding a property is generally in it. Asks for location at the
+        // moment it is used, with the reason on screen.
+        useHere: () => api.useMyLocation(),
+        hereLabel: 'Use my current location',
+
         q: p.q || '',
         setQ: (v) => api.searchPlaces(v),
         searching: !!p.searching,
@@ -1644,12 +1656,15 @@ function deriveVm(s, api) {
               ...form,
               lat: roundCoord(lat),
               lon: roundCoord(lon),
-              // Only fill blank address fields. Overwriting what the landlord typed
-              // with a geocoder's opinion is how a correct address becomes wrong.
-              address: form.address || (a && a.street) || form.address,
-              locality: form.locality || (a && a.locality) || form.locality,
-              city: form.city || (a && a.city) || form.city,
-              pincode: form.pincode || (a && a.postcode) || form.pincode,
+              // The picker fills the address in. Whatever it found wins over what was
+              // typed, because the point of choosing a place on a map is not having
+              // to type it -- and every field stays editable afterwards, so a
+              // geocoder that gets the flat number wrong is corrected in a second.
+              // A field the geocoder had nothing for is left exactly as it was.
+              address: (a && a.street) || form.address,
+              locality: (a && a.locality) || form.locality,
+              city: (a && a.city) || form.city,
+              pincode: (a && a.postcode) || form.pincode,
               error: ''
             },
             pin: { ...p, back: null }
@@ -3344,6 +3359,34 @@ function deriveVm(s, api) {
       };
     })(),
 
+    // ── Getting home ───────────────────────────────────────────────────────────
+    // The landlord pins the property; this is the other half — a tenant tapping
+    // Directions and being routed to their own front door. Nothing is shown until
+    // the landlord has actually pinned it, because a guess is worse than a blank.
+    myWay: (() => {
+      const home = (TD && TD.me && TD.me.home) || {};
+      const lat = home.latitude != null ? Number(home.latitude) : null;
+      const lon = home.longitude != null ? Number(home.longitude) : null;
+      const pinned = hasPin(lat, lon);
+      return {
+        pinned,
+        lat: pinned ? lat : 0,
+        lon: pinned ? lon : 0,
+        name: home.property_name || 'my place',
+        label: 'Directions',
+        line: 'Open a route to your building.',
+        // Said plainly rather than hidden, so a tenant who wonders why there is no
+        // map knows it is their landlord's to add.
+        missingLine: 'Your landlord has not pinned this property on the map yet.',
+        go: () => {
+          if (!pinned) { flash('Your landlord has not pinned this property yet'); return; }
+          openDirections(lat, lon, home.property_name).then((went) => {
+            if (!went) flash('No maps app could open on this phone');
+          });
+        }
+      };
+    })(),
+
     tenantDock: [
       ['HOME', 'home-outline', 'portal'],
       ['FIND', 'search-outline', 'tfind'],
@@ -4703,6 +4746,53 @@ export function AppProvider({ children }) {
     }
   }, [setState]);
 
+  // Start the pin where the landlord is standing. Almost always the right answer —
+  // somebody adding a property is usually in it — and it saves a search.
+  //
+  // Asks for permission at the moment it is used rather than up front, because a
+  // request that arrives with a reason attached is the one people grant. If the
+  // module is not in this build, that is said plainly instead of a dead button.
+  const useMyLocation = useCallback(async () => {
+    setState({ pin: { ...stateRef.current.pin, searching: true, error: '' } });
+    let loc = null;
+    try {
+      // eslint-disable-next-line global-require
+      loc = require('expo-location');
+    } catch (e) {
+      setState({ pin: { ...stateRef.current.pin, searching: false, error: 'Current location arrives in the next app update. Search or drag the map for now.' } });
+      return;
+    }
+    try {
+      const perm = await loc.requestForegroundPermissionsAsync();
+      if (!perm || !perm.granted) {
+        setState({
+          pin: {
+            ...stateRef.current.pin,
+            searching: false,
+            error: 'Location is off for TenantPro. You can turn it on in your phone settings, or just drag the map.'
+          },
+          perms: { ...stateRef.current.perms, location: 'denied' }
+        });
+        return;
+      }
+      const pos = await loc.getCurrentPositionAsync({ accuracy: loc.Accuracy.Balanced });
+      const lat = pos && pos.coords ? pos.coords.latitude : null;
+      const lon = pos && pos.coords ? pos.coords.longitude : null;
+      if (!hasPin(lat, lon)) {
+        setState({ pin: { ...stateRef.current.pin, searching: false, error: 'Could not get a fix. Try again outdoors, or drag the map.' } });
+        return;
+      }
+      setState({
+        pin: { ...stateRef.current.pin, lat, lon, zoom: 18, results: [], searching: false, error: '', address: null },
+        perms: { ...stateRef.current.perms, location: 'granted' }
+      });
+      // Name it, so the fields can be filled from a real result.
+      describePin(lat, lon);
+    } catch (e) {
+      setState({ pin: { ...stateRef.current.pin, searching: false, error: 'Could not read your location just now. Drag the map instead.' } });
+    }
+  }, [setState, describePin]);
+
   // ── Device permissions ─────────────────────────────────────────────────────
   // Asked from the primer screen, one at a time, each right next to the sentence
   // that says what it is for — which is both what Android and iOS ask for and
@@ -4730,6 +4820,17 @@ export function AppProvider({ children }) {
           null;
         if (!ask) { done('missing'); return; }
         const res = await ask();
+        done(res && res.granted ? 'granted' : 'denied');
+        return;
+      }
+      if (kind === 'location') {
+        // Native, and NOT in any build made before it was added — same lazy require
+        // as the camera, so an older APK reports "not in this build" instead of
+        // crashing the screen. Foreground only: the app has no reason to know where
+        // anyone is when it is closed, and asking for background location is both a
+        // Play Store review problem and a thing users are right to refuse.
+        const loc = require('expo-location');
+        const res = await loc.requestForegroundPermissionsAsync();
         done(res && res.granted ? 'granted' : 'denied');
         return;
       }
@@ -5149,7 +5250,7 @@ export function AppProvider({ children }) {
       loadDocs, decideDoc, loadMyDocs, pickDocPhoto, addMyDoc, removeMyDoc,
       lookupProperty, resetDemo, openUpiPayment, declareMyPayment,
       pickGuestPhoto, guestCheckCode, submitGuestJoin, submitGuestSignIn, submitClaim,
-      searchPlaces, describePin
+      searchPlaces, describePin, useMyLocation
     }),
     [
       setState, set, go, flash, signIn, register, signOut, resolveSession,
@@ -5161,7 +5262,7 @@ export function AppProvider({ children }) {
       loadDocs, decideDoc, loadMyDocs, pickDocPhoto, addMyDoc, removeMyDoc,
       lookupProperty, resetDemo, openUpiPayment, declareMyPayment,
       pickGuestPhoto, guestCheckCode, submitGuestJoin, submitGuestSignIn, submitClaim,
-      searchPlaces, describePin
+      searchPlaces, describePin, useMyLocation
     ]
   );
 
