@@ -83,6 +83,39 @@ const inr = (n) => {
 // form, so both use the same sheet body.
 const BLANK_EDIT_PROPERTY = { id: null, name: '', type: 'PG', address: '', locality: '', city: '', pincode: '', photo: null, busy: false, error: '' };
 
+// The ways a tenant can tell us they paid. Mirrors the server's own list in
+// tenantPortalController.declarePayment — a value this does not offer would be
+// silently coerced to 'UPI' there, so the two must stay in step.
+const PAY_METHODS = ['UPI', 'Bank Transfer', 'Cash', 'Cheque', 'Card', 'Net Banking', 'Other'];
+
+// The reference a tenant carries into their UPI app and back. It has to be unique
+// enough not to collide within a month, short enough to survive a UPI note field, and
+// readable enough that a landlord can match it against a line in their bank statement.
+// YYMM plus four random characters does all three.
+const refStamp = () => {
+    const d = new Date();
+    const ym = `${String(d.getFullYear()).slice(2)}${String(d.getMonth() + 1).padStart(2, '0')}`;
+    const rand = Math.random().toString(36).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
+    return `${ym}-${rand.padEnd(4, 'X')}`;
+};
+
+// Declared BEFORE INITIAL_STATE because INITIAL_STATE spreads it. A const referenced
+// by INITIAL_STATE and declared after it throws on module load — this file has been
+// bitten by exactly that three times now (BLANK_EDIT_PROPERTY, holdJoinCode,
+// checkPulse), so the ordering here is load-bearing, not stylistic.
+const BLANK_PAY = {
+    // Held so the reference survives the round trip out to the UPI app and back.
+    reference: '',
+    // True once we have handed off and are waiting to ask "did that work?".
+    asked: false,
+    // The "I paid another way" path.
+    other: false,
+    method: '',
+    otherRef: '',
+    busy: false,
+    error: ''
+};
+
 const INITIAL_STATE = {
   route: 'boot', overlay: null, filter: 'all', who: 'amit', method: 'UPI', toast: '',
   theme: null, pref: 'dark', q: '', pq: '', place: 'sunrise', ticket: 1, tstatus: {},
@@ -177,6 +210,11 @@ const INITIAL_STATE = {
   // mapped live payload once loadOwnerData() returns. `live` says which one it is.
   data: SEED,
   live: false,
+  // The rent-payment form: the reference in flight, whether we have asked "did that
+  // work?", and the "I paid another way" fields.
+  pay: { ...BLANK_PAY },
+  // The tenant's own receipts screen.
+  receipts: { loading: false, error: '' },
   // The demo account's own status: null for every real landlord, so the reset control
   // in Settings is hidden by default and only appears once the server has said this
   // IS the demo. Never assumed from an email typed at the login screen.
@@ -435,6 +473,15 @@ function deriveVm(s, api) {
   // live, otherwise the seed's demo landlord so the walk-through still shows a
   // person. Both the Help screen's card and every request sheet read this, so they
   // can never name different people.
+  // The tenant's OWN payment history, straight from /tenant-portal/payments. Every
+  // state is here including Rejected, because a refused claim the tenant cannot see
+  // is the version of this that generates a phone call.
+  const MY_PAYMENTS = (TD && TD.payments) || [];
+  // The single claim currently waiting on the landlord, if any. The server allows one
+  // at a time, so the screen can block a second attempt before it is made rather than
+  // after a 409.
+  const myAwaiting = MY_PAYMENTS.find((p) => p.status === 'Declared') || null;
+
   const landlordCard = {
     name: (LANDLORD && LANDLORD.name) || 'Demo Landlord',
     phone: (LANDLORD && LANDLORD.phone) || '9000000000',
@@ -2426,34 +2473,156 @@ function deriveVm(s, api) {
 
     isFind: s.route === 'tfind',
     isCheckout: s.route === 'tcheckout',
-    goCheckout: () => setState({ route: 'tcheckout', paid: false }),
-    payMethods: [
-      { id: 'gpay', label: 'Google Pay', sub: 'UPI · rahul@okaxis', icon: 'logo-google' },
-      { id: 'phonepe', label: 'PhonePe', sub: 'UPI · 98123 45670', icon: 'phone-portrait-outline' },
-      { id: 'upi', label: 'Any UPI app', sub: 'Opens your default app', icon: 'at' },
-      { id: 'card', label: 'Card', sub: 'Visa · Mastercard · RuPay', icon: 'card-outline' },
-      { id: 'net', label: 'Net banking', sub: 'All major banks', icon: 'business-outline' }
-    ].map((m) => {
-      const on = s.paymethod === m.id;
+    goCheckout: () => setState({ route: 'tcheckout', paid: false, pay: { ...BLANK_PAY } }),
+
+    // ── Paying rent ───────────────────────────────────────────────────────────
+    // There is no payment gateway, and pretending otherwise was the old screen's
+    // problem: it offered Card and Net banking, neither of which can reach a UPI ID.
+    // A VPA can only receive from UPI, so those buttons could never have worked, and
+    // once "Pay" actually recorded something they would have logged money that never
+    // moved.
+    //
+    // So this screen does the only two honest things:
+    //   1. hand off to the tenant's own UPI app with the landlord's real VPA, the
+    //      exact amount and a reference already filled in, then ask whether it went
+    //      through; and
+    //   2. let them record a payment they made some other way — cash, a bank
+    //      transfer, a card through some third-party app.
+    //
+    // Either way the result is a CLAIM the landlord confirms. The app never asserts
+    // that money arrived, because it cannot see money.
+    checkout: (() => {
+      const pay = s.pay || BLANK_PAY;
+      const put = (patch) => setState({ pay: { ...pay, ...patch, error: '' } });
+      const upiId = (PAYINFO && PAYINFO.upi_id) || '';
+      const upiNumber = (PAYINFO && PAYINFO.upi_number) || '';
+      const payee = upiId || upiNumber;
+      const amount = Number(me.rentRaw) || 0;
+
+      // The reference the tenant carries into their UPI app and back out again. It is
+      // what lets a landlord match a credit in their bank to a claim in here — and
+      // what a gateway webhook would match on later — so it has to be unique enough
+      // to not collide within a month, and short enough to survive a UPI note field.
+      const reference = pay.reference || `TP${refStamp()}`;
+
       return {
-        ...m,
-        bg: on ? 'vsoft' : 'ink2',
-        bd: on ? 'accent' : 'line',
-        check: on ? 'checkmark-circle' : 'ellipse-outline',
-        checkFg: on ? 'accent' : 'line2',
-        go: () => set('paymethod', m.id)
+        amount,
+        amountLabel: me.rentFull,
+        home: me.home,
+        // What is owed and why. No invented late fee — the server does not charge one,
+        // so the screen must not imply it does.
+        breakdown: [
+          { k: 'Rent', v: me.rentFull },
+          { k: 'Platform fee', v: '₹0' }
+        ],
+        reference,
+
+        // Can we even hand off? Without the landlord's UPI details there is nothing
+        // to open, and saying so is more use than a button that does nothing.
+        canUpi: !!payee && amount > 0,
+        payee,
+        payeeLabel: upiId || (upiNumber ? `${upiNumber} (UPI number)` : ''),
+        missingUpi: !payee,
+        missingUpiLine: `${landlordCard.name} has not added a UPI ID yet. Ask them to set one up, or record a payment you made another way.`,
+
+        // Step 1: open their UPI app. Nothing is recorded here — the tenant has not
+        // paid yet, and an app cannot know whether they will.
+        openUpi: () => api.openUpiPayment({ payee, amount, reference, name: landlordCard.name }),
+
+        // Step 2, on their return: did it work? React Native cannot read the result of
+        // a UPI intent, so asking is the honest option. Guessing would either invent
+        // payments that failed or lose ones that succeeded.
+        asked: !!pay.asked,
+        confirmSent: () => api.declareMyPayment({ method: 'UPI', reference }),
+        cancelSent: () => setState({ pay: { ...BLANK_PAY } }),
+
+        // The other path, for money that moved outside UPI.
+        isOther: !!pay.other,
+        openOther: () => put({ other: true }),
+        closeOther: () => put({ other: false }),
+        methods: PAY_METHODS.map((m) => ({
+          label: m,
+          on: pay.method === m,
+          go: () => put({ method: m })
+        })),
+        method: pay.method,
+        otherRef: pay.otherRef,
+        setOtherRef: (e) => put({ otherRef: evStr(e).slice(0, 100) }),
+        submitOther: () => {
+          if (!pay.method) { setState({ pay: { ...pay, error: 'Which way did you pay?' } }); return; }
+          api.declareMyPayment({ method: pay.method, reference: pay.otherRef.trim() || reference });
+        },
+
+        busy: !!pay.busy,
+        error: pay.error || '',
+        hasError: !!pay.error,
+
+        // Already waiting on the landlord: a second claim would leave them two
+        // identical rows with no way to tell a double-tap from two real payments, and
+        // the server refuses it anyway. Better to say so before they try.
+        waiting: !!myAwaiting,
+        waitingLine: myAwaiting
+          ? `₹${inr(myAwaiting.amount_paid)} is already waiting for ${landlordCard.name} to confirm.`
+          : '',
+        goReceipts: () => api.goReceipts()
       };
-    }),
-    payLabel: `Pay ${me.rentFull}`,
+    })(),
+
+    // Kept for the success panel the screen shows after a claim is sent.
     paid: s.paid,
     unpaid: !s.paid,
-    payNow: () => setState({ paid: true }),
-    payDone: () => { setState({ route: 'portal', paid: false }); flash(`${me.rentFull} paid — awaiting confirmation`); },
-    payBreakdown: [
-      { k: 'Rent', v: me.rentFull },
-      { k: 'Platform fee', v: '₹0' },
-      { k: 'Late fee', v: me.state === 'overdue' ? '₹250' : '₹0' }
-    ],
+    payDone: () => { setState({ route: 'portal', paid: false, pay: { ...BLANK_PAY } }); },
+    // ── Receipts ──────────────────────────────────────────────────────────────
+    // Every payment on this tenancy and where each one stands. A tenant could not see
+    // their own history at all before this — the endpoint returned it and nothing
+    // rendered it.
+    isReceipts: s.route === 'treceipts',
+    goReceipts: () => go('treceipts'),
+    receipts: (() => {
+      const chip = (st) => (
+        st === 'Confirmed' ? { label: 'PAID', fg: 'pos', bg: 'lsoft' }
+          : st === 'Declared' ? { label: 'AWAITING', fg: 'amber', bg: 'asoft' }
+            : { label: 'REJECTED', fg: 'coral', bg: 'csoft' }
+      );
+      const rows = MY_PAYMENTS.map((p) => {
+        const c = chip(p.status);
+        return {
+          id: p.id,
+          amount: `₹${inr(p.amount_paid)}`,
+          when: fmtDay(p.payment_date),
+          method: p.payment_method || 'UPI',
+          reference: p.reference_id || '',
+          ...c,
+          // Only a rejection carries a reason, and showing it is the whole point:
+          // a claim that vanished silently is what makes a tenant phone you.
+          note: p.status === 'Rejected' ? (p.decision_note || 'No reason given.') : '',
+          // "Confirmed by" distinguishes a landlord's tap from a gateway's webhook
+          // once one is connected. Until then every row says the same thing, which is
+          // honest rather than decorative.
+          by: p.status === 'Confirmed'
+            ? (p.confirmation_source === 'gateway' ? 'Confirmed automatically' : 'Confirmed by your landlord')
+            : ''
+        };
+      });
+      const total = MY_PAYMENTS
+        .filter((p) => p.status === 'Confirmed')
+        .reduce((n, p) => n + Number(p.amount_paid || 0), 0);
+      return {
+        rows,
+        empty: rows.length === 0,
+        emptyLine: me.unit
+          ? 'Nothing yet. Payments appear here the moment you record one.'
+          : 'You will see payments here once you have joined a property.',
+        // Paid and awaiting are deliberately separate figures. Adding them would imply
+        // the landlord has acknowledged money they have not.
+        paidTotal: `₹${inr(total)}`,
+        paidCount: rows.filter((r) => r.label === 'PAID').length,
+        awaiting: myAwaiting ? `₹${inr(myAwaiting.amount_paid)}` : '',
+        hasAwaiting: !!myAwaiting,
+        back: () => go('portal')
+      };
+    })(),
+
     goFind: () => go('tfind'),
     findLine: me.unit ? 'Scan, enter a code, or search by name or area.' : 'Scan an invite QR, enter a property ID, or search.',
     isHelp: s.route === 'thelp',
@@ -3238,6 +3407,57 @@ export function AppProvider({ children }) {
       });
     }
   }, [setState]);
+
+  // ── Paying rent ─────────────────────────────────────────────────────────────
+  // Hand off to whatever UPI app the tenant uses. This records NOTHING: they have not
+  // paid yet, and the app has no way to learn whether they will. All it does is
+  // pre-fill the payee, amount and reference so the tenant types nothing and the
+  // reference in their bank statement matches the one in here.
+  //
+  // `upi://pay` is the NPCI-standard intent every UPI app registers. If none is
+  // installed the openURL rejects, and saying so beats a dead button.
+  const openUpiPayment = useCallback(async ({ payee, amount, reference, name }) => {
+    if (!payee || !(amount > 0)) { flash('Your landlord has not added a UPI ID yet'); return; }
+    const q = [
+      `pa=${encodeURIComponent(payee)}`,
+      `pn=${encodeURIComponent(name || 'Landlord')}`,
+      `am=${encodeURIComponent(String(amount))}`,
+      'cu=INR',
+      // The note is what carries the reference into the landlord's bank statement.
+      `tn=${encodeURIComponent(`Rent ${reference}`)}`
+    ].join('&');
+    // Remembered before we leave, so returning to a fresh screen still knows which
+    // reference was sent and can ask about it.
+    setState({ pay: { ...stateRef.current.pay, reference, asked: true } });
+    try {
+      await Linking.openURL(`upi://pay?${q}`);
+    } catch (e) {
+      setState({ pay: { ...stateRef.current.pay, asked: false } });
+      copyText(payee, `No UPI app found — ${payee} copied instead`);
+    }
+  }, [setState, flash, copyText]);
+
+  // "Yes, I paid." Records the CLAIM. The landlord confirms it, and only that clears
+  // the month — see the backend's settlePayment for why that separation exists.
+  const declareMyPayment = useCallback(async ({ method, reference }) => {
+    const st = stateRef.current;
+    if (st.pay.busy) return;
+    const amount = Number((st.tdata && st.tdata.me && st.tdata.me.rent && st.tdata.me.rent.amount) || 0);
+    if (!(amount > 0)) { flash('No rent amount on your tenancy yet'); return; }
+    setState({ pay: { ...st.pay, busy: true, error: '' } });
+    try {
+      const res = await apiPortal.declarePayment({ amount, method, reference });
+      // Reload so the receipts screen and the portal's due state both reflect it, and
+      // so the pulse stamp moves with them.
+      await loadTenantData({ silent: true });
+      setState({ pay: { ...BLANK_PAY }, paid: true });
+      flash((res && res.message) || 'Sent to your landlord');
+    } catch (e) {
+      // 409 means they already have one waiting. That is not a failure to hide — it is
+      // the answer to "why can I not send another".
+      setState({ pay: { ...stateRef.current.pay, busy: false, error: errText(e, 'Could not send that to your landlord.') } });
+    }
+  }, [setState, flash, loadTenantData]);
 
   // How often to ask "anything new?" while the app is in front of the user. Long
   // enough that a quiet app is genuinely idle, short enough that a landlord watching
@@ -4248,7 +4468,7 @@ export function AppProvider({ children }) {
       pickPhotoFor, createProperty, saveProperty, deleteProperty, createUnit, createTenantRecord, goBackOneStep,
       decideJoin, requestToJoin, holdJoinCode, askPermission, finishPermits,
       loadDocs, decideDoc, loadMyDocs, pickDocPhoto, addMyDoc, removeMyDoc,
-      lookupProperty, resetDemo
+      lookupProperty, resetDemo, openUpiPayment, declareMyPayment
     }),
     [
       setState, set, go, flash, signIn, register, signOut, resolveSession,
@@ -4258,7 +4478,7 @@ export function AppProvider({ children }) {
       pickPhotoFor, createProperty, saveProperty, deleteProperty, createUnit, createTenantRecord, goBackOneStep,
       decideJoin, requestToJoin, holdJoinCode, askPermission, finishPermits,
       loadDocs, decideDoc, loadMyDocs, pickDocPhoto, addMyDoc, removeMyDoc,
-      lookupProperty, resetDemo
+      lookupProperty, resetDemo, openUpiPayment, declareMyPayment
     ]
   );
 

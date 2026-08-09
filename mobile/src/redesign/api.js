@@ -125,6 +125,12 @@ export const portal = {
     // Counts and a stamp, polled while the app is open. See `owner.pulse` for why.
     pulse: () => body(http.get('/tenant-portal/pulse')),
     payments: () => body(http.get('/tenant-portal/payments')),
+    // "I have paid this." Records a CLAIM, not money received — the landlord confirms
+    // it, and only that clears the month. The server validates the amount against the
+    // rent, refuses future dates, and allows one outstanding claim at a time.
+    declarePayment: ({ amount, method, reference, date }) => body(
+        http.post('/tenant-portal/payments', { amount, method, reference, date })
+    ),
     requests: () => body(http.get('/tenant-portal/requests')),
     // Accepts either a plain object or a FormData carrying `request_image`; axios
     // needs the multipart header set explicitly for the latter.
