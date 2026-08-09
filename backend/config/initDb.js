@@ -164,6 +164,13 @@ const initDb = async () => {
                 AND NOT EXISTS (SELECT 1 FROM tenant_users tu WHERE tu.id = p.declared_by)`
         );
 
+        // A payment now records WHO confirmed it, not just that it was confirmed.
+        // Existing rows were all confirmed by a landlord (nothing else could), so the
+        // 'landlord' default backfills them correctly.
+        await ensureColumn(conn, 'payments', 'confirmation_source', "enum('landlord','gateway','bank') NOT NULL DEFAULT 'landlord'");
+        await ensureColumn(conn, 'payments', 'gateway_ref', 'varchar(120) DEFAULT NULL');
+        await ensureIndex(conn, 'payments', 'gateway_ref', '(`gateway_ref`)');
+
         console.log('✅ Database schema is up to date.');
     } finally {
         await conn.end();

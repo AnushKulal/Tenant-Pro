@@ -189,10 +189,26 @@ CREATE TABLE IF NOT EXISTS `payments` (
   -- The landlord's reason when they reject, shown to the tenant so a refusal is
   -- answerable rather than mysterious.
   `decision_note` varchar(300) DEFAULT NULL,
+  -- WHO decided, as opposed to what they decided. 'landlord' is a person tapping
+  -- Confirm; 'gateway' is a payment provider's webhook vouching for the money;
+  -- 'bank' is a future account feed.
+  --
+  -- ONLY MEANINGFUL ONCE `status` IS NOT 'Declared'. An undecided row carries the
+  -- default and nobody has confirmed anything — read this together with status, never
+  -- on its own. The default is 'landlord' rather than NULL because every row that
+  -- predates this column WAS a landlord's own entry, and a nullable column would have
+  -- thrown that history away to make the undecided case tidier.
+  `confirmation_source` enum('landlord','gateway','bank') NOT NULL DEFAULT 'landlord',
+  -- The provider's own id for the transaction, so a disputed payment can be looked
+  -- up on their side. NULL for anything a human confirmed.
+  `gateway_ref` varchar(120) DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   PRIMARY KEY (`id`),
   KEY `tenant_id` (`tenant_id`),
   KEY `declared_by` (`declared_by`),
+  -- A gateway retries a webhook it thinks failed, so the same reference must be
+  -- findable to avoid settling one payment twice.
+  KEY `gateway_ref` (`gateway_ref`),
   -- Every dashboard query is "this tenant's payments in this state", and the
   -- declared queue is "anything still waiting", so both live on one index.
   KEY `status_tenant` (`status`, `tenant_id`),
