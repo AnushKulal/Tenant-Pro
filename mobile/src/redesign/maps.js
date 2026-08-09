@@ -19,11 +19,24 @@
 // choice with terms attached: the OSM Foundation's own tile servers explicitly do
 // not permit distributed apps to pull from them at any volume.
 //
-// So the URL is configuration, not a constant. Set EXPO_PUBLIC_MAP_TILE_URL to a
-// provider you have signed up with (MapTiler, Stadia, Geoapify and Thunderforest
-// all have free tiers that cover an app this size) and nothing else changes. The
-// OSM default below is for development only, and is flagged as such rather than
-// left to look like a decision.
+// So the provider is configuration, not a constant. Name one and give it a key —
+// two environment variables — and the light URL, dark URL and attribution all
+// follow. The OSM default is for development only and is flagged as such rather
+// than left to look like a decision.
+//
+// ── PARKED: the native-map upgrade ─────────────────────────────────────────────
+// Before the Play Store release, consider replacing this with react-native-maps
+// (Google Maps on Android, Apple Maps on iOS). Both are free for map display on
+// mobile — Google bills its WEB map, not its mobile SDKs — so the cost is not the
+// obstacle. The obstacle is that it is a native module: every change would then
+// need a new APK instead of an over-the-air update, which is why it is not here
+// yet. It becomes worth it the moment the app wants something this cannot do:
+// every property on ONE map, routes drawn in-app, or in-app turn-by-turn.
+//
+// If that day comes, the shape of the change is small: this file's TileMap is the
+// only thing that renders a map, and PinPickScreen and PropertyScreen are its only
+// callers. Nothing else knows how a map works. Directions already hand off to the
+// phone's map app and would not change at all.
 import React from 'react';
 import { View, Image, PanResponder, Platform, Linking } from 'react-native';
 import { useT } from './ThemeContext';
@@ -38,37 +51,101 @@ export const DEFAULT_CENTER = { lat: 12.9716, lon: 77.5946 };
 
 const OSM_DEV_TILES = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 
+// ── Providers ──────────────────────────────────────────────────────────────────
+// Switching provider is one word, because the alternative — pasting three long
+// URLs and getting one of them subtly wrong — is how a map ends up half working.
+//
+//   EXPO_PUBLIC_MAP_PROVIDER=maptiler
+//   EXPO_PUBLIC_MAP_KEY=your_key
+//
+// and the light URL, the dark URL and the attribution line all follow. Each entry
+// is that provider's documented raster-tile shape. They do change them occasionally,
+// which is exactly why EXPO_PUBLIC_MAP_TILE_URL still exists and still wins: an
+// unknown provider, a new style, or a shape that moved is a one-line override
+// rather than a code change.
+const PROVIDERS = {
+    maptiler: {
+        light: 'https://api.maptiler.com/maps/streets-v2/{z}/{x}/{y}.png?key={key}',
+        dark: 'https://api.maptiler.com/maps/streets-v2-dark/{z}/{x}/{y}.png?key={key}',
+        credit: '© MapTiler © OpenStreetMap contributors'
+    },
+    geoapify: {
+        light: 'https://maps.geoapify.com/v1/tile/osm-bright/{z}/{x}/{y}.png?apiKey={key}',
+        dark: 'https://maps.geoapify.com/v1/tile/dark-matter/{z}/{x}/{y}.png?apiKey={key}',
+        credit: '© Geoapify © OpenStreetMap contributors'
+    },
+    stadia: {
+        light: 'https://tiles.stadiamaps.com/tiles/alidade_smooth/{z}/{x}/{y}.png?api_key={key}',
+        dark: 'https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}.png?api_key={key}',
+        credit: '© Stadia Maps © OpenStreetMap contributors'
+    },
+    thunderforest: {
+        light: 'https://tile.thunderforest.com/atlas/{z}/{x}/{y}.png?apikey={key}',
+        dark: 'https://tile.thunderforest.com/transport-dark/{z}/{x}/{y}.png?apikey={key}',
+        credit: '© Thunderforest © OpenStreetMap contributors'
+    }
+};
+
+const providerName = () => String(process.env.EXPO_PUBLIC_MAP_PROVIDER || '').trim().toLowerCase();
+const providerKey = () => String(process.env.EXPO_PUBLIC_MAP_KEY || '').trim();
+
+// A provider counts as configured only when BOTH the name and the key are present.
+// A name with no key would build a URL ending in "key=" and every tile would 401 —
+// a blank map with no explanation, which is worse than falling back.
+const configuredProvider = () => {
+    const p = PROVIDERS[providerName()];
+    return p && providerKey() ? p : null;
+};
+
 // Two templates, because this app has a light and a dark theme and a bright white
 // map dropped into the dark theme looks like a bug. Set the dark one and the map
 // follows the theme; leave it unset and both themes get the light map, which is
 // merely plain rather than broken.
 //
-// `{z}/{x}/{y}` in, a URL out. Any provider with that shape works, so switching is
-// one environment variable — see mobile/.env.example for the exact strings.
+// Order of precedence, most specific first:
+//   1. an explicit URL   (EXPO_PUBLIC_MAP_TILE_URL / …_DARK)  — the escape hatch
+//   2. a named provider  (EXPO_PUBLIC_MAP_PROVIDER + …_KEY)   — the usual case
+//   3. the OSM fallback  — development only
 export const tileTemplate = (dark) => {
-    const light = process.env.EXPO_PUBLIC_MAP_TILE_URL || '';
-    const night = process.env.EXPO_PUBLIC_MAP_TILE_URL_DARK || '';
-    if (dark && night) return night;
-    return light || OSM_DEV_TILES;
+    const explicitLight = process.env.EXPO_PUBLIC_MAP_TILE_URL || '';
+    const explicitDark = process.env.EXPO_PUBLIC_MAP_TILE_URL_DARK || '';
+    if (dark && explicitDark) return explicitDark;
+    if (explicitLight) return explicitLight;
+
+    const p = configuredProvider();
+    if (p) return (dark && p.dark) ? p.dark : p.light;
+
+    return OSM_DEV_TILES;
 };
 
-// True when no provider has been configured and we are falling back to the OSM
+// True when nothing has been configured and we are falling back to the OSM
 // Foundation's own servers. That fallback is for DEVELOPMENT: their tile usage
 // policy does not permit distributed apps to pull from them. Surfaced as a function
 // rather than a comment so the app can say so out loud where a developer will see
 // it, instead of it being discovered when the tiles start returning 418.
-export const usingDevTiles = () => !process.env.EXPO_PUBLIC_MAP_TILE_URL;
+export const usingDevTiles = () => !process.env.EXPO_PUBLIC_MAP_TILE_URL && !configuredProvider();
+
+// The names this build understands, for an error message worth reading.
+export const KNOWN_PROVIDERS = Object.keys(PROVIDERS);
 
 export const tileUrl = (z, x, y, dark) => tileTemplate(dark)
     .replace('{z}', String(z))
     .replace('{x}', String(x))
-    .replace('{y}', String(y));
+    .replace('{y}', String(y))
+    .replace('{key}', providerKey());
 
 // Whoever serves the tiles, the data is OpenStreetMap's and saying so is a licence
-// condition, not decoration. Most providers additionally require their own name —
-// set EXPO_PUBLIC_MAP_ATTRIBUTION to whatever yours asks for and it replaces this.
-export const ATTRIBUTION = process.env.EXPO_PUBLIC_MAP_ATTRIBUTION
-    || '© OpenStreetMap contributors';
+// condition, not decoration. Most providers additionally require their own name, so
+// a configured provider brings its own line; an explicit override can set
+// EXPO_PUBLIC_MAP_ATTRIBUTION to whatever theirs asks for.
+export const attribution = () => {
+    if (process.env.EXPO_PUBLIC_MAP_ATTRIBUTION) return process.env.EXPO_PUBLIC_MAP_ATTRIBUTION;
+    const p = configuredProvider();
+    return (p && p.credit) || '© OpenStreetMap contributors';
+};
+// Kept as a value too: it is rendered in a few places and a function call at each
+// one reads worse than a constant for something that cannot change at runtime.
+export const ATTRIBUTION = attribution();
 
 // ── Web Mercator ───────────────────────────────────────────────────────────────
 // The projection every slippy map uses. lat/lon → fractional tile coordinates at a
