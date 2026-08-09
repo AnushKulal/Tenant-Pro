@@ -8,6 +8,7 @@ const { protect } = require('../middleware/authMiddleware');
 const upload = require('../middleware/uploadMiddleware');
 const {
     getMe,
+    getPulse,
     getPayments,
     declarePayment,
     getRequests,
@@ -29,6 +30,9 @@ const {
 router.use(protect);
 
 router.get('/me', getMe);
+// The tenant's equivalent of the owner's pulse: cheap counts so the portal can notice
+// being accepted into a property, or a payment being confirmed, without a manual pull.
+router.get('/pulse', getPulse);
 router.get('/payments', getPayments);
 // "I have paid this." Records a CLAIM, not money received -- the landlord confirms it
 // at PUT /api/payments/declared/:id, and only that advances the due date.

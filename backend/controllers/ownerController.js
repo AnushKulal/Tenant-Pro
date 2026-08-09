@@ -205,8 +205,56 @@ const getAllTransactions = async (req, res) => {
 };
 
 // Update your module.exports at the bottom!
+// --- WHAT'S CHANGED SINCE I LAST LOOKED ---
+// GET /api/owner/pulse
+//
+// The app polls this every few seconds while it is open, so it has one job: be
+// cheap. Counts only, no row data, no joins to payments or messages beyond what a
+// COUNT needs. The dashboard query it replaces reads five result sets and returns
+// the recent-payments list; polling THAT every 25 seconds would be unkind to a free
+// host and would burn the tenant's data for nothing.
+//
+// `stamp` is the whole point. The client keeps the last one it saw and only does a
+// full reload when the string changes, so a quiet app makes one tiny request every
+// 25 seconds and nothing else. Comparing one string is also less fragile than the
+// client deciding for itself which of five numbers matter.
+const getPulse = async (req, res) => {
+    try {
+        const ownerId = req.user.id;
+        const [rows] = await db.query(
+            `SELECT
+                (SELECT COUNT(*) FROM join_requests
+                  WHERE owner_id = ? AND status = 'Pending')                    AS joins,
+                (SELECT COUNT(*) FROM payments pay
+                    JOIN tenants t ON pay.tenant_id = t.id
+                  WHERE t.owner_id = ? AND pay.status = 'Declared')             AS payments_awaiting,
+                (SELECT COUNT(*) FROM maintenance_requests
+                  WHERE owner_id = ? AND status IN ('Open', 'In Progress'))     AS open_tickets,
+                (SELECT COUNT(*) FROM tenants
+                  WHERE owner_id = ? AND status = 'Active')                     AS tenants,
+                (SELECT COUNT(*) FROM tenants
+                  WHERE owner_id = ? AND status = 'Active'
+                    AND next_rent_due <= CURDATE())                             AS overdue`,
+            [ownerId, ownerId, ownerId, ownerId, ownerId]
+        );
+        const p = rows[0] || {};
+        // Every number that should make a screen redraw, in one string. Adding a
+        // number here is how you make a new kind of change wake the app up.
+        const stamp = [p.joins, p.payments_awaiting, p.open_tickets, p.tenants, p.overdue]
+            .map((n) => Number(n) || 0)
+            .join('.');
+        res.status(200).json({ ...p, stamp });
+    } catch (error) {
+        // Deliberately quiet: this runs on a timer, and a failed poll is not worth a
+        // toast or a red banner. The next tick tries again.
+        console.error('Pulse error:', error.message);
+        res.status(500).json({ message: 'Could not read updates.' });
+    }
+};
+
 module.exports = {
     updateProfile,
     getDashboardStats,
-    getAllTransactions // <-- Add this
+    getAllTransactions,
+    getPulse
 };
