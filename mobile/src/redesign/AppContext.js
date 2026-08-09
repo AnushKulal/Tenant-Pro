@@ -11,7 +11,7 @@
 import React, {
   createContext, useCallback, useContext, useEffect, useMemo, useRef, useState
 } from 'react';
-import { Appearance, Linking } from 'react-native';
+import { Appearance, AppState, Linking } from 'react-native';
 import {
   PRIORITY, MOVE_IN, MONTH_LABELS, creditOf, SEED
 } from './data';
@@ -3127,10 +3127,24 @@ export function AppProvider({ children }) {
   // an owner signs in, after restoring an owner session, and by pull-to-refresh.
   // The five endpoints are independent, so they go out together; a partial
   // failure surfaces as an error rather than a half-populated screen.
-  const loadOwnerData = useCallback(async ({ refresh = false } = {}) => {
-    setState(refresh ? { refreshing: true, dataError: '' } : { dataLoading: true, dataError: '' });
+  // ── Live refresh ────────────────────────────────────────────────────────────
+  // The app had no automatic refresh at all: data arrived at sign-in and then only
+  // when the user pulled the screen down. So a landlord never saw a join request
+  // land, and a tenant never saw a payment confirmed, without thinking to pull.
+  //
+  // The fix is a poll, but a poll of something tiny. `/pulse` is ~94 bytes of counts
+  // against 1.4kB for the dashboard, and it carries a `stamp` — every number that
+  // should redraw a screen, in one string. We keep the last one we saw here and only
+  // fetch the real data when it differs, so a quiet app makes one small request every
+  // 25 seconds and nothing else.
+  //
+  // A ref rather than state on purpose: changing it must never itself cause a render.
+  const pulseRef = useRef({ stamp: null, busy: false });
+
+  const loadOwnerData = useCallback(async ({ refresh = false, silent = false } = {}) => {
+    if (!silent) setState(refresh ? { refreshing: true, dataError: '' } : { dataLoading: true, dataError: '' });
     try {
-      const [dashboard, propsRes, unitsRes, tenantsRes, txRes, reqRes, payRes, joinRes, demoRes] = await Promise.all([
+      const [dashboard, propsRes, unitsRes, tenantsRes, txRes, reqRes, payRes, joinRes, demoRes, pulseRes] = await Promise.all([
         apiOwner.dashboard('all'),
         apiProps.list(),
         apiUnits.list('all'),
@@ -3150,7 +3164,11 @@ export function AppProvider({ children }) {
         // Settings opens, so the reset control is already correct the first time that
         // screen is drawn instead of appearing a moment later. A backend without the
         // route answers "not the demo", which hides the control — the safe direction.
-        apiOwner.demoStatus().catch(() => ({ is_demo: false }))
+        apiOwner.demoStatus().catch(() => ({ is_demo: false })),
+        // Pulled alongside the real data so `pulseRef` matches what is now on screen.
+        // Without this, the poll 25 seconds after any write would see a changed stamp
+        // and reload data that is already current.
+        apiOwner.pulse().catch(() => null)
       ]);
       const data = mapOwnerData({
         dashboard,
@@ -3162,6 +3180,7 @@ export function AppProvider({ children }) {
         paySettings: payRes.settings,
         joinRequests: joinRes.requests
       });
+      if (pulseRes && pulseRes.stamp) pulseRef.current.stamp = pulseRes.stamp;
       setState({
         data,
         live: true,
@@ -3189,16 +3208,22 @@ export function AppProvider({ children }) {
   // landlord has not linked them to a unit yet gets `linked: false` from /me,
   // which the portal renders as its "ask your landlord" state — that is a valid
   // answer, not an error.
-  const loadTenantData = useCallback(async ({ refresh = false } = {}) => {
-    setState(refresh ? { refreshing: true, dataError: '' } : { dataLoading: true, dataError: '' });
+  const loadTenantData = useCallback(async ({ refresh = false, silent = false } = {}) => {
+    // `silent` is for the background poll: swap the data in when it arrives and show
+    // no spinner at all. A refresh indicator the user did not ask for reads as a
+    // glitch, not as helpfulness.
+    if (!silent) setState(refresh ? { refreshing: true, dataError: '' } : { dataLoading: true, dataError: '' });
     try {
       // Payments come along too: "has this tenant ever paid" is what unlocks the
       // agreement, and it is the same call the payment history will read.
-      const [meRes, reqRes, payRes] = await Promise.all([
+      const [meRes, reqRes, payRes, pulseRes] = await Promise.all([
         apiPortal.me(),
         apiPortal.requests().catch(() => ({ requests: [] })),
-        apiPortal.payments().catch(() => ({ payments: [] }))
+        apiPortal.payments().catch(() => ({ payments: [] })),
+        // Same reason as the owner side: keep the stamp level with the data.
+        apiPortal.pulse().catch(() => null)
       ]);
+      if (pulseRes && pulseRes.stamp) pulseRef.current.stamp = pulseRes.stamp;
       setState({
         tdata: { me: meRes, requests: reqRes.requests || [], payments: payRes.payments || [] },
         dataLoading: false,
@@ -3213,6 +3238,73 @@ export function AppProvider({ children }) {
       });
     }
   }, [setState]);
+
+  // How often to ask "anything new?" while the app is in front of the user. Long
+  // enough that a quiet app is genuinely idle, short enough that a landlord watching
+  // for a join request does not think the app is asleep.
+  const PULSE_MS = 25000;
+
+  // One tick. Cheap, silent, and happy to do nothing — which is the common case.
+  const checkPulse = useCallback(async () => {
+    const st = stateRef.current;
+
+    // Signed out, or the pre-login walkthrough on seed data: nothing to poll, and the
+    // stamp is dropped so the next person to sign in on this phone starts clean.
+    if (!st.session || !st.token && !st.session.token) { pulseRef.current.stamp = null; return; }
+    // A load already in flight would either race this or make it redundant.
+    if (st.writing || st.refreshing || st.dataLoading || pulseRef.current.busy) return;
+
+    const isTenant = st.session.role === 'tenant';
+    if (!isTenant && !st.live) return; // owner data has not arrived yet
+
+    pulseRef.current.busy = true;
+    try {
+      const res = isTenant ? await apiPortal.pulse() : await apiOwner.pulse();
+      const stamp = res && res.stamp;
+      if (!stamp) return;
+
+      // First sighting: record it, do not reload. Otherwise every sign-in would
+      // trigger a second, pointless fetch of data we just loaded.
+      if (pulseRef.current.stamp === null) { pulseRef.current.stamp = stamp; return; }
+      if (stamp === pulseRef.current.stamp) return;
+
+      // Something changed. Store it BEFORE reloading so a slow reload cannot let the
+      // next tick fire on the same news.
+      pulseRef.current.stamp = stamp;
+      if (isTenant) await loadTenantData({ silent: true });
+      else await loadOwnerData({ silent: true });
+    } catch (e) {
+      // Deliberately silent. This runs on a timer; a failed poll is not an event the
+      // user needs told about, and the next tick tries again. Surfacing it would mean
+      // a red banner every time a lift loses signal.
+    } finally {
+      pulseRef.current.busy = false;
+    }
+  }, [loadOwnerData, loadTenantData]);
+
+  // Poll only while the app is actually on screen. A timer that keeps running in the
+  // background would drain the battery and keep a sleeping free-tier server awake for
+  // a screen nobody is looking at.
+  useEffect(() => {
+    let timer = null;
+    const start = () => { if (!timer) timer = setInterval(checkPulse, PULSE_MS); };
+    const stop = () => { if (timer) { clearInterval(timer); timer = null; } };
+
+    const onChange = (next) => {
+      if (next === 'active') {
+        // Check immediately rather than waiting out the interval: coming back to the
+        // app is exactly the moment someone expects to see what they missed.
+        checkPulse();
+        start();
+      } else {
+        stop();
+      }
+    };
+
+    if (AppState.currentState === 'active') start();
+    const sub = AppState.addEventListener('change', onChange);
+    return () => { stop(); sub.remove(); };
+  }, [checkPulse]);
 
   // Load one request's conversation. Which endpoint serves it depends on which
   // side of the thread the caller is standing on; the rows are the same either way.

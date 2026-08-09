@@ -76,6 +76,10 @@ export const owner = {
     // The demo account. `demoStatus` answers for every landlord — `is_demo` is how the
     // app knows whether to offer the reset at all, so a real customer is never shown a
     // button that deletes their data. The server refuses the reset for anyone else too.
+    // What has changed since we last looked. Deliberately tiny (~94 bytes vs 1.4kB
+    // for the dashboard) because it is polled every few seconds on someone's mobile
+    // data; the caller reloads the real data only when `stamp` differs.
+    pulse: () => body(http.get('/owner/pulse')),
     demoStatus: () => body(http.get('/owner/demo')),
     resetDemo: () => body(http.post('/owner/demo/reset'))
 };
@@ -118,6 +122,8 @@ export const payments = {
 // ── Tenant portal (tenant JWT) ────────────────────────────────────────────────
 export const portal = {
     me: () => body(http.get('/tenant-portal/me')),
+    // Counts and a stamp, polled while the app is open. See `owner.pulse` for why.
+    pulse: () => body(http.get('/tenant-portal/pulse')),
     payments: () => body(http.get('/tenant-portal/payments')),
     requests: () => body(http.get('/tenant-portal/requests')),
     // Accepts either a plain object or a FormData carrying `request_image`; axios
