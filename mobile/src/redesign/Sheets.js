@@ -8,8 +8,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useVm } from './AppContext';
 import { useT } from './ThemeContext';
 import { grotesk } from './theme';
-import { T, Eyebrow, Row, Press, Glyph, Field, Avatar } from './ui';
+import { T, Eyebrow, Row, Press, Glyph, Field, Avatar, Composer } from './ui';
 import { useSheetIn, useFadeIn } from './motion';
+import { KeyboardScroll, useKeyboardHeight } from './keyboard';
 
 // ── The conversation on a maintenance request ────────────────────────────────
 // One component, both sides: the landlord's ticket sheet and the tenant's request
@@ -86,28 +87,12 @@ export function Thread({ thread, composer, canReply, t, placeholder }) {
 
             {canReply ? (
                 <Row gap={8} align="flex-end" style={{ marginTop: 6 }}>
-                    <TextInput
+                    <Composer
                         value={composer.value}
                         onChangeText={composer.set}
                         placeholder={placeholder}
-                        placeholderTextColor={t.fg3}
-                        multiline
                         editable={!composer.sending}
-                        style={{
-                            flex: 1,
-                            minHeight: 46,
-                            maxHeight: 110,
-                            borderRadius: 16,
-                            backgroundColor: t.ink3,
-                            borderWidth: 1,
-                            borderColor: t.line,
-                            paddingHorizontal: 14,
-                            paddingTop: 13,
-                            paddingBottom: 13,
-                            color: t.fg,
-                            fontFamily: grotesk(400),
-                            fontSize: 13.5
-                        }}
+                        style={{ flex: 1 }}
                     />
                     <Press
                         onPress={composer.send}
@@ -244,6 +229,9 @@ export default function Sheets() {
     // sheet replays the motion (see the key on <Sheets/> usage in RedesignRoot).
     const H = Dimensions.get('window').height;
     const SHEET_MAX = Math.round(H * 0.88);
+    // A sheet sits on the bottom edge, which is exactly where the keyboard appears.
+    // Every field in every sheet was underneath it; this is what lifts them clear.
+    const kbHeight = useKeyboardHeight();
     const sheetIn = useSheetIn({ height: H });
     const scrimIn = useFadeIn();
 
@@ -267,18 +255,27 @@ export default function Sheets() {
             />
             </Animated.View>
 
-            <Animated.View style={[{ position: 'absolute', left: 0, right: 0, bottom: 0, maxHeight: SHEET_MAX }, sheetIn]}>
-            <ScrollView
+            {/* A sheet is pinned to the bottom of the window, so the keyboard opens
+                straight over it — the reply box and every notes field were underneath
+                it. Lifting the whole sheet by the keyboard's height is what makes the
+                composer sit just above the keys, and shrinking the ceiling by the same
+                amount keeps a tall sheet from being pushed off the top of the screen.
+                The safe-area padding is dropped while it is up: that space exists for
+                the home indicator, which the keyboard is now covering. */}
+            <Animated.View style={[{ position: 'absolute', left: 0, right: 0, bottom: kbHeight, maxHeight: SHEET_MAX - kbHeight }, sheetIn]}>
+            <KeyboardScroll
                 bounces={false}
+                mode="lifted"
+                extra={14}
                 style={{
-                    maxHeight: SHEET_MAX,
+                    maxHeight: SHEET_MAX - kbHeight,
                     backgroundColor: t.ink2,
                     borderTopLeftRadius: 28,
                     borderTopRightRadius: 28,
                     borderTopWidth: 1,
                     borderColor: t.line2
                 }}
-                contentContainerStyle={{ paddingTop: 10, paddingHorizontal: 18, paddingBottom: 26 + insets.bottom }}
+                contentContainerStyle={{ paddingTop: 10, paddingHorizontal: 18, paddingBottom: 26 + (kbHeight ? 0 : insets.bottom) }}
                 showsVerticalScrollIndicator={false}
             >
                 <Handle />
@@ -357,14 +354,17 @@ export default function Sheets() {
                     </View>
                 )}
 
-                {/* ── All tickets ─────────────────────────────────────── */}
+                {/* Every open ticket at this priority. The dashboard only carries the
+                    top of the pile, so this is where "View all 4 tickets" lands —
+                    and each row now opens the ticket's own page rather than a
+                    second modal stacked on this one. */}
                 {vm.isTickets && (
                     <View>
                         <T w={700} s={20} lh={1} style={{ letterSpacing: -0.8 }}>All tickets</T>
                         <Eyebrow s={10} ls={0.08} style={{ marginTop: 7, marginBottom: 16 }}>{`SORTED BY PRIORITY · ${vm.ticketTotal || ''}`}</Eyebrow>
                         <View style={{ gap: 8 }}>
                             {(vm.allTickets || []).map((at, i) => (
-                                <View key={i} style={{ borderRadius: 20, backgroundColor: t.ink2, borderWidth: 1, borderColor: t.line, padding: 14, position: 'relative', overflow: 'hidden' }}>
+                                <Press key={i} onPress={at.read} style={{ borderRadius: 20, backgroundColor: t.ink2, borderWidth: 1, borderColor: t.line, padding: 14, position: 'relative', overflow: 'hidden' }}>
                                     <View style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, backgroundColor: col(at.fg) }} />
                                     <Row align="flex-start" style={{ gap: 11 }}>
                                         <Image source={{ uri: at.img }} style={{ width: 36, height: 36, borderRadius: 12, backgroundColor: t.ink3 }} resizeMode="cover" />
@@ -378,8 +378,9 @@ export default function Sheets() {
                                     </Row>
                                     <Row style={{ gap: 6, marginTop: 12 }}>
                                         <T mono w={600} s={9} lh={1} ls={0.08} c={col(at.statusFg)} style={{ flex: 1 }}>{at.status}</T>
-                                        <Press onPress={at.read} style={{ paddingVertical: 8, paddingHorizontal: 12, borderRadius: 11, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line }}>
+                                        <Press onPress={at.read} style={{ flexDirection: 'row', alignItems: 'center', columnGap: 5, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 11, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line }}>
                                             <T w={600} s={11} lh={1} c={t.fg}>Read</T>
+                                            <Glyph name="chevron-forward" size={11} color={t.fg3} />
                                         </Press>
                                         {at.started && (
                                             <Press onPress={at.resolve} style={{ paddingVertical: 8, paddingHorizontal: 12, borderRadius: 11, backgroundColor: t.lime }}>
@@ -392,11 +393,12 @@ export default function Sheets() {
                                             </Press>
                                         )}
                                     </Row>
-                                </View>
+                                </Press>
                             ))}
                         </View>
                     </View>
                 )}
+
 
                 {/* ── Ticket detail ───────────────────────────────────── */}
                 {vm.isTicket && vm.ticket && (
@@ -1640,22 +1642,24 @@ export default function Sheets() {
                             ))}
                         </Row>
 
-                        <TextInput
+                        <Composer
                             value={vm.newRequest.title}
                             onChangeText={vm.newRequest.setTitle}
                             placeholder="Title (e.g. Leaking tap)"
-                            placeholderTextColor={t.fg3}
                             editable={!vm.newRequest.busy}
-                            style={{ height: 50, borderRadius: 16, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line, paddingHorizontal: 15, color: t.fg, fontFamily: grotesk(500), fontSize: 14, marginBottom: 9 }}
+                            multiline={false}
+                            minHeight={50}
+                            size={14}
+                            style={{ paddingHorizontal: 15, marginBottom: 9 }}
                         />
-                        <TextInput
+                        <Composer
                             value={vm.newRequest.body}
                             onChangeText={vm.newRequest.setBody}
                             placeholder="Describe the issue (optional)"
-                            placeholderTextColor={t.fg3}
-                            multiline
                             editable={!vm.newRequest.busy}
-                            style={{ minHeight: 88, maxHeight: 150, borderRadius: 16, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line, paddingHorizontal: 15, paddingTop: 14, paddingBottom: 14, color: t.fg, fontFamily: grotesk(400), fontSize: 13.5, marginBottom: 14 }}
+                            minHeight={88}
+                            maxHeight={150}
+                            style={{ paddingHorizontal: 15, marginBottom: 14 }}
                         />
 
                         <Eyebrow s={9} ls={0.12} c={t.fg3} style={{ marginBottom: 9 }}>PRIORITY</Eyebrow>
@@ -1755,7 +1759,7 @@ export default function Sheets() {
                         ))}
                     </View>
                 )}
-            </ScrollView>
+            </KeyboardScroll>
             </Animated.View>
         </View>
     );

@@ -239,11 +239,17 @@ export default function OverviewScreen() {
                 ))}
             </View>
 
+            {/* A dashed outline in the muted text colour is how this app draws an
+                EMPTY state — "nothing here yet, add one" — so using it for a live
+                control made the button read as disabled. It is a real action, so it
+                now looks like one: solid fill, solid border, full-strength label and
+                an accent chevron. */}
             {vm.hasMoreTickets && (
                 <Press onPress={vm.openAllTickets} style={{ width: '100%', marginTop: 8 }}>
-                    <Row align="center" justify="center" gap={8} style={{ paddingVertical: 13, borderRadius: 16, backgroundColor: t.ink2, borderWidth: 1, borderStyle: 'dashed', borderColor: t.line2 }}>
-                        <T w={600} s={12} lh={1} c={t.fg2}>{vm.moreTicketsLabel}</T>
-                        <Glyph name="chevron-forward" size={14} color={t.fg3} />
+                    <Row align="center" justify="center" gap={8} style={{ paddingVertical: 14, borderRadius: 16, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line }}>
+                        <Glyph name="construct-outline" size={14} color={t.accent} />
+                        <T w={600} s={12.5} lh={1} c={t.fg}>{vm.moreTicketsLabel}</T>
+                        <Glyph name="chevron-forward" size={14} color={t.accent} />
                     </Row>
                 </Press>
             )}

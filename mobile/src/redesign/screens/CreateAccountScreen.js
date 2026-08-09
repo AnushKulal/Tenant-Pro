@@ -1,11 +1,24 @@
 import React, { useState } from 'react';
-import { View, ScrollView, TextInput } from 'react-native';
+import { View, TextInput } from 'react-native';
 import { useVm } from '../AppContext';
 import { useT } from '../ThemeContext';
 import { T, Press, Glyph } from '../ui';
+import { KeyboardScroll } from '../keyboard';
 import { grotesk } from '../theme';
 
-function FieldRow({ t, icon, iconColor, label, children }) {
+// One row of the details card. These are hairline-separated rows inside a single
+// bordered card, so a ring around each field would fight the card's own border —
+// instead the row itself answers "am I typing in this one": a left accent rail, a
+// tinted fill, and the label and glyph in the accent colour. Focus has to be
+// visible SOMEHOW: with nothing changing on tap, the row reads as a printed label
+// rather than something you can type into.
+//
+// The state lives here rather than in the screen because a `focused` field in the
+// screen's own state would remount every row on each keystroke.
+function FieldRow({ t, icon, label, children, tint, trailing }) {
+  const [focused, setFocused] = React.useState(false);
+  const lit = tint || t.accent;
+
   return (
     <View
       style={{
@@ -15,14 +28,28 @@ function FieldRow({ t, icon, iconColor, label, children }) {
         paddingVertical: 13,
         paddingHorizontal: 18,
         borderTopWidth: 1,
-        borderTopColor: t.line
+        borderTopColor: t.line,
+        backgroundColor: focused ? t.ink3 : 'transparent'
       }}
     >
-      <Glyph name={icon} size={16} color={iconColor} />
+      {focused ? (
+        <View style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, backgroundColor: lit }} />
+      ) : null}
+      <Glyph name={icon} size={16} color={focused ? lit : t.fg3} />
       <View style={{ flex: 1, minWidth: 0 }}>
-        <T mono w={600} s={9} ls={0.1} c={t.fg3}>{label}</T>
-        {children}
+        <T mono w={600} s={9} ls={0.1} c={focused ? lit : t.fg3}>{label}</T>
+        {/* Children are TextInputs; the focus handlers are injected so no call
+            site has to remember to wire them. */}
+        {React.Children.map(children, (child) => (
+          React.isValidElement(child)
+            ? React.cloneElement(child, {
+              onFocus: () => setFocused(true),
+              onBlur: () => setFocused(false)
+            })
+            : child
+        ))}
       </View>
+      {trailing || null}
     </View>
   );
 }
@@ -55,7 +82,7 @@ export default function CreateAccountScreen() {
   );
 
   return (
-    <ScrollView
+    <KeyboardScroll
       contentContainerStyle={{ paddingTop: 24, paddingHorizontal: 22, paddingBottom: 28 }}
       showsVerticalScrollIndicator={false}
     >
@@ -132,7 +159,7 @@ export default function CreateAccountScreen() {
             YOUR DETAILS
           </T>
 
-          <FieldRow t={t} icon="person-outline" iconColor={t.fg3} label="FULL NAME">
+          <FieldRow t={t} icon="person-outline" label="FULL NAME">
             <TextInput
               value={vm.authName}
               onChangeText={vm.setAuthName}
@@ -144,7 +171,7 @@ export default function CreateAccountScreen() {
             />
           </FieldRow>
 
-          <FieldRow t={t} icon="mail-outline" iconColor={t.fg3} label="EMAIL">
+          <FieldRow t={t} icon="mail-outline" label="EMAIL">
             <TextInput
               value={vm.authId}
               onChangeText={vm.setAuthId}
@@ -157,7 +184,7 @@ export default function CreateAccountScreen() {
             />
           </FieldRow>
 
-          <FieldRow t={t} icon="call-outline" iconColor={t.fg3} label="MOBILE">
+          <FieldRow t={t} icon="call-outline" label="MOBILE">
             <TextInput
               value={vm.authPhone}
               onChangeText={vm.setAuthPhone}
@@ -169,37 +196,29 @@ export default function CreateAccountScreen() {
             />
           </FieldRow>
 
-          <View
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              columnGap: 12,
-              paddingVertical: 13,
-              paddingHorizontal: 18,
-              borderTopWidth: 1,
-              borderTopColor: t.line
-            }}
+          <FieldRow
+            t={t}
+            icon="lock-closed-outline"
+            label="PASSWORD"
+            trailing={(
+              <Press onPress={() => setShow((v) => !v)} hitSlop={10}>
+                <Glyph name={show ? 'eye-off-outline' : 'eye-outline'} size={18} color={t.fg3} />
+              </Press>
+            )}
           >
-            <Glyph name="lock-closed-outline" size={16} color={t.fg3} />
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <T mono w={600} s={9} ls={0.1} c={t.fg3}>PASSWORD</T>
-              <TextInput
-                value={vm.authPw}
-                onChangeText={vm.setAuthPw}
-                placeholder="Create a password"
-                placeholderTextColor={t.fg3}
-                secureTextEntry={!show}
-                autoCapitalize="none"
-                autoCorrect={false}
-                onSubmitEditing={vm.submitSignup}
-                returnKeyType="go"
-                style={inputStyle}
-              />
-            </View>
-            <Press onPress={() => setShow((v) => !v)} hitSlop={10}>
-              <Glyph name={show ? 'eye-off-outline' : 'eye-outline'} size={18} color={t.fg3} />
-            </Press>
-          </View>
+            <TextInput
+              value={vm.authPw}
+              onChangeText={vm.setAuthPw}
+              placeholder="Create a password"
+              placeholderTextColor={t.fg3}
+              secureTextEntry={!show}
+              autoCapitalize="none"
+              autoCorrect={false}
+              onSubmitEditing={vm.submitSignup}
+              returnKeyType="go"
+              style={inputStyle}
+            />
+          </FieldRow>
         </View>
 
         {/* Guardian card */}
@@ -265,6 +284,6 @@ export default function CreateAccountScreen() {
           BY CONTINUING YOU AGREE TO THE TERMS OF SERVICE
         </T>
       </View>
-    </ScrollView>
+    </KeyboardScroll>
   );
 }

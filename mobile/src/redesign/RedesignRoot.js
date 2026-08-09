@@ -40,6 +40,7 @@ import MyProfileScreen from './screens/MyProfileScreen';
 import LedgerScreen from './screens/LedgerScreen';
 import SettingsScreen from './screens/SettingsScreen';
 import SupportScreen from './screens/SupportScreen';
+import TicketScreen from './screens/TicketScreen';
 import TenantLoginScreen from './screens/TenantLoginScreen';
 import PortalHomeScreen from './screens/PortalHomeScreen';
 import FindScreen from './screens/FindScreen';
@@ -70,6 +71,7 @@ const SCREENS = {
     ledger: LedgerScreen,
     settings: SettingsScreen,
     support: SupportScreen,
+    ticket: TicketScreen,
     tlogin: TenantLoginScreen,
     portal: PortalHomeScreen,
     tfind: FindScreen,

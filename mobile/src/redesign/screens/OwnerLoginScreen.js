@@ -1,14 +1,15 @@
 import React from 'react';
-import { View, ScrollView } from 'react-native';
+import { View } from 'react-native';
 import { useVm } from '../AppContext';
 import { useT } from '../ThemeContext';
 import { T, Eyebrow, Row, Press, Glyph, Monogram, Divider, Field, IdToggle } from '../ui';
+import { KeyboardScroll } from '../keyboard';
 
 export default function OwnerLoginScreen() {
     const vm = useVm();
     const t = useT();
     return (
-        <ScrollView
+        <KeyboardScroll
             contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 22, paddingTop: 24, paddingBottom: 28 }}
             showsVerticalScrollIndicator={false}
         >
@@ -25,7 +26,11 @@ export default function OwnerLoginScreen() {
                     <Eyebrow s={10} w={600} ls={0.14} c={t.accent} style={{ marginLeft: 10 }}>OWNER SIGN IN</Eyebrow>
                 </Row>
 
-                <T w={700} s={36} lh={1.02} style={{ letterSpacing: -1.8, marginBottom: 26 }}>Welcome{'\n'}back.</T>
+                {/* Not "Welcome back": nobody is signed in on this screen. Greeting a
+                    returning user before they have proved who they are — or at all,
+                    when they have just signed out — claims to know something the app
+                    does not. Signed out is signed out. */}
+                <T w={700} s={36} lh={1.02} style={{ letterSpacing: -1.8, marginBottom: 26 }}>Hello{'\n'}there.</T>
 
                 {/* Same EMAIL / MOBILE switch the tenant screen has: /auth/login
                     accepts either identifier, so one field with a mode beats a
@@ -129,6 +134,6 @@ export default function OwnerLoginScreen() {
                     </Press>
                 </Row>
             </View>
-        </ScrollView>
+        </KeyboardScroll>
     );
 }

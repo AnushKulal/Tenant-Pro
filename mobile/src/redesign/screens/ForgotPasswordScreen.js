@@ -17,10 +17,11 @@
 // carries the role it was opened from — a code issued for one cannot reset the
 // other.
 import React from 'react';
-import { View, ScrollView } from 'react-native';
+import { View } from 'react-native';
 import { useVm } from '../AppContext';
 import { useT } from '../ThemeContext';
 import { T, Eyebrow, Row, Press, Glyph, Monogram, Field } from '../ui';
+import { KeyboardScroll } from '../keyboard';
 
 export default function ForgotPasswordScreen() {
     const vm = useVm();
@@ -28,7 +29,7 @@ export default function ForgotPasswordScreen() {
     const f = vm.forgot;
 
     return (
-        <ScrollView
+        <KeyboardScroll
             contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 22, paddingTop: 24, paddingBottom: 28 }}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
@@ -186,7 +187,7 @@ export default function ForgotPasswordScreen() {
                     </View>
                 )}
             </View>
-        </ScrollView>
+        </KeyboardScroll>
     );
 }
 

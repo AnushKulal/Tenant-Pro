@@ -1,9 +1,9 @@
 import React from 'react';
-import { View, ScrollView, TextInput, RefreshControl } from 'react-native';
+import { View, ScrollView, RefreshControl } from 'react-native';
 import { useVm } from '../AppContext';
 import { useT } from '../ThemeContext';
-import { T, Row, Press, Glyph, Face, Avatar } from '../ui';
-import { grotesk } from '../theme';
+import { T, Row, Press, Glyph, Face, Avatar, SearchBar } from '../ui';
+import { KeyboardScroll } from '../keyboard';
 
 const col = (v, t) => (v && (v[0] === '#' || v.startsWith('rgb')) ? v : t[v]);
 
@@ -11,7 +11,7 @@ export default function PeopleScreen() {
     const vm = useVm();
     const t = useT();
     return (
-        <ScrollView
+        <KeyboardScroll
             contentContainerStyle={{ paddingHorizontal: 18, paddingTop: 14, paddingBottom: 22 }}
             showsVerticalScrollIndicator={false}
             refreshControl={<RefreshControl refreshing={vm.refreshing} onRefresh={vm.refresh} tintColor={t.fg2} colors={[t.lime]} progressBackgroundColor={t.ink2} />}
@@ -33,39 +33,14 @@ export default function PeopleScreen() {
             <T w={400} s={13} lh={1.4} c={t.fg2} style={{ marginBottom: 14 }}>{vm.peopleLine}</T>
 
             {/* Search */}
-            <Row
-                gap={10}
-                style={{
-                    paddingVertical: 12,
-                    paddingHorizontal: 15,
-                    borderRadius: 16,
-                    backgroundColor: t.ink2,
-                    borderWidth: 1,
-                    borderColor: t.line,
-                    marginBottom: 14
-                }}
-            >
-                <Glyph name="search" size={16} color={t.fg3} />
-                <TextInput
-                    value={vm.pq}
-                    onChangeText={vm.setPq}
-                    placeholder="Search by name or property"
-                    placeholderTextColor={t.fg3}
-                    style={{
-                        flex: 1,
-                        minWidth: 0,
-                        padding: 0,
-                        fontFamily: grotesk(500),
-                        fontSize: 13,
-                        color: t.fg
-                    }}
-                />
-                {vm.hasPq && (
-                    <Press onPress={vm.clearPq}>
-                        <Glyph name="close-circle" size={17} color={t.fg3} />
-                    </Press>
-                )}
-            </Row>
+            <SearchBar
+                value={vm.pq}
+                onChangeText={vm.setPq}
+                onClear={vm.clearPq}
+                placeholder="Search by name or property"
+                style={{ marginBottom: 14 }}
+            />
+
 
             {/* Filters */}
             <ScrollView
@@ -142,6 +117,6 @@ export default function PeopleScreen() {
                     </Press>
                 ))}
             </View>
-        </ScrollView>
+        </KeyboardScroll>
     );
 }

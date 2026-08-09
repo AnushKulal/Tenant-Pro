@@ -43,6 +43,33 @@ const evStr = (e) => (e && e.target && typeof e.target.value === 'string' ? e.ta
 
 // "1 Feb 2026" — how the design writes a date in prose.
 const MON_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+// Put text on the clipboard, reporting whether it worked. Uses RN core's Clipboard
+// — deprecated in favour of expo-clipboard, but that is a native module and adding
+// one cannot reach an already-installed build over the air, whereas this is already
+// compiled in. Required lazily so the deprecation getter only fires on a real copy.
+//
+// At MODULE scope because both halves of this file need it. It used to live inside
+// deriveVm, and openUpiPayment — which is in AppProvider — listed it in a useCallback
+// dependency array. Dependency arrays are evaluated during render, so that threw
+// "copyText is not defined" and took the entire app down to the error boundary on
+// every launch. Splitting the clipboard write from the toast is what lets one
+// implementation serve both scopes, since only deriveVm has `flash`.
+const copyToClipboard = (text) => {
+  if (!text) return false;
+  try {
+    // eslint-disable-next-line global-require
+    require('react-native').Clipboard.setString(String(text));
+    return true;
+  } catch (e) {
+    return false;
+  }
+};
+
+// Spelled out and upper-cased, for the ledger's month headings.
+const MONTH_NAMES = [
+  'JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE',
+  'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER'
+];
 const fmtDay = (v) => {
   const d = v instanceof Date ? v : new Date(v);
   if (!v || isNaN(d.getTime())) return '';
@@ -118,7 +145,12 @@ const BLANK_PAY = {
 
 const INITIAL_STATE = {
   route: 'boot', overlay: null, filter: 'all', who: 'amit', method: 'UPI', toast: '',
-  theme: null, pref: 'dark', q: '', pq: '', place: 'sunrise', ticket: 1, tstatus: {},
+  // 'system' means follow the phone. RedesignRoot already reads useColorScheme for
+  // this; the default was pinned to 'dark', so the app ignored a light phone.
+  // `lq` is the ledger's own search box. It had a search bar drawn on it from the
+  // very first prototype, but the bar was a plain label — nothing typed, nothing
+  // filtered.
+  theme: null, pref: 'system', q: '', pq: '', lq: '', place: 'sunrise', ticket: 1, tstatus: {},
   roster: {}, gone: [], mover: null, invite: 'sunrise', jq: '', rents: {}, draft: 0,
   // Which priority the dashboard's ticket list is filtered to ('all' = every one).
   tprio: 'all',
@@ -435,19 +467,11 @@ function deriveVm(s, api) {
     const d = String(p || '').replace(/[^0-9]/g, '');
     return d.length === 10 ? `+91 ${d.slice(0, 5)} ${d.slice(5)}` : String(p || '');
   };
-  // Copy to the clipboard. Uses RN core's Clipboard — deprecated in favour of
-  // expo-clipboard, but that is a native module and adding one cannot reach an
-  // already-installed build over the air, whereas this is already compiled in.
-  // Reached lazily so the deprecation getter only fires if a copy actually happens.
+  // Copy, and say so. The clipboard write itself is copyToClipboard at module scope
+  // (see the note there); this only adds the toast, which needs `flash`.
   const copyText = (text, done) => {
     if (!text) return;
-    try {
-      // eslint-disable-next-line global-require
-      require('react-native').Clipboard.setString(String(text));
-      flash(done || 'Copied');
-    } catch (e) {
-      flash('Could not copy that');
-    }
+    flash(copyToClipboard(text) ? (done || 'Copied') : 'Could not copy that');
   };
   // Open the phone's messaging app with the number and an opening line filled in.
   // A join request has no tenancy behind it yet, so there is no in-app thread to
@@ -482,26 +506,38 @@ function deriveVm(s, api) {
   // after a 409.
   const myAwaiting = MY_PAYMENTS.find((p) => p.status === 'Declared') || null;
 
+  // A tenant with no tenancy has NO landlord, and must not be shown one. This used
+  // to fall back to the demo landlord's real name and number for everybody, so a
+  // tenant who had left a property — or never joined one — kept a stranger's phone
+  // number on their Help screen and could ring it. The seed values are only for the
+  // pre-login walkthrough, which is the one place a person is not signed in as
+  // anybody.
+  const hasLandlord = !!(LANDLORD && LANDLORD.name);
   const landlordCard = {
-    name: (LANDLORD && LANDLORD.name) || 'Demo Landlord',
-    phone: (LANDLORD && LANDLORD.phone) || '9000000000',
-    phoneLabel: fmtPhone((LANDLORD && LANDLORD.phone) || '9000000000'),
+    has: hasLandlord,
+    name: hasLandlord ? LANDLORD.name : (TLIVE ? '' : 'Demo Landlord'),
+    phone: hasLandlord ? LANDLORD.phone : (TLIVE ? '' : '9000000000'),
+    phoneLabel: hasLandlord ? fmtPhone(LANDLORD.phone) : (TLIVE ? '' : fmtPhone('9000000000')),
     // /tenant-portal/me does not carry the landlord's photo, so on a real tenancy
     // there is none to show. Return null and let the card fall back to an initial
     // rather than putting a stranger's stock face next to their name.
     img: TLIVE ? null : 'https://randomuser.me/api/portraits/men/32.jpg',
-    initials: initialsOf((LANDLORD && LANDLORD.name) || 'Demo Landlord'),
-    email: (LANDLORD && LANDLORD.email) || 'demo@gmail.com',
+    initials: initialsOf(hasLandlord ? LANDLORD.name : (TLIVE ? '' : 'Demo Landlord')),
+    email: hasLandlord ? (LANDLORD.email || '') : (TLIVE ? '' : 'demo@gmail.com'),
     // Tapping their picture opens their details — it looked tappable and did
     // nothing, which is worse than not looking tappable at all.
     open: () => setState({ overlay: 'landlord' }),
-    copyPhone: () => copyText((LANDLORD && LANDLORD.phone) || '9000000000', 'Number copied'),
-    copyEmail: () => copyText((LANDLORD && LANDLORD.email) || 'demo@gmail.com', 'Email copied'),
-    call: () => {
-      const n = (LANDLORD && LANDLORD.phone) || (TLIVE ? '' : '9000000000');
-      return n ? callNumber(n, (LANDLORD && LANDLORD.name) || 'your landlord')
-        : flash('No number on file for your landlord');
-    }
+    // Every one of these used to fall through to the demo landlord's real number and
+    // email. A tenant with no tenancy could copy them, and ring them.
+    copyPhone: () => (hasLandlord && LANDLORD.phone
+      ? copyText(LANDLORD.phone, 'Number copied')
+      : flash('You are not in a property yet')),
+    copyEmail: () => (hasLandlord && LANDLORD.email
+      ? copyText(LANDLORD.email, 'Email copied')
+      : flash('You are not in a property yet')),
+    call: () => (hasLandlord && LANDLORD.phone
+      ? callNumber(LANDLORD.phone, LANDLORD.name || 'your landlord')
+      : flash(TLIVE ? 'Join a property first — then your landlord appears here' : 'No number on file'))
   };
 
 
@@ -551,7 +587,7 @@ function deriveVm(s, api) {
     rentFull: s.rents[whoBase.id] ? `₹${inr(s.rents[whoBase.id])}` : whoBase.rentFull
   };
   const credit = creditOf(who);
-  const owner = ['home', 'units', 'people', 'tenant', 'ledger', 'settings', 'profile', 'property', 'support'].includes(s.route);
+  const owner = ['home', 'units', 'people', 'tenant', 'ledger', 'settings', 'profile', 'property', 'support', 'ticket'].includes(s.route);
   const place = PROPS.find((p) => p.id === s.place) || PROPS[0] || EMPTY_PLACE;
   const d = 0.008;
   const bbox = `${(place.lon - d).toFixed(4)},${(place.lat - d * 0.6).toFixed(4)},${(place.lon + d).toFixed(4)},${(place.lat + d * 0.6).toFixed(4)}`;
@@ -669,7 +705,10 @@ function deriveVm(s, api) {
       bg: p.bg,
       status: st.toUpperCase(),
       statusFg: STATUS_FG[st],
-      read: () => openTicketSheet(t.id),
+      // Onto the ticket's own page. This used to open a sheet, so a landlord read a
+      // ticket in a modal, replied in a modal, and had a third place — Help &
+      // support — showing the same thing again. One destination for a ticket.
+      read: () => selectTicket(t.id),
       start: () => { api.setRequestStatus(t.id, 'In Progress'); flash(`Opened — ${t.title}`); },
       resolve: () => { api.setRequestStatus(t.id, 'Resolved'); setState({ overlay: null }); flash(`Resolved — ${t.title}`); },
       started: st !== 'Open',
@@ -792,15 +831,17 @@ function deriveVm(s, api) {
   const openTicket = TICKETS.find((t) => t.id === s.ticket) || TICKETS[0] || EMPTY_TICKET;
   const openPerson = TENANTS.find((x) => x.id === openTicket.who)
     || { name: openTicket.name, img: openTicket.img, phone: openTicket.phone };
-  // Opening a ticket also pulls its conversation, so the landlord sees the replies
-  // already on it rather than an empty box.
-  const openTicketSheet = (id) => {
-    setState({ ticket: id, overlay: 'ticket', reply: '' });
-    if (id != null) api.loadThread(id);
-  };
-  // Same, but staying on the Help & support screen rather than opening a sheet.
+  // Open a ticket on its own page. Also pulls its conversation, so the landlord sees
+  // the replies already on it rather than an empty box.
+  //
+  // This used to just select it, leaving the full ticket — the description, the
+  // photos, the conversation and the reply box — appended UNDER the list on the
+  // same screen. That meant tapping a ticket looked like nothing happened, and the
+  // reply box you were being asked to type into was several screens down, below
+  // however many other tickets there were. A ticket is a thing you work on, so it
+  // gets a screen.
   const selectTicket = (id) => {
-    setState({ ticket: id, reply: '' });
+    setState({ ticket: id, reply: '', route: 'ticket', overlay: null });
     if (id != null) api.loadThread(id);
   };
 
@@ -810,8 +851,16 @@ function deriveVm(s, api) {
   const nameOf = (id) => (TENANTS.find((t) => t.id === id) || {}).name;
   const imgOf = (id) => (TENANTS.find((t) => t.id === id) || {}).img;
   const toNum = (str) => Number(str.replace(/,/g, ''));
+  // A ledger row's second line is what the search actually reads, so it carries the
+  // real reference rather than the prototype's literal "DEMO-REF" — which was the
+  // same on every row and told the landlord nothing about which transfer this was.
+  // `nameOf` falls back to the name on the payment itself: a payment outlives the
+  // tenant record when someone moves out, and "UNIT 101 · UPI" with no name above it
+  // reads as a bug.
   const inRow = (p) => ({
-    name: nameOf(p.who), sub: `UNIT ${p.unit} · ${p.method} · DEMO-REF`,
+    name: nameOf(p.who) || p.name || 'Payment',
+    sub: [p.unit ? `UNIT ${p.unit}` : null, p.method || null, p.ref || null]
+      .filter(Boolean).join(' · '),
     amt: `+₹${p.amt}`, date: p.date, fg: 'pos',
     icon: 'arrow-down', iconBg: 'lsoft', iconFg: 'pos'
   });
@@ -821,14 +870,45 @@ function deriveVm(s, api) {
   });
   const monthIn = (m) => PAYMENTS.filter((p) => p.month === m).reduce((a, p) => a + toNum(p.amt), 0);
   const monthOut = (m) => EXPENSES.filter((e) => e.month === m).reduce((a, e) => a + toNum(e.amt), 0);
-  const ledger = [
-    { title: 'AUGUST 2026', m: 0 },
-    { title: 'JULY 2026', m: 1 }
-  ].map((g) => ({
-    title: g.title,
-    total: `+${money(monthIn(g.m))}`,
-    rows: [...PAYMENTS.filter((p) => p.month === g.m).map(inRow), ...EXPENSES.filter((e) => e.month === g.m).map(outRow)]
-  })).filter((g) => g.rows.length);
+
+  // ── The ledger search ──────────────────────────────────────────────────────
+  // The bar was drawn from the first prototype but was a plain label: nothing could
+  // be typed into it and nothing was filtered. It matches on everything the row
+  // shows — the person, the room, the method, the reference, the amount and the date
+  // — because a landlord looking for a payment has whichever of those their bank
+  // statement happened to give them.
+  const lq = s.lq.trim().toLowerCase();
+  const rowMatches = (r) => !lq
+    || `${r.name} ${r.sub} ${r.amt} ${r.date}`.toLowerCase().includes(lq);
+
+  // Which months to show. This used to be two hardcoded titles, 'AUGUST 2026' and
+  // 'JULY 2026' — so the headings were wrong in any other month, and a payment from
+  // three months ago existed in the data but could never be seen or searched. Now
+  // every month that actually has a transaction gets a group, most recent first.
+  const monthTitle = (m) => {
+    const d = new Date();
+    d.setDate(1);
+    d.setMonth(d.getMonth() - m);
+    return `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`;
+  };
+  const ledgerMonths = Array.from(
+    new Set([...PAYMENTS, ...EXPENSES].map((r) => Number(r.month) || 0))
+  ).sort((a, b) => a - b);
+  const ledger = ledgerMonths.map((m) => {
+    const rows = [
+      ...PAYMENTS.filter((p) => p.month === m).map(inRow),
+      ...EXPENSES.filter((e) => e.month === m).map(outRow)
+    ].filter(rowMatches);
+    return {
+      title: monthTitle(m),
+      // The total belongs to the rows on screen. Showing the month's full total
+      // beside a filtered list would read as an arithmetic error.
+      total: `+${money(lq
+        ? rows.reduce((a, r) => a + (r.fg === 'pos' ? toNum(r.amt.replace(/[^0-9,]/g, '')) : 0), 0)
+        : monthIn(m))}`,
+      rows
+    };
+  }).filter((g) => g.rows.length);
 
   const pq = s.pq.trim().toLowerCase();
   const pool = s.filter === 'unassigned' ? unassignedList : inScope;
@@ -973,7 +1053,7 @@ function deriveVm(s, api) {
     toast: s.toast,
     showSearch: !!mod,
     // Ledger owns its own search and title; People has its own search bar.
-    showHeader: owner && !['ledger', 'people', 'support'].includes(s.route),
+    showHeader: owner && !['ledger', 'people', 'support', 'ticket'].includes(s.route),
     showBack: !mod,
     backTitle: { property: 'Properties & units', profile: 'My profile', settings: 'Settings', tenant: 'People' }[s.route] || '',
     // The header's back chevron walks the same trail the phone's back gesture does,
@@ -981,7 +1061,7 @@ function deriveVm(s, api) {
     // arrived at without a trail (a deep link, or the first screen after login).
     goBack: () => {
       if (api.goBackOneStep()) return;
-      go({ property: 'units', profile: 'settings', settings: 'home', tenant: 'people' }[s.route] || 'home');
+      go({ property: 'units', profile: 'settings', settings: 'home', tenant: 'people', ticket: 'support' }[s.route] || 'home');
     },
     canGoBack: (s.history || []).length > 0,
     // Handed to RedesignRoot's hardwareBackPress listener. Returns true when it
@@ -1622,6 +1702,9 @@ function deriveVm(s, api) {
     moreTicketsLabel: `View all ${shownTickets.length} tickets`,
     openAllTickets: () => set('overlay', 'tickets'),
     isTickets: s.overlay === 'tickets',
+    // The whole priority-filtered list. The dashboard shows the top of the pile
+    // only, and `hasMoreTickets` is measured against that, so this is what "View all
+    // N tickets" is counting. Each row's `read` opens the ticket's own page.
     allTickets: shownTickets.map(card),
     isTicket: s.overlay === 'ticket',
     ticket: {
@@ -1651,7 +1734,9 @@ function deriveVm(s, api) {
         ? `${String(openTicket.body).slice(0, 180).trimEnd()}…`
         : (openTicket.body || 'No description was added.'),
       isTruncated: String(openTicket.body || '').length > 180,
-      readMore: () => setState({ route: 'support', overlay: null, ticket: openTicket.id }),
+      // Straight to the ticket's own page — where the description, the photos, the
+      // conversation and the reply box are.
+      readMore: () => setState({ route: 'ticket', overlay: null, ticket: openTicket.id }),
       // The landlord's half of the conversation, and a real call to the tenant who
       // raised it. Replying needs a live server-side row to hang messages off.
       thread: threadOf(openTicket.id),
@@ -1895,6 +1980,10 @@ function deriveVm(s, api) {
     // to do does not turn into a wall of conversation.
     goSupport: () => setState({ route: 'support', overlay: null }),
     isSupport: s.route === 'support',
+    // The ticket's own page. Same `support` block feeds both — the list half on the
+    // queue screen, the detail half here — so there is one description of a ticket
+    // rather than two that can drift apart.
+    isTicketPage: s.route === 'ticket',
     support: (() => {
       // Newest activity first, and unresolved before resolved: what needs doing.
       const all = TICKETS.slice().sort((a, b) => {
@@ -1945,10 +2034,21 @@ function deriveVm(s, api) {
         started: sel ? statusOf(sel) !== 'Open' : false,
         resolved: sel ? statusOf(sel) === 'Resolved' : false,
         start: () => sel && api.setRequestStatus(sel.id, 'In Progress'),
-        resolve: () => sel && api.setRequestStatus(sel.id, 'Resolved'),
+        // Resolving from the ticket's own page returns to the queue: the thing you
+        // came here to do is done, and staying on a resolved ticket with no controls
+        // left is a dead end.
+        resolve: () => {
+          if (!sel) return;
+          api.setRequestStatus(sel.id, 'Resolved');
+          if (s.route === 'ticket') setState({ route: 'support', overlay: null });
+        },
         call: () => (person.phone
           ? callNumber(person.phone, person.name || 'this tenant')
-          : flash(`No number on file for ${person.name || 'this tenant'}`))
+          : flash(`No number on file for ${person.name || 'this tenant'}`)),
+        // Back to the queue, following the same trail the phone's back gesture does.
+        backToList: () => { if (!api.goBackOneStep()) go('support'); },
+        // How many are still waiting, for the queue screen's subtitle.
+        openCount: all.filter((x) => statusOf(x) !== 'Resolved').length
       };
     })(),
 
@@ -2293,9 +2393,20 @@ function deriveVm(s, api) {
 
     ledger,
     ledgerScope: scoped ? scopeProp.name.toUpperCase() : 'ALL PROPERTIES',
+    // The net card always reports THIS month in full, filter or no filter — it is
+    // the month's headline, not a summary of the list below it.
+    netLabel: `NET — ${MONTH_NAMES[new Date().getMonth()]}`,
     netStr: money(monthIn(0) - monthOut(0)),
     inStr: `IN ${money(monthIn(0))}`,
     outStr: `OUT ${money(monthOut(0))}`,
+    lq: s.lq,
+    hasLq: !!s.lq,
+    setLq: (e) => set('lq', evStr(e)),
+    clearLq: () => set('lq', ''),
+    ledgerEmpty: !ledger.length,
+    ledgerEmptyLine: s.lq.trim()
+      ? `Nothing matches "${s.lq.trim()}".`
+      : 'No money has moved yet. Recorded rent and expenses appear here.',
 
     menuRows: [
       { label: 'My profile', icon: 'person-outline', go: () => go('profile'), fg: 'fg', bg: 'vsoft', ifg: 'accent' },
@@ -3433,9 +3544,11 @@ export function AppProvider({ children }) {
       await Linking.openURL(`upi://pay?${q}`);
     } catch (e) {
       setState({ pay: { ...stateRef.current.pay, asked: false } });
-      copyText(payee, `No UPI app found — ${payee} copied instead`);
+      flash(copyToClipboard(payee)
+        ? `No UPI app found — ${payee} copied instead`
+        : 'No UPI app found on this phone');
     }
-  }, [setState, flash, copyText]);
+  }, [setState, flash]);
 
   // "Yes, I paid." Records the CLAIM. The landlord confirms it, and only that clears
   // the month — see the backend's settlePayment for why that separation exists.

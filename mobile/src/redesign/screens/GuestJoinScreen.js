@@ -12,10 +12,11 @@
 // That is deliberate: on a build without expo-camera the scanner cannot open at all,
 // and on any build a code read aloud over the phone is just as valid as a QR.
 import React from 'react';
-import { View, ScrollView } from 'react-native';
+import { View } from 'react-native';
 import { useVm } from '../AppContext';
 import { useT } from '../ThemeContext';
 import { T, Eyebrow, Row, Press, Glyph, Field, IconChip } from '../ui';
+import { KeyboardScroll } from '../keyboard';
 
 export default function GuestJoinScreen() {
     const vm = useVm();
@@ -23,7 +24,7 @@ export default function GuestJoinScreen() {
     const g = vm.guest;
 
     return (
-        <ScrollView
+        <KeyboardScroll
             contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 22, paddingTop: 24, paddingBottom: 30 }}
             showsVerticalScrollIndicator={false}
         >
@@ -99,6 +100,6 @@ export default function GuestJoinScreen() {
                     </Press>
                 </Row>
             </View>
-        </ScrollView>
+        </KeyboardScroll>
     );
 }

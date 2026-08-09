@@ -1,8 +1,9 @@
 import React from 'react';
-import { View, ScrollView, Image, TextInput, ActivityIndicator } from 'react-native';
+import { View, ScrollView, Image, ActivityIndicator } from 'react-native';
 import { useVm } from '../AppContext';
 import { useT } from '../ThemeContext';
-import { T, Card, Row, Press, Glyph } from '../ui';
+import { T, Card, Row, Press, Glyph, SearchBar } from '../ui';
+import { KeyboardScroll } from '../keyboard';
 
 export default function FindScreen() {
     const vm = useVm();
@@ -10,7 +11,7 @@ export default function FindScreen() {
     const col = (v) => (v && (v[0] === '#' || v.startsWith('rgb')) ? v : t[v]);
 
     return (
-        <ScrollView
+        <KeyboardScroll
             contentContainerStyle={{ paddingTop: 14, paddingHorizontal: 18, paddingBottom: 22 }}
             showsVerticalScrollIndicator={false}
         >
@@ -41,27 +42,23 @@ export default function FindScreen() {
                     <View style={{ flex: 1, height: 1, backgroundColor: t.line }} />
                 </Row>
 
-                <Row gap={10} style={{ paddingVertical: 13, paddingHorizontal: 15, borderRadius: 16, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line }}>
-                    <Glyph name="search" size={16} color={t.fg3} />
-                    <TextInput
-                        value={vm.jq}
-                        onChangeText={vm.setJq}
-                        onSubmitEditing={vm.submitJq}
-                        returnKeyType="search"
-                        autoCapitalize="characters"
-                        placeholder={vm.jqLabel}
-                        placeholderTextColor={t.fg3}
-                        style={{ flex: 1, minWidth: 0, padding: 0, fontFamily: t.font.grotesk[500], fontSize: 13, color: t.fg }}
-                    />
-                    {/* A real lookup needs an explicit submit; the demo catalogue
-                        filters as you type, so the button is only shown when it does
-                        something. */}
-                    {vm.lookup.live ? (
+                <SearchBar
+                    value={vm.jq}
+                    onChangeText={vm.setJq}
+                    onSubmitEditing={vm.submitJq}
+                    autoCapitalize="characters"
+                    placeholder={vm.jqLabel}
+                    padV={13}
+                    style={{ backgroundColor: t.ink3 }}
+                    /* A real lookup needs an explicit submit; the demo catalogue
+                       filters as you type, so the button is only shown when it does
+                       something. */
+                    right={vm.lookup.live ? (
                         <Press onPress={vm.submitJq} disabled={!vm.canSubmitJq} hitSlop={8}>
                             <T mono w={600} s={9} ls={0.1} c={vm.canSubmitJq ? t.accent : t.fg3}>FIND</T>
                         </Press>
                     ) : null}
-                </Row>
+                />
             </View>
 
             {/* Area/room-type filters browse the walk-through catalogue. A real
@@ -163,6 +160,6 @@ export default function FindScreen() {
                     </Row>
                 </View>
             ))}
-        </ScrollView>
+        </KeyboardScroll>
     );
 }

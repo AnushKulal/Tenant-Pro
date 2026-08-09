@@ -12,7 +12,7 @@
 //   an ionicon via -webkit-mask          → <Glyph name="search" size={15} color={t.fg}/>
 //   an avatar <img> round                 → <Face uri={…} size={34}/>
 import React from 'react';
-import { View, Text, Pressable, Image, StyleSheet, TextInput } from 'react-native';
+import { View, Text, Pressable, Image, StyleSheet, TextInput, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useT } from './ThemeContext';
 import { grotesk, mono as monoFamily } from './theme';
@@ -188,6 +188,7 @@ export function Field({
                     maxLength={maxLength}
                     style={[
                         { flex: 1, padding: 0, fontFamily: grotesk(500), fontSize: 15, color: t.fg },
+                        NO_WEB_OUTLINE,
                         inputStyle
                     ]}
                 />
@@ -198,6 +199,153 @@ export function Field({
                 ) : null}
             </Row>
         </View>
+    );
+}
+
+// On the web preview a focused <input> also gets the browser's own focus ring, drawn
+// as a hard rectangle INSIDE our rounded pill. There is no such thing on a phone, so
+// this is web-only — and guarded rather than unconditional, because `outlineStyle` is
+// not a valid React Native style key.
+const NO_WEB_OUTLINE = Platform.OS === 'web' ? { outlineStyle: 'none' } : null;
+
+// ── Search / filter bar ───────────────────────────────────────────────────────
+// Every screen with a search box drew its own: same rounded ink2 pill, same
+// leading magnifier, same clear button — but each one hand-rolled, and none of
+// them lit up when you tapped into it. On a screen where a tap does not visibly
+// change anything, a box that looks identical focused and unfocused reads as a
+// label rather than a field, which is exactly how the ledger's bar was reported.
+// One component, so the ring can never be forgotten at a call site again.
+export function SearchBar({
+    value,
+    onChangeText,
+    onClear,
+    placeholder,
+    icon = 'search',
+    keyboardType,
+    autoCapitalize = 'none',
+    autoCorrect = false,
+    autoFocus = false,
+    returnKeyType = 'search',
+    onSubmitEditing,
+    size = 13,
+    padV = 12,
+    right,
+    style
+}) {
+    const t = useT();
+    const [focused, setFocused] = React.useState(false);
+    const has = !!String(value || '');
+
+    return (
+        <Row
+            gap={10}
+            style={[
+                {
+                    paddingVertical: padV,
+                    paddingHorizontal: 15,
+                    borderRadius: 16,
+                    backgroundColor: t.ink2,
+                    borderWidth: 1,
+                    borderColor: focused ? t.accent : t.line
+                },
+                style
+            ]}
+        >
+            {icon ? <Glyph name={icon} size={16} color={focused ? t.accent : t.fg3} /> : null}
+            <TextInput
+                value={value}
+                onChangeText={onChangeText}
+                onFocus={() => setFocused(true)}
+                onBlur={() => setFocused(false)}
+                placeholder={placeholder}
+                placeholderTextColor={t.fg3}
+                keyboardType={keyboardType}
+                autoCapitalize={autoCapitalize}
+                autoCorrect={autoCorrect}
+                autoFocus={autoFocus}
+                returnKeyType={returnKeyType}
+                onSubmitEditing={onSubmitEditing}
+                style={[{
+                    flex: 1,
+                    minWidth: 0,
+                    padding: 0,
+                    fontFamily: grotesk(500),
+                    fontSize: size,
+                    color: t.fg
+                }, NO_WEB_OUTLINE]}
+            />
+            {right || (has && onClear ? (
+                <Press onPress={onClear} hitSlop={8}>
+                    <Glyph name="close-circle" size={17} color={t.fg3} />
+                </Press>
+            ) : null)}
+        </Row>
+    );
+}
+
+// ── Free-text box ─────────────────────────────────────────────────────────────
+// The reply composer and the sheets' notes fields. Same reason as SearchBar: the
+// border has to answer "am I typing in this one", and every one of these was a
+// bare TextInput with a static hairline.
+export function Composer({
+    value,
+    onChangeText,
+    placeholder,
+    multiline = true,
+    editable = true,
+    minHeight = 46,
+    maxHeight = 110,
+    keyboardType,
+    autoCapitalize = 'sentences',
+    maxLength,
+    size = 13.5,
+    align = 'left',
+    mono = false,
+    onSubmitEditing,
+    returnKeyType,
+    inputRef,
+    style
+}) {
+    const t = useT();
+    const [focused, setFocused] = React.useState(false);
+    const lit = focused && editable;
+
+    return (
+        <TextInput
+            ref={inputRef}
+            value={value}
+            onChangeText={onChangeText}
+            onFocus={() => setFocused(true)}
+            onBlur={() => setFocused(false)}
+            placeholder={placeholder}
+            placeholderTextColor={t.fg3}
+            multiline={multiline}
+            editable={editable}
+            keyboardType={keyboardType}
+            autoCapitalize={autoCapitalize}
+            maxLength={maxLength}
+            onSubmitEditing={onSubmitEditing}
+            returnKeyType={returnKeyType}
+            textAlign={align}
+            style={[
+                {
+                    minHeight,
+                    borderRadius: 16,
+                    backgroundColor: t.ink3,
+                    borderWidth: 1,
+                    borderColor: lit ? t.accent : t.line,
+                    paddingHorizontal: 14,
+                    paddingTop: 13,
+                    paddingBottom: 13,
+                    color: t.fg,
+                    fontFamily: mono ? monoFamily(600) : grotesk(400),
+                    fontSize: size
+                },
+                multiline ? { maxHeight } : null,
+                NO_WEB_OUTLINE,
+                style
+            ]}
+        />
     );
 }
 

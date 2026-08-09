@@ -1,21 +1,21 @@
 // File: mobile/src/redesign/screens/SupportScreen.js
-// Help & support, the landlord's side: every ticket their tenants have raised, and
-// for the selected one its whole timeline — each reply and each status change, in
-// the order they happened — plus the controls to move it along.
+// Help & support, the landlord's side: the queue of every ticket their tenants have
+// raised, newest activity first and unresolved before resolved.
 //
 // This exists because the dashboard should say what needs doing, not become a wall
 // of conversation. So the dashboard card previews (what was reported, how long it
-// has been waiting) and "Read more" lands here, where the work actually happens.
+// has been waiting) and "Read more" lands on the ticket itself.
 //
-// The timeline is one ordered read of maintenance_messages: a reply is a bubble, a
-// status change is a marker across the thread. That is what makes "when did this
-// move to In Progress" answerable by reading down rather than hunting a log.
+// This screen used to be the queue AND the selected ticket in full, stacked below
+// it — description, photos, conversation and reply box appended under however many
+// other tickets there were. Tapping a ticket therefore looked like nothing had
+// happened, and the reply box was off the bottom of the screen. The ticket now has
+// its own page (TicketScreen); this is only the list.
 import React from 'react';
-import { View, ScrollView, Image } from 'react-native';
+import { View, ScrollView } from 'react-native';
 import { useVm } from '../AppContext';
 import { useT } from '../ThemeContext';
 import { T, Eyebrow, Row, Press, Glyph, Avatar } from '../ui';
-import { Thread } from '../Sheets';
 
 export default function SupportScreen() {
     const vm = useVm();
@@ -38,7 +38,9 @@ export default function SupportScreen() {
                 <View style={{ flex: 1 }}>
                     <T w={700} s={30} lh={1.04} style={{ letterSpacing: -1.4 }}>Help & support</T>
                     <T w={400} s={13} lh={1.4} c={t.fg2} style={{ marginTop: 5 }}>
-                        Every ticket, its conversation, and when its status changed.
+                        {sp.empty
+                            ? 'Every ticket your tenants raise lands here.'
+                            : `Tap a ticket to read it, reply and move it along.${sp.openCount ? ` ${sp.openCount} still open.` : ''}`}
                     </T>
                 </View>
             </Row>
@@ -54,7 +56,7 @@ export default function SupportScreen() {
                 <>
                     {/* The queue. Unresolved first, then by priority. */}
                     <Eyebrow s={9} ls={0.12} c={t.fg3} style={{ marginTop: 18, marginBottom: 9 }}>TICKETS</Eyebrow>
-                    <View style={{ rowGap: 7, marginBottom: 18 }}>
+                    <View style={{ rowGap: 7 }}>
                         {sp.list.map((k) => (
                             <Press key={k.id} onPress={k.go}>
                                 <Row
@@ -62,9 +64,9 @@ export default function SupportScreen() {
                                     style={{
                                         padding: 13,
                                         borderRadius: 18,
-                                        backgroundColor: k.on ? t.ink3 : t.ink2,
+                                        backgroundColor: t.ink2,
                                         borderWidth: 1,
-                                        borderColor: k.on ? t.accent : t.line
+                                        borderColor: t.line
                                     }}
                                 >
                                     <Avatar uri={k.img} initials={k.initials} size={36} radius={12} />
@@ -78,76 +80,13 @@ export default function SupportScreen() {
                                         </View>
                                         <T mono w={600} s={8} lh={1} ls={0.08} c={col(k.statusFg)}>{k.status}</T>
                                     </View>
+                                    {/* Says the row goes somewhere. Without it the list read as a
+                                        set of selectable filters rather than a set of pages. */}
+                                    <Glyph name="chevron-forward" size={16} color={t.fg3} />
                                 </Row>
                             </Press>
                         ))}
                     </View>
-
-                    {/* The selected ticket in full. */}
-                    {sp.has && (
-                        <View style={{ borderRadius: 22, backgroundColor: t.ink2, borderWidth: 1, borderColor: t.line, padding: 16 }}>
-                            <Row align="flex-start" gap={10} style={{ marginBottom: 12 }}>
-                                <View style={{ flex: 1, minWidth: 0 }}>
-                                    <T w={700} s={19} lh={1.2} style={{ letterSpacing: -0.6 }}>{sp.title}</T>
-                                    <Eyebrow s={9} ls={0.08} style={{ marginTop: 6 }}>{sp.meta}</Eyebrow>
-                                </View>
-                                <View style={{ paddingVertical: 4, paddingHorizontal: 8, borderRadius: 7, backgroundColor: col(sp.pbg) }}>
-                                    <T mono w={600} s={9} lh={1.3} ls={0.05} c={col(sp.pfg)}>{sp.priority}</T>
-                                </View>
-                            </Row>
-
-                            <Row gap={11} style={{ paddingVertical: 12, paddingHorizontal: 13, borderRadius: 16, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line, marginBottom: 10 }}>
-                                <Avatar uri={sp.img} initials={sp.initials} size={36} radius={12} />
-                                <View style={{ flex: 1, minWidth: 0 }}>
-                                    <T w={600} s={13.5} lh={1.2} c={t.fg} numberOfLines={1}>{sp.who}</T>
-                                    <Row gap={7} style={{ marginTop: 4 }}>
-                                        <T mono w={600} s={8} lh={1.4} ls={0.08} c={col(sp.statusFg)}>{sp.status}</T>
-                                        {sp.openFor ? <T mono w={600} s={8} lh={1.4} ls={0.08} c={t.fg3}>{sp.openFor}</T> : null}
-                                    </Row>
-                                </View>
-                                <Press onPress={sp.call} style={{ width: 34, height: 34, borderRadius: 11, backgroundColor: t.lsoft, alignItems: 'center', justifyContent: 'center' }}>
-                                    <Glyph name="call" size={15} color={t.pos} />
-                                </Press>
-                            </Row>
-
-                            <View style={{ borderRadius: 16, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line, padding: 14, marginBottom: 12 }}>
-                                <Eyebrow s={9} ls={0.12} style={{ marginBottom: 9 }}>WHAT THEY REPORTED</Eyebrow>
-                                <T w={400} s={13.5} lh={1.55} c={t.fg2}>{sp.body}</T>
-                            </View>
-
-                            {sp.hasPhotos && (
-                                <View style={{ marginBottom: 12 }}>
-                                    <Eyebrow s={9} ls={0.12} style={{ marginBottom: 9 }}>ATTACHED</Eyebrow>
-                                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-                                        {sp.photos.map((ph, i) => (
-                                            <Image key={i} source={{ uri: ph }} style={{ width: 168, height: 126, borderRadius: 14, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line }} resizeMode="cover" />
-                                        ))}
-                                    </ScrollView>
-                                </View>
-                            )}
-
-                            <Thread
-                                thread={sp.thread}
-                                composer={vm.composer}
-                                canReply={sp.canReply}
-                                t={t}
-                                placeholder="Reply to your tenant…"
-                            />
-
-                            {!sp.resolved && (
-                                <Row gap={7}>
-                                    {!sp.started && (
-                                        <Press onPress={sp.start} style={{ flex: 1, paddingVertical: 14, borderRadius: 999, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line, alignItems: 'center' }}>
-                                            <T w={600} s={13} c={t.fg}>Start work</T>
-                                        </Press>
-                                    )}
-                                    <Press onPress={sp.resolve} style={{ flex: 1, paddingVertical: 14, borderRadius: 999, backgroundColor: t.lime, alignItems: 'center' }}>
-                                        <T w={700} s={13.5} c={t.on}>Mark resolved</T>
-                                    </Press>
-                                </Row>
-                            )}
-                        </View>
-                    )}
                 </>
             )}
         </ScrollView>

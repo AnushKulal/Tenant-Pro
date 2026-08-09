@@ -59,43 +59,76 @@ export default function HelpScreen() {
                 ))}
             </View>
 
-            <View
-                style={{
-                    borderRadius: 22,
-                    backgroundColor: t.ink2,
-                    borderWidth: 1,
-                    borderColor: t.line,
-                    paddingVertical: 16,
-                    paddingHorizontal: 18,
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    columnGap: 12
-                }}
-            >
-                {/* Their picture — or their initials — opens their details. */}
-                <Press onPress={landlord.open}>
-                    <Avatar uri={landlord.img} initials={landlord.initials} size={40} radius={13} />
-                </Press>
-                <Press onPress={landlord.open} style={{ flex: 1 }}>
-                    <T w={600} s={14} lh={1.2} numberOfLines={1}>{landlord.name}</T>
-                    <T mono w={600} s={10} lh={1.4} ls={0.08} c={t.fg3} style={{ marginTop: 4 }}>
-                        {landlord.phoneLabel}
-                    </T>
-                </Press>
-                <Press
-                    onPress={landlord.call}
+            {/* No tenancy, no landlord. This card used to fall back to the demo
+                landlord's real name and number, so a tenant who had left a property —
+                or never joined one — kept a stranger's phone number here and could
+                ring it. Now it says what to do instead. */}
+            {landlord.has ? (
+                <View
                     style={{
-                        width: 38,
-                        height: 38,
-                        borderRadius: 13,
-                        backgroundColor: t.lsoft,
+                        borderRadius: 22,
+                        backgroundColor: t.ink2,
+                        borderWidth: 1,
+                        borderColor: t.line,
+                        paddingVertical: 16,
+                        paddingHorizontal: 18,
+                        flexDirection: 'row',
                         alignItems: 'center',
-                        justifyContent: 'center'
+                        columnGap: 12
                     }}
                 >
-                    <Glyph name="call" size={16} color={t.pos} />
+                    {/* Their picture — or their initials — opens their details. */}
+                    <Press onPress={landlord.open}>
+                        <Avatar uri={landlord.img} initials={landlord.initials} size={40} radius={13} />
+                    </Press>
+                    <Press onPress={landlord.open} style={{ flex: 1 }}>
+                        <T w={600} s={14} lh={1.2} numberOfLines={1}>{landlord.name}</T>
+                        <T mono w={600} s={10} lh={1.4} ls={0.08} c={t.fg3} style={{ marginTop: 4 }}>
+                            {landlord.phoneLabel}
+                        </T>
+                    </Press>
+                    <Press
+                        onPress={landlord.call}
+                        style={{
+                            width: 38,
+                            height: 38,
+                            borderRadius: 13,
+                            backgroundColor: t.lsoft,
+                            alignItems: 'center',
+                            justifyContent: 'center'
+                        }}
+                    >
+                        <Glyph name="call" size={16} color={t.pos} />
+                    </Press>
+                </View>
+            ) : (
+                <Press
+                    onPress={vm.goFind}
+                    style={{
+                        borderRadius: 22,
+                        backgroundColor: t.ink2,
+                        borderWidth: 1,
+                        borderStyle: 'dashed',
+                        borderColor: t.line2,
+                        paddingVertical: 18,
+                        paddingHorizontal: 18,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        columnGap: 12
+                    }}
+                >
+                    <View style={{ width: 38, height: 38, borderRadius: 13, backgroundColor: t.asoft, alignItems: 'center', justifyContent: 'center' }}>
+                        <Glyph name="home-outline" size={17} color={t.amber} />
+                    </View>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                        <T w={600} s={14} lh={1.2}>Join a property first</T>
+                        <T w={400} s={12} lh={1.45} c={t.fg3} style={{ marginTop: 4 }}>
+                            Your landlord appears here once you are in one. Tap to find yours.
+                        </T>
+                    </View>
+                    <Glyph name="chevron-forward" size={16} color={t.fg3} />
                 </Press>
-            </View>
+            )}
         </ScrollView>
     );
 }

@@ -1,15 +1,16 @@
 import React from 'react';
-import { View, ScrollView } from 'react-native';
+import { View } from 'react-native';
 import { useVm } from '../AppContext';
 import { useT } from '../ThemeContext';
 import { T, Eyebrow, Row, Press, Glyph, Monogram, Divider, Field, IdToggle } from '../ui';
+import { KeyboardScroll } from '../keyboard';
 
 export default function TenantLoginScreen() {
     const vm = useVm();
     const t = useT();
 
     return (
-        <ScrollView
+        <KeyboardScroll
             contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 22, paddingTop: 24, paddingBottom: 28 }}
             showsVerticalScrollIndicator={false}
         >
@@ -28,8 +29,11 @@ export default function TenantLoginScreen() {
 
                 {/* Nobody is signed in yet, so there is no name to greet. The
                     prototype hard-coded "Rahul", which welcomed every visitor by
-                    a stranger's name before they had typed anything. */}
-                <T w={700} s={36} lh={1.02} style={{ letterSpacing: -1.8, marginBottom: 26 }}>Hello{'\n'}again.</T>
+                    a stranger's name before they had typed anything. Nor "again":
+                    plenty of people reaching this screen have never been here, and
+                    someone who just signed out should not be greeted like a
+                    returning guest. */}
+                <T w={700} s={36} lh={1.02} style={{ letterSpacing: -1.8, marginBottom: 26 }}>Welcome to{'\n'}TenantPro.</T>
 
                 <IdToggle
                     thumbX={vm.idThumbX}
@@ -148,6 +152,6 @@ export default function TenantLoginScreen() {
                     </Press>
                 </Row>
             </View>
-        </ScrollView>
+        </KeyboardScroll>
     );
 }
