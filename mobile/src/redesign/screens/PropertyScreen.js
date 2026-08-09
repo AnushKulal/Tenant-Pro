@@ -1,12 +1,16 @@
 import React from 'react';
-import { View, ScrollView, Image, RefreshControl } from 'react-native';
+import { View, ScrollView, Image, RefreshControl, Dimensions } from 'react-native';
 import { useVm } from '../AppContext';
+import { TileMap, ATTRIBUTION } from '../maps';
 import { useT } from '../ThemeContext';
 import { T, Eyebrow, Row, Divider, Press, Glyph, IconChip } from '../ui';
 
 export default function PropertyScreen() {
     const vm = useVm();
     const t = useT();
+    // The tile grid needs a pixel width to lay out; measured rather than assumed so
+    // it is right on any screen.
+    const [mapW, setMapW] = React.useState(() => Dimensions.get('window').width - 36);
     const place = vm.place;
     if (!place) return null;
 
@@ -70,23 +74,57 @@ export default function PropertyScreen() {
                 </View>
             </View>
 
-            {/* Map card */}
-            <View style={{ borderRadius: 22, overflow: 'hidden', backgroundColor: t.ink2, borderWidth: 1, borderColor: t.line, marginBottom: 8 }}>
-                <Image source={{ uri: place.mapSrc }} style={{ width: '100%', height: 190, backgroundColor: t.ink3 }} resizeMode="cover" />
-                <Row gap={7} style={{ padding: 12 }}>
-                    <Press onPress={vm.noop} style={{ flex: 1 }}>
-                        <Row gap={7} justify="center" style={{ paddingVertical: 11, borderRadius: 13, backgroundColor: t.lime }}>
-                            <Glyph name="navigate" size={15} color={t.on} />
-                            <T w={600} s={11} lh={1} c={t.on}>Open in Google Maps</T>
-                        </Row>
-                    </Press>
-                    <Press onPress={vm.noop}>
-                        <Row gap={6} justify="center" style={{ paddingVertical: 11, paddingHorizontal: 13, borderRadius: 13, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line }}>
-                            <T mono w={600} s={9} lh={1} ls={0.06} c={t.fg2}>OSM</T>
-                        </Row>
-                    </Press>
-                </Row>
-            </View>
+            {/* ── Where it is ──────────────────────────────────────────────
+                This was an <Image> pointed at OpenStreetMap's embed PAGE — HTML, not
+                an image, so it rendered as a grey box — with two buttons under it
+                that both called vm.noop. And for any real property the URL contained
+                the literal string "null", because nothing stored coordinates.
+
+                Now: a real map when the property has been pinned, an honest prompt
+                when it has not, and Directions rather than "open the map". */}
+            {place.pinned ? (
+                <View
+                    style={{ borderRadius: 22, overflow: 'hidden', backgroundColor: t.ink2, borderWidth: 1, borderColor: t.line, marginBottom: 8 }}
+                    onLayout={(e) => setMapW(Math.round(e.nativeEvent.layout.width))}
+                >
+                    <View style={{ height: 190 }}>
+                        <TileMap lat={place.lat} lon={place.lon} zoom={16} width={mapW} height={190} />
+                        <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}>
+                            <Glyph name="location" size={34} color={t.coral} style={{ marginTop: -16 }} />
+                        </View>
+                        <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, paddingVertical: 3, paddingHorizontal: 7, backgroundColor: 'rgba(4,4,6,0.55)' }}>
+                            <T mono w={600} s={7} lh={1.4} ls={0.04} c="#FFFFFF" style={{ opacity: 0.85 }}>{ATTRIBUTION}</T>
+                        </View>
+                    </View>
+                    <Row gap={7} style={{ padding: 12 }}>
+                        <Press onPress={place.directions} style={{ flex: 1 }}>
+                            <Row gap={7} justify="center" style={{ paddingVertical: 12, borderRadius: 13, backgroundColor: t.lime }}>
+                                <Glyph name="navigate" size={15} color={t.on} />
+                                <T w={600} s={12} lh={1} c={t.on}>{place.directionsLabel}</T>
+                            </Row>
+                        </Press>
+                        <Press onPress={vm.openEditProperty}>
+                            <Row gap={6} justify="center" style={{ paddingVertical: 12, paddingHorizontal: 14, borderRadius: 13, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line }}>
+                                <Glyph name="pin-outline" size={14} color={t.fg2} />
+                                <T w={600} s={11.5} lh={1} c={t.fg2}>Move pin</T>
+                            </Row>
+                        </Press>
+                    </Row>
+                </View>
+            ) : (
+                <Press onPress={place.pinIt} style={{ marginBottom: 8 }}>
+                    <Row gap={12} align="flex-start" style={{ borderRadius: 22, backgroundColor: t.ink2, borderWidth: 1, borderStyle: 'dashed', borderColor: t.line2, paddingVertical: 18, paddingHorizontal: 16 }}>
+                        <View style={{ width: 38, height: 38, borderRadius: 13, backgroundColor: t.asoft, alignItems: 'center', justifyContent: 'center' }}>
+                            <Glyph name="map-outline" size={17} color={t.amber} />
+                        </View>
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                            <T w={600} s={14} lh={1.2}>{place.pinCta}</T>
+                            <T w={400} s={12} lh={1.45} c={t.fg3} style={{ marginTop: 4 }}>{place.unpinnedLine}</T>
+                        </View>
+                        <Glyph name="chevron-forward" size={16} color={t.fg3} />
+                    </Row>
+                </Press>
+            )}
 
             {/* Amenities */}
             <View style={{ borderRadius: 22, backgroundColor: t.ink2, borderWidth: 1, borderColor: t.line, paddingVertical: 16, paddingHorizontal: 18, marginBottom: 8 }}>

@@ -168,4 +168,67 @@ export const portal = {
     )
 };
 
+// ── Places (open, keyless) ────────────────────────────────────────────────────
+// Turning what a landlord types into a coordinate, and a dropped pin back into an
+// address. Both go to Photon, which is Komoot's open geocoder over OpenStreetMap
+// data: no key, no account, and — unlike Nominatim, the other obvious choice — its
+// usage terms do not put distributed apps in a grey area.
+//
+// Deliberately NOT on `http`: that instance has our API's baseURL and attaches the
+// user's bearer token to every request. Sending a TenantPro token to a third party
+// because the axios instance happened to be in scope is exactly the kind of leak
+// that never gets noticed. This uses bare fetch to a fully-qualified URL.
+const PHOTON = 'https://photon.komoot.io';
+
+// Photon returns GeoJSON; this is the shape the app wants. A result's name is
+// assembled from whichever parts exist, because a house has a housenumber and a
+// locality has none.
+const asPlace = (f) => {
+    const p = (f && f.properties) || {};
+    const coords = (f && f.geometry && f.geometry.coordinates) || [];
+    const line1 = [p.name, p.housenumber && p.street ? `${p.housenumber} ${p.street}` : p.street]
+        .filter(Boolean).join(', ');
+    const line2 = [p.district, p.city || p.town || p.village, p.state].filter(Boolean).join(', ');
+    return {
+        // Photon has no stable id across queries; the coordinate pair is unique
+        // enough to key a list by.
+        id: `${coords[1]},${coords[0]}`,
+        lat: coords[1],
+        lon: coords[0],
+        title: line1 || p.city || p.name || 'Unnamed place',
+        subtitle: [line2, p.postcode, p.country].filter(Boolean).join(' · '),
+        postcode: p.postcode || '',
+        city: p.city || p.town || p.village || '',
+        locality: p.district || p.suburb || '',
+        street: [p.housenumber, p.street].filter(Boolean).join(' ')
+    };
+};
+
+export const places = {
+    // `near` biases results towards a point, which is what makes "MG Road" return
+    // the one in this city rather than one four states away.
+    search: async (q, near) => {
+        const text = String(q || '').trim();
+        if (text.length < 3) return [];
+        const params = new URLSearchParams({ q: text, limit: '6', lang: 'en' });
+        if (near && Number.isFinite(near.lat) && Number.isFinite(near.lon)) {
+            params.set('lat', String(near.lat));
+            params.set('lon', String(near.lon));
+        }
+        const res = await fetch(`${PHOTON}/api/?${params.toString()}`);
+        if (!res.ok) throw new Error(`Search failed (${res.status})`);
+        const data = await res.json();
+        return (data.features || []).map(asPlace);
+    },
+    // A pin back into an address, so dropping one can fill the form in.
+    reverse: async (lat, lon) => {
+        const params = new URLSearchParams({ lat: String(lat), lon: String(lon), lang: 'en' });
+        const res = await fetch(`${PHOTON}/reverse?${params.toString()}`);
+        if (!res.ok) throw new Error(`Lookup failed (${res.status})`);
+        const data = await res.json();
+        const f = (data.features || [])[0];
+        return f ? asPlace(f) : null;
+    }
+};
+
 export default http;

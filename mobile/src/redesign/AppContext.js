@@ -17,10 +17,11 @@ import {
 } from './data';
 import {
   auth as apiAuth, owner as apiOwner, properties as apiProps,
-  units as apiUnits, tenants as apiTenants, portal as apiPortal, payments as apiPayments,
+  units as apiUnits, tenants as apiTenants, portal as apiPortal, payments as apiPayments, places as apiPlaces,
   setToken, mediaUrl
 } from './api';
 import { mapOwnerData, mapPortalRequest, mapDocument, mapMyPlace } from './mapping';
+import { hasPin, roundCoord, DEFAULT_CENTER, openDirections, MIN_ZOOM, MAX_ZOOM } from './maps';
 import {
   loadSession, saveOwnerSession, saveTenantSession, clearSession,
   hasOnboarded, setOnboarded, hasSeenPermits, setPermitsSeen
@@ -125,7 +126,10 @@ const inr = (n) => {
 // ── Initial state (ported verbatim from Component.state) ──
 // Editing an existing property carries its id; everything else matches the create
 // form, so both use the same sheet body.
-const BLANK_EDIT_PROPERTY = { id: null, name: '', type: 'PG', address: '', locality: '', city: '', pincode: '', photo: null, busy: false, error: '' };
+// `lat`/`lon` are null until the landlord pins the property on the map. Null, not
+// 0: zero is a real coordinate in the Atlantic, and a form default that means "not
+// set" must not be a place.
+const BLANK_EDIT_PROPERTY = { id: null, name: '', type: 'PG', address: '', locality: '', city: '', pincode: '', lat: null, lon: null, photo: null, busy: false, error: '' };
 
 // The ways a tenant can tell us they paid. Mirrors the server's own list in
 // tenantPortalController.declarePayment — a value this does not offer would be
@@ -292,6 +296,24 @@ const INITIAL_STATE = {
   pay: { ...BLANK_PAY },
   // The tenant's own receipts screen.
   receipts: { loading: false, error: '' },
+  // ── Pinning a property on the map ───────────────────────────────────────────
+  // A full screen rather than part of the property sheet, and not for cosmetic
+  // reasons: dragging a map inside a bottom sheet inside a scroll view is three
+  // pan gestures competing for the same finger, and the map always loses.
+  //
+  // `back` is which form sent us here, so "Use this location" returns to it with
+  // the pin filled in rather than dumping the half-typed property.
+  pin: {
+    back: null,     // 'newproperty' | 'editproperty'
+    lat: null,
+    lon: null,
+    zoom: 16,
+    q: '',
+    results: [],
+    searching: false,
+    address: null,  // what the pin reverse-geocoded to, if anything
+    error: ''
+  },
   // ── Joining as a guest ──────────────────────────────────────────────────────
   // The whole guest form, in one place. `step` is which half is on screen: 'code'
   // asks which property, 'you' asks for the phone number and the government ID.
@@ -355,7 +377,7 @@ const INITIAL_STATE = {
 
 const PROPERTY_TYPES = ['PG', 'Apartment', 'Independent House', 'Hostel'];
 const ROOM_TYPES = ['Standard', 'Single', 'Double', 'Triple', 'Studio', '1BHK', '2BHK'];
-const BLANK_PROPERTY = { name: '', type: 'PG', address: '', locality: '', city: '', pincode: '', photo: null, busy: false, error: '' };
+const BLANK_PROPERTY = { name: '', type: 'PG', address: '', locality: '', city: '', pincode: '', lat: null, lon: null, photo: null, busy: false, error: '' };
 const BLANK_UNIT = { propertyId: null, number: '', roomType: 'Standard', rent: '', capacity: '1', photo: null, busy: false, error: '' };
 const BLANK_TENANT = { name: '', phone: '', email: '', company: '', deposit: '', rent: '', unitId: null, photo: null, busy: false, error: '' };
 
@@ -641,8 +663,22 @@ function deriveVm(s, api) {
   const credit = creditOf(who);
   const owner = ['home', 'units', 'people', 'tenant', 'ledger', 'settings', 'profile', 'property', 'support', 'ticket'].includes(s.route);
   const place = PROPS.find((p) => p.id === s.place) || PROPS[0] || EMPTY_PLACE;
-  const d = 0.008;
-  const bbox = `${(place.lon - d).toFixed(4)},${(place.lat - d * 0.6).toFixed(4)},${(place.lon + d).toFixed(4)},${(place.lat + d * 0.6).toFixed(4)}`;
+
+  // Open the map picker for whichever property form is asking. Needs `s` to read
+  // the form's current pin, so it lives here rather than on `api`.
+  const openPinFor = (which) => {
+    const form = which === 'editproperty' ? (s.ep || BLANK_EDIT_PROPERTY) : (s.np || BLANK_PROPERTY);
+    // Start where the property already is, if it has been pinned before.
+    const start = hasPin(form.lat, form.lon)
+      ? { lat: Number(form.lat), lon: Number(form.lon) }
+      : DEFAULT_CENTER;
+    setState({
+      route: 'pinpick',
+      overlay: null,
+      pin: { back: which, lat: start.lat, lon: start.lon, zoom: hasPin(form.lat, form.lon) ? 17 : 13, q: '', results: [], searching: false, address: null, error: '' }
+    });
+  };
+
 
   // Each module keeps its OWN property filter.
   const MOD = { home: 'home', units: 'units' };
@@ -1139,7 +1175,12 @@ function deriveVm(s, api) {
         address: place.addressRaw || '',
         locality: place.localityRaw || '',
         city: place.cityRaw || '',
-        pincode: place.pincodeRaw || ''
+        pincode: place.pincodeRaw || '',
+        // Seeded from what is stored, so "Move pin" opens on the property rather
+        // than in the middle of the city, and so saving an edit that never touched
+        // the map writes the same pin back rather than dropping it.
+        lat: place.lat != null ? place.lat : null,
+        lon: place.lon != null ? place.lon : null
       }
     }),
     isEditProperty: s.overlay === 'editproperty',
@@ -1154,6 +1195,18 @@ function deriveVm(s, api) {
         city: ep.city, setCity: (e) => put({ city: evStr(e) }),
         pincode: ep.pincode, setPincode: (e) => put({ pincode: evStr(e).replace(/[^0-9]/g, '') }),
         types: PROPERTY_TYPES.map((k) => ({ label: k, on: ep.type === k, go: () => put({ type: k }) })),
+        // ── The pin ──
+        // Opening the map leaves this sheet for a full screen (see PinPickScreen for
+        // why), and comes back to it with the coordinates filled in. The form is
+        // state, not a mounted component, so nothing typed here is lost meanwhile.
+        pinned: hasPin(ep.lat, ep.lon),
+        pinLine: hasPin(ep.lat, ep.lon)
+          ? `${roundCoord(ep.lat)}, ${roundCoord(ep.lon)}`
+          : 'Not pinned yet',
+        pinLabel: hasPin(ep.lat, ep.lon) ? 'Move the pin' : 'Pin on the map',
+        pinHint: 'So your tenants can get directions to the door.',
+        openPin: () => openPinFor('editproperty'),
+        clearPin: () => put({ lat: null, lon: null }),
         // The existing photo shows until a new one is picked, so it is obvious that
         // leaving it alone keeps it.
         photo: ep.photo ? ep.photo.uri : (place.img || null),
@@ -1208,6 +1261,18 @@ function deriveVm(s, api) {
         city: np.city, setCity: (e) => put({ city: evStr(e) }),
         pincode: np.pincode, setPincode: (e) => put({ pincode: evStr(e).replace(/[^0-9]/g, '') }),
         types: PROPERTY_TYPES.map((k) => ({ label: k, on: np.type === k, go: () => put({ type: k }) })),
+        // ── The pin ──
+        // Opening the map leaves this sheet for a full screen (see PinPickScreen for
+        // why), and comes back to it with the coordinates filled in. The form is
+        // state, not a mounted component, so nothing typed here is lost meanwhile.
+        pinned: hasPin(np.lat, np.lon),
+        pinLine: hasPin(np.lat, np.lon)
+          ? `${roundCoord(np.lat)}, ${roundCoord(np.lon)}`
+          : 'Not pinned yet',
+        pinLabel: hasPin(np.lat, np.lon) ? 'Move the pin' : 'Pin on the map',
+        pinHint: 'So your tenants can get directions to the door.',
+        openPin: () => openPinFor('newproperty'),
+        clearPin: () => put({ lat: null, lon: null }),
         photo: np.photo ? np.photo.uri : null,
         hasPhoto: !!np.photo,
         // Two ways in: the phone's camera for something in front of you, the
@@ -1514,6 +1579,90 @@ function deriveVm(s, api) {
     goSignup: () => setState({ signupRole: s.route === 'tlogin' ? 'tenant' : 'owner', route: 'signup', overlay: null }),
 
     // ── Join as a guest ───────────────────────────────────────────────────────
+    // ── Pinning a property on the map ──────────────────────────────────────────
+    // Opened from either property form. The map is a grid of OpenStreetMap tiles
+    // drawn as images (see maps.js) because a real map component is a native module
+    // and native modules cannot arrive over the air.
+    openPinFor,
+    isPinPick: s.route === 'pinpick',
+    pinPick: (() => {
+      const p = s.pin || {};
+      const put = (patch) => setState({ pin: { ...p, ...patch } });
+      const lat = Number(p.lat);
+      const lon = Number(p.lon);
+      const editing = p.back === 'editproperty';
+      return {
+        lat: Number.isFinite(lat) ? lat : DEFAULT_CENTER.lat,
+        lon: Number.isFinite(lon) ? lon : DEFAULT_CENTER.lon,
+        zoom: p.zoom || 16,
+        canZoomIn: (p.zoom || 16) < MAX_ZOOM,
+        canZoomOut: (p.zoom || 16) > MIN_ZOOM,
+        zoomIn: () => put({ zoom: Math.min(MAX_ZOOM, (p.zoom || 16) + 1) }),
+        zoomOut: () => put({ zoom: Math.max(MIN_ZOOM, (p.zoom || 16) - 1) }),
+
+        // While a finger is down. Cheap: state only, no network.
+        move: (c) => put({ lat: c.lat, lon: c.lon }),
+        // When it lifts. Worth one reverse-geocode to say what is under the pin.
+        settle: (c) => { put({ lat: c.lat, lon: c.lon, address: null }); api.describePin(c.lat, c.lon); },
+
+        q: p.q || '',
+        setQ: (v) => api.searchPlaces(v),
+        searching: !!p.searching,
+        results: (p.results || []).map((r) => ({
+          id: r.id,
+          title: r.title,
+          subtitle: r.subtitle,
+          go: () => {
+            // Jump the map there and keep the address, so "use this" can fill the
+            // form's address fields from a proper result rather than a guess.
+            setState({ pin: { ...s.pin, lat: r.lat, lon: r.lon, zoom: 17, results: [], q: r.title, address: r } });
+          }
+        })),
+        hasResults: !!(p.results || []).length,
+        error: p.error || '',
+        hasError: !!p.error,
+
+        // What is under the pin right now, in words.
+        addressLine: p.address ? [p.address.title, p.address.subtitle].filter(Boolean).join(' · ') : '',
+        hasAddress: !!p.address,
+        coordLine: `${roundCoord(lat)}, ${roundCoord(lon)}`,
+
+        title: editing ? 'Move the pin' : 'Pin the property',
+        line: 'Drag the map so the pin sits on the building. Search first if it is easier.',
+        confirmLabel: 'Use this location',
+
+        // Back to whichever form sent us, with the pin filled in. The form itself
+        // was never unmounted — it lives in state — so nothing typed is lost.
+        confirm: () => {
+          const key = editing ? 'ep' : 'np';
+          const form = editing ? (s.ep || BLANK_EDIT_PROPERTY) : (s.np || BLANK_PROPERTY);
+          const a = p.address || null;
+          setState({
+            route: editing ? 'property' : 'units',
+            overlay: p.back,
+            [key]: {
+              ...form,
+              lat: roundCoord(lat),
+              lon: roundCoord(lon),
+              // Only fill blank address fields. Overwriting what the landlord typed
+              // with a geocoder's opinion is how a correct address becomes wrong.
+              address: form.address || (a && a.street) || form.address,
+              locality: form.locality || (a && a.locality) || form.locality,
+              city: form.city || (a && a.city) || form.city,
+              pincode: form.pincode || (a && a.postcode) || form.pincode,
+              error: ''
+            },
+            pin: { ...p, back: null }
+          });
+        },
+        cancel: () => setState({
+          route: editing ? 'property' : 'units',
+          overlay: p.back,
+          pin: { ...p, back: null }
+        })
+      };
+    })(),
+
     // ── Join as a guest ────────────────────────────────────────────────────────
     // The sign-in screen used to offer "Join with an invite QR", which was a dead
     // end for the people it was aimed at: scanning needs no account, but ASKING to
@@ -1948,9 +2097,46 @@ function deriveVm(s, api) {
       invite: () => setState({ invite: place.id, overlay: 'invite' }),
       food: place.food, foodNote: place.foodNote,
       amenities: place.amenities.map(([icon, label]) => ({ icon, label })),
-      mapSrc: `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${place.lat},${place.lon}`,
-      mapsUrl: `https://www.google.com/maps/search/?api=1&query=${place.lat},${place.lon}`,
-      osmUrl: `https://www.openstreetmap.org/?mlat=${place.lat}&mlon=${place.lon}#map=17/${place.lat}/${place.lon}`,
+      // ── Where it is ────────────────────────────────────────────────────────
+      // The prototype pointed an <Image> at OpenStreetMap's EMBED page — an HTML
+      // page, not an image, so it rendered as a grey box; and both buttons under it
+      // were vm.noop. For a real property it was worse than a grey box, because
+      // `lat`/`lon` are null until the landlord pins it, so the URL contained the
+      // literal string "null".
+      //
+      // Now: a real map when there is a pin, an honest prompt when there is not, and
+      // DIRECTIONS rather than "open the map" — a route from where you are standing
+      // is what someone looking at this actually wants.
+      pinned: hasPin(place.lat, place.lon),
+      lat: Number(place.lat),
+      lon: Number(place.lon),
+      coordLine: hasPin(place.lat, place.lon)
+        ? `${roundCoord(place.lat)}, ${roundCoord(place.lon)}`
+        : '',
+      unpinnedLine: 'This property has no location pinned yet. Add one so your tenants can find their way here.',
+      pinCta: 'Pin the location',
+      pinIt: () => setState({
+        overlay: 'editproperty',
+        ep: {
+          ...BLANK_EDIT_PROPERTY,
+          id: place.id,
+          name: place.name || '',
+          type: place.propType || 'PG',
+          address: place.addressRaw || '',
+          locality: place.localityRaw || '',
+          city: place.cityRaw || '',
+          pincode: place.pincodeRaw || '',
+          lat: null,
+          lon: null
+        }
+      }),
+      directionsLabel: 'Directions',
+      directions: () => {
+        if (!hasPin(place.lat, place.lon)) { flash('Pin this property first'); return; }
+        openDirections(place.lat, place.lon, place.name).then((went) => {
+          if (!went) flash('No maps app could open on this phone');
+        });
+      },
       // The prototype read `u.vacant` off raw UNITS rows, where that field does not
       // exist — so every room here claimed to be OCCUPIED regardless. Occupancy is
       // counted from who actually lives in it, and a room whose tenant owes rent
@@ -4476,6 +4662,47 @@ export function AppProvider({ children }) {
     }
   }, [setState, flash, loadTenantData]);
 
+  // ── Pinning a property ──────────────────────────────────────────────────────
+  // Searching is debounced in the screen, not here: this fires the request it was
+  // given. `seq` guards against an old, slower reply landing after a newer one and
+  // replacing good results with stale ones — the same race the property lookup has.
+  const pinSeq = useRef(0);
+
+  const searchPlaces = useCallback(async (q) => {
+    const mine = ++pinSeq.current;
+    const text = String(q || '').trim();
+    if (text.length < 3) {
+      setState({ pin: { ...stateRef.current.pin, q, results: [], searching: false, error: '' } });
+      return;
+    }
+    setState({ pin: { ...stateRef.current.pin, q, searching: true, error: '' } });
+    try {
+      const p = stateRef.current.pin;
+      const near = hasPin(p.lat, p.lon) ? { lat: Number(p.lat), lon: Number(p.lon) } : DEFAULT_CENTER;
+      const results = await apiPlaces.search(text, near);
+      if (mine !== pinSeq.current) return;
+      setState({ pin: { ...stateRef.current.pin, results, searching: false, error: results.length ? '' : 'Nothing found. Try a landmark, or drag the map instead.' } });
+    } catch (e) {
+      if (mine !== pinSeq.current) return;
+      setState({ pin: { ...stateRef.current.pin, searching: false, results: [], error: 'Could not search just now. You can still drag the map.' } });
+    }
+  }, [setState]);
+
+  // What the pin is currently over, in words. Best-effort: a failed lookup leaves
+  // the pin exactly where it is, because the coordinate is the thing being chosen
+  // and the address is only a confirmation of it.
+  const describePin = useCallback(async (lat, lon) => {
+    const mine = ++pinSeq.current;
+    try {
+      const place = await apiPlaces.reverse(lat, lon);
+      if (mine !== pinSeq.current) return;
+      setState({ pin: { ...stateRef.current.pin, address: place } });
+    } catch (e) {
+      if (mine !== pinSeq.current) return;
+      setState({ pin: { ...stateRef.current.pin, address: null } });
+    }
+  }, [setState]);
+
   // ── Device permissions ─────────────────────────────────────────────────────
   // Asked from the primer screen, one at a time, each right next to the sentence
   // that says what it is for — which is both what Android and iOS ask for and
@@ -4564,7 +4791,12 @@ export function AppProvider({ children }) {
     put(form, 'locality', np.locality.trim());
     put(form, 'city', np.city.trim());
     put(form, 'pincode', np.pincode.trim());
-    if (np.photo) form.append('property_image', filePart(np.photo, 'property.jpg'));
+    // The pin, if one was placed. Sent as two plain fields; the server refuses
+    // anything out of range and treats an empty string as "not pinned".
+    if (hasPin(np.lat, np.lon)) {
+      form.append('latitude', String(np.lat));
+      form.append('longitude', String(np.lon));
+    }
     setState({ np: { ...np, busy: true, error: '' } });
     const ok = await ownerWrite(() => apiProps.add(form), {
       done: `${np.name.trim()} added`, failed: 'Could not add that property.'
@@ -4586,6 +4818,13 @@ export function AppProvider({ children }) {
     put(form, 'locality', ep.locality.trim());
     put(form, 'city', ep.city.trim());
     put(form, 'pincode', ep.pincode.trim());
+    // Only sent when the map was actually opened during this edit. The update
+    // endpoint leaves latitude/longitude alone when the fields are absent, which is
+    // what stops correcting a property's NAME from wiping its pin.
+    if (hasPin(ep.lat, ep.lon)) {
+      form.append('latitude', String(ep.lat));
+      form.append('longitude', String(ep.lon));
+    }
     // Only sent when a NEW one was picked: the endpoint leaves image_url alone
     // otherwise, so not sending it is what keeps the existing photo.
     if (ep.photo) form.append('property_image', filePart(ep.photo, 'property.jpg'));
@@ -4909,7 +5148,8 @@ export function AppProvider({ children }) {
       decideJoin, requestToJoin, holdJoinCode, askPermission, finishPermits,
       loadDocs, decideDoc, loadMyDocs, pickDocPhoto, addMyDoc, removeMyDoc,
       lookupProperty, resetDemo, openUpiPayment, declareMyPayment,
-      pickGuestPhoto, guestCheckCode, submitGuestJoin, submitGuestSignIn, submitClaim
+      pickGuestPhoto, guestCheckCode, submitGuestJoin, submitGuestSignIn, submitClaim,
+      searchPlaces, describePin
     }),
     [
       setState, set, go, flash, signIn, register, signOut, resolveSession,
@@ -4920,7 +5160,8 @@ export function AppProvider({ children }) {
       decideJoin, requestToJoin, holdJoinCode, askPermission, finishPermits,
       loadDocs, decideDoc, loadMyDocs, pickDocPhoto, addMyDoc, removeMyDoc,
       lookupProperty, resetDemo, openUpiPayment, declareMyPayment,
-      pickGuestPhoto, guestCheckCode, submitGuestJoin, submitGuestSignIn, submitClaim
+      pickGuestPhoto, guestCheckCode, submitGuestJoin, submitGuestSignIn, submitClaim,
+      searchPlaces, describePin
     ]
   );
 

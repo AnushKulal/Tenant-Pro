@@ -30,6 +30,18 @@ CREATE TABLE IF NOT EXISTS `properties` (
   `locality` varchar(100) DEFAULT NULL,
   `city` varchar(100) DEFAULT 'Bengaluru',
   `pincode` varchar(10) DEFAULT NULL,
+  -- Where the property actually IS, as a pin the landlord placed on a map.
+  --
+  -- Nullable, and stays null for every property added before this existed and for
+  -- any the landlord has not pinned: an address alone does not give coordinates,
+  -- and guessing them would send a tenant to the wrong street with confidence.
+  -- Everything that reads these must therefore handle "not pinned yet".
+  --
+  -- decimal(10,7) rather than a float: 7 decimal places is about 11mm, floats lose
+  -- precision at the 6th, and a coordinate that drifts when you read it back is a
+  -- building that moves.
+  `latitude` decimal(10,7) DEFAULT NULL,
+  `longitude` decimal(10,7) DEFAULT NULL,
   `upi_id` varchar(50) DEFAULT NULL,
   `image_url` varchar(255) DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),

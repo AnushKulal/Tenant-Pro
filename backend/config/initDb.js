@@ -227,6 +227,13 @@ const initDb = async () => {
         // one would be an authentication bug, not a display glitch.
         await ensureUniqueIndex(conn, 'tenant_users', 'guest_code', '(`guest_code`)');
 
+        // Where a property is, as a pin. Null for everything that predates this and
+        // for anything the landlord has not pinned yet -- an address is not a
+        // coordinate, so there is nothing to backfill and guessing would be worse
+        // than an honest blank.
+        await ensureColumn(conn, 'properties', 'latitude', 'decimal(10,7) DEFAULT NULL');
+        await ensureColumn(conn, 'properties', 'longitude', 'decimal(10,7) DEFAULT NULL');
+
         console.log('✅ Database schema is up to date.');
     } finally {
         await conn.end();

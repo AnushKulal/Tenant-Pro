@@ -61,7 +61,12 @@ export function mapProperty(p) {
         rating: '', reviews: '',
         food: '', foodNote: '',
         amenities: [],
-        lat: null, lon: null
+        // Where the landlord pinned it. Null until they do — every property added
+        // before the map existed has no pin, and an address is not a coordinate, so
+        // there is nothing to fall back to. The UI shows "not pinned" rather than a
+        // map of somewhere else.
+        lat: p.latitude != null ? Number(p.latitude) : null,
+        lon: p.longitude != null ? Number(p.longitude) : null
     };
 }
 

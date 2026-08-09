@@ -1365,6 +1365,20 @@ export default function Sheets() {
                         <Field label="CITY" icon="business-outline" value={vm.editProperty.city} onChangeText={vm.editProperty.setCity} placeholder="Bengaluru" autoCapitalize="words" editable={!vm.editProperty.busy} style={{ marginBottom: 10 }} />
                         <Field label="PINCODE" icon="mail-outline" value={vm.editProperty.pincode} onChangeText={vm.editProperty.setPincode} placeholder="560034" keyboardType="number-pad" maxLength={6} editable={!vm.editProperty.busy} style={{ marginBottom: 12 }} />
 
+                        {/* Where it is, on a map. A dashed row until it is pinned,
+                            because an unpinned property is an empty state — a tenant
+                            has no way to get here — not a disabled control. */}
+                        <Press onPress={vm.editProperty.openPin} style={{ marginBottom: 12 }}>
+                            <Row gap={11} style={{ paddingVertical: 13, paddingHorizontal: 14, borderRadius: 16, backgroundColor: vm.editProperty.pinned ? t.ink3 : t.ink2, borderWidth: 1, borderStyle: vm.editProperty.pinned ? 'solid' : 'dashed', borderColor: vm.editProperty.pinned ? t.line : t.line2 }}>
+                                <Glyph name={vm.editProperty.pinned ? 'location' : 'map-outline'} size={16} color={vm.editProperty.pinned ? t.accent : t.fg3} />
+                                <View style={{ flex: 1, minWidth: 0 }}>
+                                    <T w={600} s={13} lh={1.2} c={t.fg}>{vm.editProperty.pinLabel}</T>
+                                    <T mono w={600} s={9} lh={1.5} ls={0.06} c={t.fg3} numberOfLines={1} style={{ marginTop: 3 }}>{vm.editProperty.pinned ? vm.editProperty.pinLine : vm.editProperty.pinHint}</T>
+                                </View>
+                                <Glyph name="chevron-forward" size={15} color={t.fg3} />
+                            </Row>
+                        </Press>
+
                         {/* The current photo shows until a new one is picked, so it is
                             obvious that leaving it alone keeps it. */}
                         {vm.editProperty.hasPhoto ? (
@@ -1483,6 +1497,20 @@ export default function Sheets() {
                         <Field label="LOCALITY" icon="map-outline" value={vm.newProperty.locality} onChangeText={vm.newProperty.setLocality} placeholder="Koramangala" autoCapitalize="words" editable={!vm.newProperty.busy} style={{ marginBottom: 10 }} />
                         <Field label="CITY" icon="business-outline" value={vm.newProperty.city} onChangeText={vm.newProperty.setCity} placeholder="Bengaluru" autoCapitalize="words" editable={!vm.newProperty.busy} style={{ marginBottom: 10 }} />
                         <Field label="PINCODE" icon="mail-outline" value={vm.newProperty.pincode} onChangeText={vm.newProperty.setPincode} placeholder="560034" keyboardType="number-pad" maxLength={6} editable={!vm.newProperty.busy} style={{ marginBottom: 12 }} />
+
+                        {/* Where it is, on a map. A dashed row until it is pinned,
+                            because an unpinned property is an empty state — a tenant
+                            has no way to get here — not a disabled control. */}
+                        <Press onPress={vm.newProperty.openPin} style={{ marginBottom: 12 }}>
+                            <Row gap={11} style={{ paddingVertical: 13, paddingHorizontal: 14, borderRadius: 16, backgroundColor: vm.newProperty.pinned ? t.ink3 : t.ink2, borderWidth: 1, borderStyle: vm.newProperty.pinned ? 'solid' : 'dashed', borderColor: vm.newProperty.pinned ? t.line : t.line2 }}>
+                                <Glyph name={vm.newProperty.pinned ? 'location' : 'map-outline'} size={16} color={vm.newProperty.pinned ? t.accent : t.fg3} />
+                                <View style={{ flex: 1, minWidth: 0 }}>
+                                    <T w={600} s={13} lh={1.2} c={t.fg}>{vm.newProperty.pinLabel}</T>
+                                    <T mono w={600} s={9} lh={1.5} ls={0.06} c={t.fg3} numberOfLines={1} style={{ marginTop: 3 }}>{vm.newProperty.pinned ? vm.newProperty.pinLine : vm.newProperty.pinHint}</T>
+                                </View>
+                                <Glyph name="chevron-forward" size={15} color={t.fg3} />
+                            </Row>
+                        </Press>
 
                         <PhotoPick form={vm.newProperty} t={t} label="Add a photo of the building" />
                         <FormActions form={vm.newProperty} onCancel={vm.closeOverlay} label="Add property" t={t} />

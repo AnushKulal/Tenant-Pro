@@ -36,6 +36,7 @@ import UnitsScreen from './screens/UnitsScreen';
 import PeopleScreen from './screens/PeopleScreen';
 import TenantDetailScreen from './screens/TenantDetailScreen';
 import PropertyScreen from './screens/PropertyScreen';
+import PinPickScreen from './screens/PinPickScreen';
 import MyProfileScreen from './screens/MyProfileScreen';
 import LedgerScreen from './screens/LedgerScreen';
 import SettingsScreen from './screens/SettingsScreen';
@@ -68,6 +69,7 @@ const SCREENS = {
     people: PeopleScreen,
     tenant: TenantDetailScreen,
     property: PropertyScreen,
+    pinpick: PinPickScreen,
     profile: MyProfileScreen,
     ledger: LedgerScreen,
     settings: SettingsScreen,
