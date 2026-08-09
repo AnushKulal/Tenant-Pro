@@ -15,7 +15,7 @@ import { View, ActivityIndicator, Dimensions } from 'react-native';
 import { useVm } from '../AppContext';
 import { useT } from '../ThemeContext';
 import { T, Eyebrow, Row, Press, Glyph, SearchBar } from '../ui';
-import { TileMap, ATTRIBUTION } from '../maps';
+import { TileMap, ATTRIBUTION, usingDevTiles } from '../maps';
 
 export default function PinPickScreen() {
     const vm = useVm();
@@ -104,6 +104,19 @@ export default function PinPickScreen() {
                     <ZoomButton t={t} icon="add" onPress={p.zoomIn} disabled={!p.canZoomIn} />
                     <ZoomButton t={t} icon="remove" onPress={p.zoomOut} disabled={!p.canZoomOut} />
                 </View>
+
+                {/* Said on screen rather than only in a comment, because "we are
+                    still on the development tile server" is the kind of thing that
+                    ships. It costs a developer one glance and a real user never sees
+                    it, since configuring a provider removes it. */}
+                {usingDevTiles() ? (
+                    <View style={{ position: 'absolute', left: 12, right: 12, top: 12, paddingVertical: 8, paddingHorizontal: 11, borderRadius: 12, backgroundColor: 'rgba(4,4,6,0.78)', flexDirection: 'row', alignItems: 'flex-start', columnGap: 8 }}>
+                        <Glyph name="warning-outline" size={13} color={t.amber} />
+                        <T w={500} s={10.5} lh={1.4} c="#FFFFFF" style={{ flex: 1, opacity: 0.9 }}>
+                            Development tiles. Set EXPO_PUBLIC_MAP_TILE_URL before release — see mobile/.env.example.
+                        </T>
+                    </View>
+                ) : null}
 
                 {/* Attribution is a licence condition of using OpenStreetMap data,
                     not decoration. */}

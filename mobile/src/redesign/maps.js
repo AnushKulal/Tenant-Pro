@@ -26,6 +26,7 @@
 // left to look like a decision.
 import React from 'react';
 import { View, Image, PanResponder, Platform, Linking } from 'react-native';
+import { useT } from './ThemeContext';
 
 export const TILE_SIZE = 256;
 export const MIN_ZOOM = 3;
@@ -37,19 +38,37 @@ export const DEFAULT_CENTER = { lat: 12.9716, lon: 77.5946 };
 
 const OSM_DEV_TILES = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 
-// `{z}/{x}/{y}` in, a URL out. Anything with that shape works, so switching
-// providers is one environment variable.
-export const tileTemplate = () => process.env.EXPO_PUBLIC_MAP_TILE_URL || OSM_DEV_TILES;
-export const usingDevTiles = () => tileTemplate() === OSM_DEV_TILES;
+// Two templates, because this app has a light and a dark theme and a bright white
+// map dropped into the dark theme looks like a bug. Set the dark one and the map
+// follows the theme; leave it unset and both themes get the light map, which is
+// merely plain rather than broken.
+//
+// `{z}/{x}/{y}` in, a URL out. Any provider with that shape works, so switching is
+// one environment variable — see mobile/.env.example for the exact strings.
+export const tileTemplate = (dark) => {
+    const light = process.env.EXPO_PUBLIC_MAP_TILE_URL || '';
+    const night = process.env.EXPO_PUBLIC_MAP_TILE_URL_DARK || '';
+    if (dark && night) return night;
+    return light || OSM_DEV_TILES;
+};
 
-export const tileUrl = (z, x, y) => tileTemplate()
+// True when no provider has been configured and we are falling back to the OSM
+// Foundation's own servers. That fallback is for DEVELOPMENT: their tile usage
+// policy does not permit distributed apps to pull from them. Surfaced as a function
+// rather than a comment so the app can say so out loud where a developer will see
+// it, instead of it being discovered when the tiles start returning 418.
+export const usingDevTiles = () => !process.env.EXPO_PUBLIC_MAP_TILE_URL;
+
+export const tileUrl = (z, x, y, dark) => tileTemplate(dark)
     .replace('{z}', String(z))
     .replace('{x}', String(x))
     .replace('{y}', String(y));
 
 // Whoever serves the tiles, the data is OpenStreetMap's and saying so is a licence
-// condition, not decoration.
-export const ATTRIBUTION = '© OpenStreetMap contributors';
+// condition, not decoration. Most providers additionally require their own name —
+// set EXPO_PUBLIC_MAP_ATTRIBUTION to whatever yours asks for and it replaces this.
+export const ATTRIBUTION = process.env.EXPO_PUBLIC_MAP_ATTRIBUTION
+    || '© OpenStreetMap contributors';
 
 // ── Web Mercator ───────────────────────────────────────────────────────────────
 // The projection every slippy map uses. lat/lon → fractional tile coordinates at a
@@ -140,6 +159,11 @@ export function TileMap({
     style,
     children
 }) {
+    // Tiles follow the app's theme, so the dark theme gets a dark map instead of a
+    // white rectangle glowing in the middle of it.
+    const t = useT();
+    const dark = !!(t && t.isDark);
+
     // The drag offset in pixels, kept in a ref so a finger moving does not re-render
     // on every frame — the tiles are recomputed from it only when state changes.
     const drag = React.useRef({ x: 0, y: 0 });
@@ -213,8 +237,8 @@ export function TileMap({
             if (ty < 0 || ty >= n) continue;
             const wrappedX = ((tx % n) + n) % n;
             tiles.push({
-                key: `${z}/${wrappedX}/${ty}`,
-                uri: tileUrl(z, wrappedX, ty),
+                key: `${dark ? 'd' : 'l'}/${z}/${wrappedX}/${ty}`,
+                uri: tileUrl(z, wrappedX, ty, dark),
                 left: tx * TILE_SIZE - originX,
                 top: ty * TILE_SIZE - originY
             });
