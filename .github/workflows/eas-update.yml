@@ -70,7 +70,11 @@ jobs:
           # Unset is survivable, not fatal: the app falls back to OpenStreetMap's own
           # servers, which work but are not licensed for a distributed app. Add the
           # secrets and the next update picks them up.
-          EXPO_PUBLIC_MAP_PROVIDER: ${{ secrets.EXPO_PUBLIC_MAP_PROVIDER }}
+          # Defaults to maptiler so there is only ONE thing to paste: the key.
+          # The provider NAME is not a secret — it is the word "maptiler" — and
+          # asking for it in a box labelled "Secret" invites pasting the key there
+          # instead. Set the secret only to switch to another provider.
+          EXPO_PUBLIC_MAP_PROVIDER: ${{ secrets.EXPO_PUBLIC_MAP_PROVIDER || 'maptiler' }}
           EXPO_PUBLIC_MAP_KEY: ${{ secrets.EXPO_PUBLIC_MAP_KEY }}
           EXPO_PUBLIC_MAP_TILE_URL: ${{ secrets.EXPO_PUBLIC_MAP_TILE_URL }}
           EXPO_PUBLIC_MAP_TILE_URL_DARK: ${{ secrets.EXPO_PUBLIC_MAP_TILE_URL_DARK }}
