@@ -21,6 +21,14 @@ app.use(helmet());
 // Set CORS_ORIGIN to a comma-separated allowlist to restrict browser access.
 const corsOrigin = process.env.CORS_ORIGIN;
 app.use(cors(corsOrigin ? { origin: corsOrigin.split(',').map((s) => s.trim()) } : {}));
+// Webhooks are signed over the EXACT bytes sent. express.json() re-serialises, and
+// JSON.stringify of a parsed body reorders keys and drops whitespace, so a signature
+// checked against it would never match. This parser keeps the raw buffer, and it is
+// mounted BEFORE the global one because whichever runs first consumes the stream.
+app.use('/api/webhooks', express.json({
+    verify: (req, res, buf) => { req.rawBody = buf; },
+    limit: '256kb'
+}));
 app.use(express.json());
 
 // --- Rate limiting ---
@@ -57,6 +65,7 @@ const unitRoutes = require('./routes/unitRoutes');
 const tenantRoutes = require('./routes/tenantRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
 const tenantPortalRoutes = require('./routes/tenantPortalRoutes');
+const webhookRoutes = require('./routes/webhookRoutes');
 const { protect, requireOwner } = require('./middleware/authMiddleware');
 const { initCronJobs, checkAndSendRentReminders } = require('./services/cronService');
 const initDb = require('./config/initDb');
@@ -84,6 +93,11 @@ app.use('/api/payments', ownerApi, paymentRoutes);
 // The tenant-facing API scopes every query through tenant_users -> tenants and
 // asserts role === 'tenant' in the handlers, so it needs no equivalent here.
 app.use('/api/tenant-portal', tenantPortalRoutes);
+
+// Machine callers, no user token. Mounted outside every auth guard on purpose: a
+// payment provider has no account here. Its signature IS the authentication, which is
+// why webhookController refuses anything it cannot verify.
+app.use('/api/webhooks', webhookRoutes);
 
 // --- Basic Health Check ---
 app.get('/', (req, res) => {

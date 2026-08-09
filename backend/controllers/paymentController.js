@@ -184,55 +184,62 @@ const getDeclaredPayments = async (req, res) => {
 // total AND it advances the due date, which is what clears the month. Rejecting
 // keeps the row as a record of the claim, so the tenant can see it was refused and
 // why, rather than watching it silently vanish.
-const decidePayment = async (req, res) => {
-    if (isTenantToken(req)) {
-        return res.status(403).json({ message: 'Only your landlord can confirm a payment.' });
-    }
-    // Validated before a pooled connection is taken out, so a malformed request
-    // never holds one of the ten.
-    const decision = String(req.body?.decision || '').trim().toLowerCase();
-    const status = { confirm: 'Confirmed', reject: 'Rejected' }[decision];
-    if (!status) {
-        return res.status(400).json({ message: "Decision must be 'confirm' or 'reject'." });
-    }
-    const note = String(req.body?.note || '').trim().slice(0, 300) || null;
-
+// The one place a payment's fate is written.
+//
+// Two callers reach this: a landlord tapping Confirm, and (later) a gateway webhook
+// saying the money arrived. They MUST do the same thing — flip the status and, on
+// confirmation, advance next_rent_due — because that date is what clears the month.
+// Two copies of this would eventually give two different answers to "why is my due
+// date wrong", so there is one.
+//
+// `scope` decides who is allowed to touch the row. A landlord may only decide their
+// own tenants' payments, so it passes { ownerId }. A webhook has no landlord — it is
+// vouching for a specific payment — so it passes nothing and the caller has already
+// established which row it means.
+//
+// Returns a plain result rather than writing to `res`, so the HTTP shape belongs to
+// the caller and this stays testable on its own.
+const settlePayment = async ({ paymentId, status, note = null, source, gatewayRef = null, ownerId = null }) => {
     const conn = await db.getConnection();
     try {
-        // Confirming does two writes that must not come apart: if the due date moved
-        // but the status did not, the landlord sees the claim again and confirming it
-        // a second time would advance the date by another month.
+        // Both writes or neither: if the due date moved but the status did not, the
+        // landlord sees the claim again and confirming twice advances the date twice.
         await conn.beginTransaction();
 
-        // FOR UPDATE so two taps on the confirm button cannot both pass the
-        // still-Declared check and each advance the due date.
+        // FOR UPDATE so two taps, or a tap racing a webhook, cannot both pass the
+        // still-Declared check.
         const [rows] = await conn.query(
             `SELECT pay.id, pay.status, pay.amount_paid, pay.payment_date, pay.tenant_id,
                     t.next_rent_due, t.move_in_date, t.name AS tenant_name
              FROM payments pay
              JOIN tenants t ON pay.tenant_id = t.id
-             WHERE pay.id = ? AND t.owner_id = ?
+             WHERE pay.id = ? ${ownerId != null ? 'AND t.owner_id = ?' : ''}
              FOR UPDATE`,
-            [req.params.id, req.user.id]
+            ownerId != null ? [paymentId, ownerId] : [paymentId]
         );
         if (!rows.length) {
             await conn.rollback();
-            return res.status(404).json({ message: 'Payment not found.' });
+            return { ok: false, code: 404, message: 'Payment not found.' };
         }
 
         const pay = rows[0];
         if (pay.status !== 'Declared') {
             await conn.rollback();
-            return res.status(409).json({
+            return {
+                ok: false,
+                code: 409,
                 message: pay.status === 'Confirmed'
                     ? 'That payment was already confirmed.'
                     : 'That payment was already rejected.'
-            });
+            };
         }
 
         await conn.query(
-            'UPDATE payments SET status = ?, decided_at = NOW(), decision_note = ? WHERE id = ?',
-            [status, note, pay.id]
+            `UPDATE payments
+                SET status = ?, decided_at = NOW(), decision_note = ?,
+                    confirmation_source = ?, gateway_ref = COALESCE(?, gateway_ref)
+              WHERE id = ?`,
+            [status, note, source, gatewayRef, pay.id]
         );
 
         let nextRentDue = pay.next_rent_due;
@@ -242,23 +249,63 @@ const decidePayment = async (req, res) => {
         }
 
         await conn.commit();
-        res.status(200).json({
-            message: status === 'Confirmed'
-                ? `₹${Number(pay.amount_paid).toLocaleString('en-IN')} from ${pay.tenant_name} confirmed.`
-                : `Payment from ${pay.tenant_name} rejected.`,
+        return {
+            ok: true,
             status,
-            next_rent_due: nextRentDue
-        });
+            source,
+            next_rent_due: nextRentDue,
+            tenant_id: pay.tenant_id,
+            tenant_name: pay.tenant_name,
+            amount: Number(pay.amount_paid)
+        };
     } catch (error) {
         await conn.rollback().catch(() => {});
-        console.error("Error deciding payment:", error);
-        res.status(500).json({ message: "Server error while confirming the payment." });
+        throw error;
     } finally {
         conn.release();
     }
 };
 
+// --- THE LANDLORD'S VERDICT ON A CLAIMED PAYMENT ---
+// PUT /api/payments/declared/:id   { decision: 'confirm' | 'reject', note }
+const decidePayment = async (req, res) => {
+    if (isTenantToken(req)) {
+        return res.status(403).json({ message: 'Only your landlord can confirm a payment.' });
+    }
+    // Validated before a pooled connection is taken out, so a malformed request never
+    // holds one of the ten.
+    const decision = String(req.body?.decision || '').trim().toLowerCase();
+    const status = { confirm: 'Confirmed', reject: 'Rejected' }[decision];
+    if (!status) {
+        return res.status(400).json({ message: "Decision must be 'confirm' or 'reject'." });
+    }
+    const note = String(req.body?.note || '').trim().slice(0, 300) || null;
+
+    try {
+        const r = await settlePayment({
+            paymentId: req.params.id,
+            status,
+            note,
+            source: 'landlord',
+            ownerId: req.user.id
+        });
+        if (!r.ok) return res.status(r.code).json({ message: r.message });
+
+        res.status(200).json({
+            message: status === 'Confirmed'
+                ? `₹${r.amount.toLocaleString('en-IN')} from ${r.tenant_name} confirmed.`
+                : `Payment from ${r.tenant_name} rejected.`,
+            status,
+            next_rent_due: r.next_rent_due
+        });
+    } catch (error) {
+        console.error("Error deciding payment:", error);
+        res.status(500).json({ message: "Server error while confirming the payment." });
+    }
+};
+
 module.exports = {
+    settlePayment,
     getPaymentSettings,
     savePaymentSettings,
     recordPayment,
