@@ -43,6 +43,23 @@ const evStr = (e) => (e && e.target && typeof e.target.value === 'string' ? e.ta
 
 // "1 Feb 2026" — how the design writes a date in prose.
 const MON_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+// Pull the property code out of whatever was scanned, typed or pasted: a bare code,
+// a full join link, or a link with a query string on the end.
+//
+// Drop any query string or fragment FIRST, then take the last path segment:
+// splitting on all three at once made "?ref=x" the last piece and read it as the
+// code.
+//
+// At MODULE scope because both halves of this file need it — deriveVm for the
+// scanner and the search box, and AppProvider for the guest join. It used to live
+// inside deriveVm, which is the same trap `copyToClipboard` fell into below: a
+// reference from AppProvider looks fine and throws the moment it runs.
+const codeOf = (v) => {
+  const text = String(v || '').trim().split('#')[0].split('?')[0];
+  const tail = text.split('/').filter(Boolean).pop() || text;
+  return tail.toUpperCase().replace(/[^A-Z0-9-]/g, '');
+};
+
 // Put text on the clipboard, reporting whether it worked. Uses RN core's Clipboard
 // — deprecated in favour of expo-clipboard, but that is a native module and adding
 // one cannot reach an already-installed build over the air, whereas this is already
@@ -141,6 +158,34 @@ const BLANK_PAY = {
     otherRef: '',
     busy: false,
     error: ''
+};
+
+// Which government IDs a guest may offer. The keys must match the server's
+// DOC_TYPES exactly — it refuses anything else — and the order is the order Indian
+// tenants actually reach for one.
+const GUEST_DOC_TYPES = [
+  { key: 'aadhaar', label: 'Aadhaar' },
+  { key: 'pan', label: 'PAN' },
+  { key: 'dl', label: 'Licence' },
+  { key: 'voter', label: 'Voter ID' },
+  { key: 'passport', label: 'Passport' }
+];
+
+// The guest join form's empty state. Declared BEFORE INITIAL_STATE, which spreads
+// it, and before submitGuestJoin, which resets to it -- a const referenced by
+// INITIAL_STATE but declared after it is a temporal-dead-zone crash at import, and
+// this file has produced that one four times now.
+const BLANK_GUEST_FORM = {
+  // Which half of the form is on screen. 'code' asks which property; 'you' asks for
+  // the phone number and the government ID.
+  step: 'code',
+  place: null,      // what the code resolved to, once it has
+  phone: '',
+  docType: 'aadhaar',
+  docNumber: '',
+  photo: null,      // { uri, name, type } from the camera or the library
+  busy: false,
+  error: ''
 };
 
 const INITIAL_STATE = {
@@ -247,6 +292,17 @@ const INITIAL_STATE = {
   pay: { ...BLANK_PAY },
   // The tenant's own receipts screen.
   receipts: { loading: false, error: '' },
+  // ── Joining as a guest ──────────────────────────────────────────────────────
+  // The whole guest form, in one place. `step` is which half is on screen: 'code'
+  // asks which property, 'you' asks for the phone number and the government ID.
+  // Two steps rather than one long form because the first is often answered by
+  // pointing a camera at a QR, and mixing that with typing is what made the old
+  // screen feel like a wall.
+  gform: { ...BLANK_GUEST_FORM },
+  // Signing back in with a guest ID, for a guest on a new phone.
+  gsignin: { code: '', phone: '', busy: false, error: '' },
+  // The form that turns a guest into a full account.
+  claim: { name: '', email: '', password: '', busy: false, error: '' },
   // The demo account's own status: null for every real landlord, so the reset control
   // in Settings is hidden by default and only appears once the server has said this
   // IS the demo. Never assumed from an email typed at the login screen.
@@ -553,11 +609,7 @@ function deriveVm(s, api) {
   // Drop any query string or fragment FIRST, then take the last path segment:
   // splitting on all three at once made "?ref=x" the last piece and read it as the
   // code. Shared by the scanner and the search box — two copies would drift.
-  const codeOf = (v) => {
-    const text = String(v || '').trim().split('#')[0].split('?')[0];
-    const tail = text.split('/').filter(Boolean).pop() || text;
-    return tail.toUpperCase().replace(/[^A-Z0-9-]/g, '');
-  };
+  // (Implementation hoisted to module scope — see codeOf above.)
 
   // Does the typed identifier match the EMAIL/MOBILE switch? '' when it does.
   //
@@ -1462,30 +1514,112 @@ function deriveVm(s, api) {
     goSignup: () => setState({ signupRole: s.route === 'tlogin' ? 'tenant' : 'owner', route: 'signup', overlay: null }),
 
     // ── Join as a guest ───────────────────────────────────────────────────────
+    // ── Join as a guest ────────────────────────────────────────────────────────
     // The sign-in screen used to offer "Join with an invite QR", which was a dead
     // end for the people it was aimed at: scanning needs no account, but ASKING to
-    // join does, so a new arrival scanned a code and got told to sign in — with the
-    // code thrown away. One entry point now, which offers the two ways of carrying a
-    // code in, and holds it through registration so the request goes out by itself.
-    goGuest: () => setState({ route: 'guest', guestCode: '', authError: '' }),
+    // join does, so a new arrival scanned a code and got told to sign in. Replacing
+    // it with "Join as a guest" only moved the dead end — the button still routed to
+    // the registration form and replayed the code afterwards, so a guest still had
+    // to invent a name, an email and a password.
+    //
+    // Now it is what it says. Two steps: which property, then a phone number and a
+    // photo of a government ID. That is everything a landlord needs to decide, and
+    // nothing else is asked for.
+    goGuest: () => setState({ route: 'guest', guestCode: '', authError: '', gform: { ...BLANK_GUEST_FORM } }),
     isGuest: s.route === 'guest',
     guest: (() => {
+      const g = s.gform || BLANK_GUEST_FORM;
       const typed = codeOf(s.guestCode);
+      const put = (patch) => setState({ gform: { ...g, ...patch, error: '' } });
+      const phoneDigits = String(g.phone || '').replace(/[^0-9]/g, '');
+      const place = g.place;
       return {
+        onCode: g.step === 'code',
+        onYou: g.step === 'you',
+        busy: !!g.busy,
+        error: g.error || '',
+        hasError: !!g.error,
+
+        // ── Step 1: which property ──
         code: s.guestCode,
-        setCode: (e) => set('guestCode', evStr(e).toUpperCase()),
-        canSubmit: !!typed,
+        setCode: (e) => setState({ guestCode: evStr(e).toUpperCase(), gform: { ...g, error: '' } }),
+        canSubmit: !!typed && !g.busy,
         // Scanning and typing land in exactly the same place, so neither is a
         // second-class fallback — which matters on a build where the camera is not
         // available at all.
         scan: () => setState({ route: 'scan', scanCode: '', overlay: null }),
-        submitCode: () => { if (typed) api.holdJoinCode(typed); },
-        line: 'Scan the QR your landlord shared, or type the property code they gave you. You will need an account to send the request — we will keep the code while you make one.',
-        // Shown once a code is carried in from a scan.
+        submitCode: () => { if (typed) api.guestCheckCode(); },
+        line: 'Scan the QR your landlord shared, or type the property code they gave you. No account needed — a number and an ID is enough.',
         held: s.pendingJoin,
-        hasHeld: !!s.pendingJoin
+        hasHeld: !!s.pendingJoin,
+
+        // ── Step 2: who to let in ──
+        back: () => setState({ gform: { ...g, step: 'code', error: '' } }),
+        // Named when the lookup resolved, and honestly vague when it did not: the
+        // lookup is tenant-only on the server, so a signed-out guest often cannot
+        // see the name until the landlord has accepted them.
+        placeName: (place && place.name) || '',
+        placeLine: place
+          ? [place.locality, place.city].filter(Boolean).join(', ')
+          : `Code ${typed}`,
+        hasPlace: !!place,
+        youTitle: place ? `Joining ${place.name}` : 'Almost there',
+        youLine: 'Your landlord needs a number to reach you on and one government ID to check. That is all — you can add the rest later.',
+
+        phone: g.phone,
+        setPhone: (e) => put({ phone: evStr(e).replace(/[^0-9+ ]/g, '') }),
+        phoneOk: phoneDigits.length >= 10,
+
+        docTypes: GUEST_DOC_TYPES.map((d) => ({
+          key: d.key,
+          label: d.label,
+          on: g.docType === d.key,
+          go: () => put({ docType: d.key })
+        })),
+        docNumber: g.docNumber,
+        setDocNumber: (e) => put({ docNumber: evStr(e).toUpperCase() }),
+        docNumberLabel: `${(GUEST_DOC_TYPES.find((d) => d.key === g.docType) || {}).label || 'ID'} NUMBER (OPTIONAL)`,
+
+        photoUri: g.photo ? g.photo.uri : null,
+        hasPhoto: !!g.photo,
+        capture: () => api.pickGuestPhoto('camera'),
+        pick: () => api.pickGuestPhoto('library'),
+        clearPhoto: () => put({ photo: null }),
+
+        canJoin: phoneDigits.length >= 10 && !!g.photo && !g.busy,
+        submit: () => api.submitGuestJoin(),
+        submitLabel: g.busy ? 'Sending…' : 'Send my request',
+        // Said before they commit, because handing a photograph of an ID to a
+        // stranger deserves a plain sentence about where it goes.
+        privacy: 'Only this landlord sees your ID, and only to decide on your request.'
       };
     })(),
+
+    // Signing back in with a guest ID — a guest who reinstalled, or moved to a new
+    // phone. Their ID and the number they joined with is the whole credential,
+    // because a guest has no password to remember.
+    goGuestSignIn: () => setState({ route: 'gsignin', gsignin: { code: '', phone: '', busy: false, error: '' } }),
+    isGuestSignIn: s.route === 'gsignin',
+    guestSignIn: (() => {
+      const g = s.gsignin || { code: '', phone: '', busy: false, error: '' };
+      const put = (patch) => setState({ gsignin: { ...g, ...patch, error: '' } });
+      const digits = String(g.phone || '').replace(/[^0-9]/g, '');
+      return {
+        code: g.code,
+        setCode: (e) => put({ code: evStr(e).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6) }),
+        phone: g.phone,
+        setPhone: (e) => put({ phone: evStr(e).replace(/[^0-9+ ]/g, '') }),
+        busy: !!g.busy,
+        error: g.error || '',
+        hasError: !!g.error,
+        canSubmit: String(g.code || '').length === 6 && digits.length >= 10 && !g.busy,
+        submit: () => api.submitGuestSignIn(),
+        submitLabel: g.busy ? 'Signing in…' : 'Continue',
+        line: 'A guest ID lasts as long as you are in the property. If yours has stopped working, ask to join again.',
+        back: () => setState({ route: 'tlogin' })
+      };
+    })(),
+
     // What the sign-up screen says when a code is waiting.
     joiningCode: s.pendingJoin,
     isJoiningWithCode: !!s.pendingJoin,
@@ -2980,6 +3114,50 @@ function deriveVm(s, api) {
         back: () => { if (!api.goBackOneStep()) go('tme'); }
       };
     })(),
+    // ── Being a guest, once you are in ─────────────────────────────────────────
+    // A guest has no name, no email and no password on file. Everything still works
+    // — they can see their room, raise tickets and declare a payment — but the
+    // account is tied to one stay and cannot be recovered if the phone is lost. So
+    // the app says so, in the one place a tenant looks for their own details, and
+    // says what finishing the profile actually buys rather than nagging.
+    myGuest: (() => {
+      const g = (TD && TD.me && TD.me.guest) || null;
+      const isGuest = !!(g && g.is_guest);
+      return {
+        is: isGuest,
+        code: (g && g.code) || '',
+        codeLabel: g && g.code ? `GUEST ID · ${g.code}` : 'GUEST',
+        title: 'You are here as a guest',
+        // The reason comes from the server so the app and the API cannot drift into
+        // promising different things.
+        why: (g && g.why) || 'Add your name, email and a password so you can sign in from any phone and recover your account.',
+        // What the landlord currently sees, which is usually the sentence that
+        // actually persuades someone to finish.
+        seenAs: g && g.code ? `Your landlord sees you as “Guest ${g.code}”.` : '',
+        cta: 'Complete my profile',
+        open: () => setState({ overlay: 'claim', claim: { name: '', email: '', password: '', busy: false, error: '' } })
+      };
+    })(),
+    isClaim: s.overlay === 'claim',
+    claim: (() => {
+      const c = s.claim || { name: '', email: '', password: '', busy: false, error: '' };
+      const put = (patch) => setState({ claim: { ...c, ...patch, error: '' } });
+      return {
+        title: 'Finish your profile',
+        line: 'Your guest ID stops working when you leave this property. An email and a password stay with you.',
+        name: c.name, setName: (e) => put({ name: evStr(e) }),
+        email: c.email, setEmail: (e) => put({ email: evStr(e).trim() }),
+        password: c.password, setPassword: (e) => put({ password: evStr(e) }),
+        busy: !!c.busy,
+        error: c.error || '',
+        hasError: !!c.error,
+        canSubmit: !!c.name.trim() && !!c.email.trim() && c.password.length >= 6 && !c.busy,
+        submit: () => api.submitClaim(),
+        submitLabel: c.busy ? 'Saving…' : 'Save and finish',
+        close: () => setState({ overlay: null })
+      };
+    })(),
+
     tenantDock: [
       ['HOME', 'home-outline', 'portal'],
       ['FIND', 'search-outline', 'tfind'],
@@ -4149,6 +4327,155 @@ export function AppProvider({ children }) {
     }
   }, [setState, flash]);
 
+  // ── Joining as a guest ──────────────────────────────────────────────────────
+  // The point of this path is that nothing is asked for that a landlord does not
+  // need to let someone in today: a number to ring, and an ID to check. No name, no
+  // email, no password — the person doing this is standing in the building.
+  //
+  // One call does everything, which matters more than it looks: creating the
+  // account, filing the ID and sending the request as three separate steps would
+  // leave an account with no ID behind whenever the second one failed.
+
+  // Photograph the ID, or choose an existing scan.
+  const pickGuestPhoto = useCallback(async (source) => {
+    const asset = await captureOrPick(source);
+    if (!asset) return;
+    setState({ gform: { ...stateRef.current.gform, photo: asset, error: '' } });
+  }, [setState, captureOrPick]);
+
+  // Resolve the property code before asking for anything personal, so a mistyped
+  // code is caught while it is still the only thing on screen — and so the second
+  // step can name the place they are about to hand their ID to.
+  const guestCheckCode = useCallback(async () => {
+    const g = stateRef.current.gform;
+    const code = codeOf(stateRef.current.guestCode);
+    if (!code) return;
+    setState({ gform: { ...g, busy: true, error: '' } });
+    try {
+      const res = await apiPortal.lookupProperty(code);
+      setState({ gform: { ...stateRef.current.gform, busy: false, step: 'you', place: res.property || null, error: '' } });
+    } catch (e) {
+      // The lookup is tenant-only on the server, so a signed-out guest gets a 401
+      // here. That is not a reason to stop them: the join call resolves the code
+      // again itself and will refuse a bad one with a clear message. Only a real
+      // 404 — "no such property" — is worth blocking on.
+      const status = e && e.response && e.response.status;
+      if (status === 404) {
+        setState({ gform: { ...stateRef.current.gform, busy: false, error: 'No property matches that code. Check it with your landlord.' } });
+        return;
+      }
+      setState({ gform: { ...stateRef.current.gform, busy: false, step: 'you', place: null, error: '' } });
+    }
+  }, [setState]);
+
+  const submitGuestJoin = useCallback(async () => {
+    const g = stateRef.current.gform;
+    if (g.busy) return;
+    const code = codeOf(stateRef.current.guestCode);
+    const phone = String(g.phone || '').replace(/[^0-9]/g, '').slice(-10);
+    if (phone.length !== 10) {
+      setState({ gform: { ...g, error: 'Enter the 10-digit mobile number your landlord can reach you on.' } });
+      return;
+    }
+    if (!g.photo) {
+      setState({ gform: { ...g, error: 'Add a photo of a government ID — this is what your landlord checks.' } });
+      return;
+    }
+    setState({ gform: { ...g, busy: true, error: '' } });
+    try {
+      const form = new FormData();
+      form.append('code', code);
+      form.append('phone', phone);
+      form.append('doc_type', g.docType);
+      form.append('doc_number', g.docNumber || '');
+      form.append('document', filePart(g.photo, `guest-id-${Date.now()}.jpg`));
+      const res = await apiAuth.joinAsGuest(form);
+
+      // From here a guest is an ordinary signed-in tenant. Same session storage,
+      // same token header, same loader — which is exactly why no other screen needs
+      // to know that guests exist.
+      await saveTenantSession(res.token, res.tenant);
+      setToken(res.token);
+      setState({
+        session: { role: 'tenant', token: res.token, user: res.tenant },
+        gform: { ...BLANK_GUEST_FORM },
+        guestCode: '',
+        pendingJoin: '',
+        route: 'portal'
+      });
+      await loadTenantData();
+      flash(res.message || 'Request sent to the landlord');
+    } catch (e) {
+      // The server distinguishes "you already asked" and "that number has a real
+      // account" from a plain failure, and both need saying rather than swallowing:
+      // one tells them their guest ID, the other tells them to sign in instead.
+      const data = (e && e.response && e.response.data) || {};
+      setState({ gform: { ...stateRef.current.gform, busy: false, error: data.message || errText(e, 'Could not send that request.') } });
+    }
+  }, [setState, flash, loadTenantData]);
+
+  // Signing back in with a guest ID, for a guest who reinstalled or changed phone.
+  const submitGuestSignIn = useCallback(async () => {
+    const g = stateRef.current.gsignin;
+    if (g.busy) return;
+    const code = String(g.code || '').trim().toUpperCase();
+    const phone = String(g.phone || '').replace(/[^0-9]/g, '').slice(-10);
+    if (code.length !== 6 || phone.length !== 10) {
+      setState({ gsignin: { ...g, error: 'Enter your 6-character guest ID and the number you joined with.' } });
+      return;
+    }
+    setState({ gsignin: { ...g, busy: true, error: '' } });
+    try {
+      const res = await apiAuth.guestLogin(code, phone);
+      await saveTenantSession(res.token, res.tenant);
+      setToken(res.token);
+      setState({
+        session: { role: 'tenant', token: res.token, user: res.tenant },
+        gsignin: { code: '', phone: '', busy: false, error: '' },
+        route: 'portal'
+      });
+      await loadTenantData();
+      flash('Signed in');
+    } catch (e) {
+      const data = (e && e.response && e.response.data) || {};
+      setState({ gsignin: { ...stateRef.current.gsignin, busy: false, error: data.message || errText(e, 'Could not sign you in.') } });
+    }
+  }, [setState, flash, loadTenantData]);
+
+  // Turning a guest into a full account. The nudge that leads here is on the tenant
+  // tab; this is what it buys.
+  const submitClaim = useCallback(async () => {
+    const c = stateRef.current.claim;
+    if (c.busy) return;
+    if (!c.name.trim() || !c.email.trim() || !c.password) {
+      setState({ claim: { ...c, error: 'Name, email and a password are all needed.' } });
+      return;
+    }
+    if (c.password.length < 6) {
+      setState({ claim: { ...c, error: 'Password must be at least 6 characters.' } });
+      return;
+    }
+    setState({ claim: { ...c, busy: true, error: '' } });
+    try {
+      const res = await apiPortal.claimAccount({ name: c.name.trim(), email: c.email.trim(), password: c.password });
+      // A fresh token, because the guest one carried no email in its payload.
+      if (res.token) {
+        await saveTenantSession(res.token, res.tenant);
+        setToken(res.token);
+      }
+      setState({
+        session: { role: 'tenant', token: res.token || stateRef.current.session.token, user: res.tenant },
+        claim: { name: '', email: '', password: '', busy: false, error: '' },
+        overlay: null
+      });
+      await loadTenantData({ refresh: true });
+      flash(res.message || 'Profile complete');
+    } catch (e) {
+      const data = (e && e.response && e.response.data) || {};
+      setState({ claim: { ...stateRef.current.claim, busy: false, error: data.message || errText(e, 'Could not save that.') } });
+    }
+  }, [setState, flash, loadTenantData]);
+
   // ── Device permissions ─────────────────────────────────────────────────────
   // Asked from the primer screen, one at a time, each right next to the sentence
   // that says what it is for — which is both what Android and iOS ask for and
@@ -4581,7 +4908,8 @@ export function AppProvider({ children }) {
       pickPhotoFor, createProperty, saveProperty, deleteProperty, createUnit, createTenantRecord, goBackOneStep,
       decideJoin, requestToJoin, holdJoinCode, askPermission, finishPermits,
       loadDocs, decideDoc, loadMyDocs, pickDocPhoto, addMyDoc, removeMyDoc,
-      lookupProperty, resetDemo, openUpiPayment, declareMyPayment
+      lookupProperty, resetDemo, openUpiPayment, declareMyPayment,
+      pickGuestPhoto, guestCheckCode, submitGuestJoin, submitGuestSignIn, submitClaim
     }),
     [
       setState, set, go, flash, signIn, register, signOut, resolveSession,
@@ -4591,7 +4919,8 @@ export function AppProvider({ children }) {
       pickPhotoFor, createProperty, saveProperty, deleteProperty, createUnit, createTenantRecord, goBackOneStep,
       decideJoin, requestToJoin, holdJoinCode, askPermission, finishPermits,
       loadDocs, decideDoc, loadMyDocs, pickDocPhoto, addMyDoc, removeMyDoc,
-      lookupProperty, resetDemo, openUpiPayment, declareMyPayment
+      lookupProperty, resetDemo, openUpiPayment, declareMyPayment,
+      pickGuestPhoto, guestCheckCode, submitGuestJoin, submitGuestSignIn, submitClaim
     ]
   );
 

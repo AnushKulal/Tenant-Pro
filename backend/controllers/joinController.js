@@ -314,6 +314,13 @@ const getJoinRequests = async (req, res) => {
             `SELECT jr.id, jr.tenant_user_id, jr.property_id, jr.unit_id, jr.status,
                     jr.note, jr.created_at, jr.decided_at,
                     tu.name AS requester_name, tu.email AS requester_email, tu.phone AS requester_phone,
+                    -- A guest applicant has no name and no email — only a phone number
+                    -- and the ID they photographed. The landlord has to know that
+                    -- BEFORE deciding, because "Guest 7K2QFH" with no email is not a
+                    -- broken record, it is the whole basis of the decision: open the
+                    -- document and see who this is.
+                    tu.is_guest AS requester_is_guest,
+                    tu.guest_code AS requester_guest_code,
                     p.name AS property_name,
                     u.unit_number,
                     -- Whether this stranger has put an ID up, and whether anyone has
@@ -587,5 +594,10 @@ module.exports = {
     createJoinRequest,
     getMyJoinRequests,
     getJoinRequests,
-    decideJoinRequest
+    decideJoinRequest,
+    // Exported for guestController, which resolves the same property codes from a
+    // public route. Shared rather than copied: propCode already exists twice (here
+    // and in the app's mapping.js) and has to stay byte-identical in both, so a
+    // third copy is a third thing to keep in step.
+    findPropertyByCode
 };

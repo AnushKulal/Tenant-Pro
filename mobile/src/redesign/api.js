@@ -47,7 +47,17 @@ export const auth = {
     forgotPassword: (payload) => body(http.post('/auth/forgot-password', payload)),
     resetPassword: (payload) => body(http.post('/auth/reset-password', payload)),
     loginTenant: (identifier, password, mode) => body(http.post('/tenant-auth/login', { identifier, password, ...(mode ? { mode } : {}) })),
-    registerTenant: (payload) => body(http.post('/tenant-auth/register', payload))
+    registerTenant: (payload) => body(http.post('/tenant-auth/register', payload)),
+    // ── Guests ────────────────────────────────────────────────────────────────
+    // Joining with a phone number and a photo of a government ID, no account. The
+    // one unauthenticated write in the tenant API: it creates the account, files the
+    // document and sends the join request in a single call, and answers with a
+    // normal tenant token plus the randomised guest ID. Always FormData — the
+    // document is the point of it.
+    joinAsGuest: (form) => body(http.post('/tenant-auth/guest', form, MULTIPART)),
+    // A guest has no password, so the guest ID and the phone number are the
+    // credential. Only useful while the stay lasts: the ID is retired with it.
+    guestLogin: (code, phone) => body(http.post('/tenant-auth/guest-login', { code, phone }))
 };
 
 // ── Owner ─────────────────────────────────────────────────────────────────────
@@ -149,7 +159,13 @@ export const portal = {
     // always multipart.
     documents: () => body(http.get('/tenant-portal/documents')),
     addDocument: (form) => body(http.post('/tenant-portal/documents', form, MULTIPART)),
-    removeDocument: (id) => body(http.delete(`/tenant-portal/documents/${id}`))
+    removeDocument: (id) => body(http.delete(`/tenant-portal/documents/${id}`)),
+    // Turn a guest into a full account: a real name in the landlord's roster, and an
+    // email and password so this identity outlives the current stay. Answers with a
+    // fresh token, because the guest one carries no email in its payload.
+    claimAccount: ({ name, email, password }) => body(
+        http.post('/tenant-portal/claim-account', { name, email, password })
+    )
 };
 
 export default http;

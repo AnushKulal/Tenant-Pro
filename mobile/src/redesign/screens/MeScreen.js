@@ -18,6 +18,34 @@ export default function MeScreen() {
         >
             <T w={700} s={32} lh={1.02} style={{ letterSpacing: -1.6, marginBottom: 16 }}>My profile</T>
 
+            {/* A guest joined with a phone number and a photo of an ID and nothing
+                else. Everything in the app works for them, but the account is tied to
+                this one stay and cannot be recovered if the phone is lost — so this
+                says so where a tenant looks for their own details, and says what
+                finishing the profile buys instead of just nagging. */}
+            {vm.myGuest.is ? (
+                <View style={{ borderRadius: 22, backgroundColor: t.asoft, borderWidth: 1, borderColor: t.amber, padding: 16, marginBottom: 10 }}>
+                    <Row justify="space-between" style={{ marginBottom: 10 }}>
+                        <Row gap={8}>
+                            <Glyph name="ticket-outline" size={15} color={t.amber} />
+                            <T mono w={600} s={9} lh={1} ls={0.12} c={t.amber}>{vm.myGuest.codeLabel}</T>
+                        </Row>
+                    </Row>
+                    <T w={700} s={17} lh={1.2} style={{ letterSpacing: -0.5 }}>{vm.myGuest.title}</T>
+                    <T w={400} s={12.5} lh={1.5} c={t.fg2} style={{ marginTop: 7 }}>{vm.myGuest.why}</T>
+                    {vm.myGuest.seenAs ? (
+                        <T w={400} s={12.5} lh={1.5} c={t.fg3} style={{ marginTop: 7 }}>{vm.myGuest.seenAs}</T>
+                    ) : null}
+                    <Press
+                        onPress={vm.myGuest.open}
+                        style={{ marginTop: 13, paddingVertical: 13, borderRadius: 999, backgroundColor: t.lime, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', columnGap: 8 }}
+                    >
+                        <T w={700} s={13.5} c={t.on}>{vm.myGuest.cta}</T>
+                        <Glyph name="arrow-forward" size={15} color={t.on} />
+                    </Press>
+                </View>
+            ) : null}
+
             {me && (
                 <>
                     {/* Profile header card */}

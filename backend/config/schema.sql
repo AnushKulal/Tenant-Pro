@@ -142,17 +142,39 @@ CREATE TABLE IF NOT EXISTS `rent_invoices` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- 9. tenant_users (login accounts for tenants — separate from owner-created `tenants` records)
+--
+-- Two kinds of account live here, and `is_guest` is the difference.
+--
+--   * A FULL account: name, email and a password. Signs in from anywhere, can
+--     reset its own password, gets email.
+--   * A GUEST: a phone number and a photograph of a government ID, nothing else.
+--     Someone standing in the building today who needs to be let in now and has
+--     no reason to invent a password first. `email` and `password_hash` are
+--     therefore NULL for a guest -- which is why both are nullable here, and why
+--     nothing may assume an account has either.
+--
+-- `guest_code` is the randomised ID a guest is known by until they fill in a
+-- profile: their display name, and (with their phone number) their credential,
+-- since they have no password. It is UNIQUE because it is used to look an account
+-- up. It is cleared the moment the tenancy ends, so a guest identity cannot
+-- outlive the stay it was issued for.
+--
+-- MySQL permits many NULLs in a UNIQUE index, so a thousand guests with no email
+-- and a thousand full accounts with no guest code coexist under both keys.
 CREATE TABLE IF NOT EXISTS `tenant_users` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `name` varchar(100) NOT NULL,
-  `email` varchar(100) NOT NULL,
+  `email` varchar(100) DEFAULT NULL,
   `phone` varchar(15) NOT NULL,
-  `password_hash` varchar(255) NOT NULL,
+  `password_hash` varchar(255) DEFAULT NULL,
   `tenant_id` int(11) DEFAULT NULL,
   `status` enum('Unlinked','Pending','Linked') DEFAULT 'Unlinked',
+  `is_guest` tinyint(1) NOT NULL DEFAULT 0,
+  `guest_code` varchar(16) DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   PRIMARY KEY (`id`),
-  UNIQUE KEY `email` (`email`)
+  UNIQUE KEY `email` (`email`),
+  UNIQUE KEY `guest_code` (`guest_code`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- 10. payments (-> tenants, tenant_users)

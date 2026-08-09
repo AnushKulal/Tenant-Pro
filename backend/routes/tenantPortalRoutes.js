@@ -26,6 +26,7 @@ const {
     addMyDocument,
     deleteMyDocument
 } = require('../controllers/documentController');
+const { claimAccount } = require('../controllers/guestController');
 
 router.use(protect);
 
@@ -64,5 +65,13 @@ router.get('/join-requests', getMyJoinRequests);
 router.get('/documents', getMyDocuments);
 router.post('/documents', upload.single('document'), addMyDocument);
 router.delete('/documents/:id', deleteMyDocument);
+
+// --- Finishing a guest profile ---
+// A guest joined with a phone number and an ID and nothing else. This is where they
+// become a full account: a real name in the landlord's roster instead of
+// "Guest 7K2QFH", and an email and password so they can sign in from anywhere and
+// recover the account. Authenticated because it upgrades the CALLER's own account —
+// the guest token they already hold is the proof of which account that is.
+router.post('/claim-account', claimAccount);
 
 module.exports = router;

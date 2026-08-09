@@ -1614,6 +1614,67 @@ export default function Sheets() {
                     </View>
                 )}
 
+                {/* ── Finish a guest profile ──────────────────────────── */}
+                {/* Reached from the prompt on the tenant's own profile tab. Three
+                    fields, because three is what turns a guest into an account that
+                    outlives the stay: a name the landlord sees instead of
+                    "Guest 7K2QFH", and an email and password to sign in with. */}
+                {vm.isClaim && vm.claim && (
+                    <View>
+                        <T w={700} s={21} lh={1.1} style={{ letterSpacing: -0.7 }}>{vm.claim.title}</T>
+                        <T w={400} s={13} lh={1.5} c={t.fg2} style={{ marginTop: 8, marginBottom: 16 }}>{vm.claim.line}</T>
+
+                        <Field
+                            label="YOUR NAME"
+                            icon="person-outline"
+                            value={vm.claim.name}
+                            onChangeText={vm.claim.setName}
+                            placeholder="Your full name"
+                            autoCapitalize="words"
+                            style={{ marginBottom: 10 }}
+                        />
+                        <Field
+                            label="EMAIL"
+                            icon="mail-outline"
+                            value={vm.claim.email}
+                            onChangeText={vm.claim.setEmail}
+                            placeholder="you@gmail.com"
+                            keyboardType="email-address"
+                            style={{ marginBottom: 10 }}
+                        />
+                        <Field
+                            label="CREATE A PASSWORD"
+                            icon="lock-closed-outline"
+                            value={vm.claim.password}
+                            onChangeText={vm.claim.setPassword}
+                            placeholder="At least 6 characters"
+                            secure
+                            onSubmitEditing={vm.claim.submit}
+                            returnKeyType="go"
+                            style={{ marginBottom: 14 }}
+                        />
+
+                        {vm.claim.hasError ? (
+                            <Row gap={9} align="flex-start" style={{ paddingVertical: 11, paddingHorizontal: 13, borderRadius: 14, backgroundColor: t.csoft, marginBottom: 12 }}>
+                                <Glyph name="alert-circle-outline" size={15} color={t.coral} />
+                                <T w={500} s={12} lh={1.45} c={t.coral} style={{ flex: 1 }}>{vm.claim.error}</T>
+                            </Row>
+                        ) : null}
+
+                        <Press
+                            onPress={vm.claim.submit}
+                            disabled={!vm.claim.canSubmit}
+                            style={{ paddingVertical: 16, borderRadius: 999, backgroundColor: vm.claim.canSubmit ? t.lime : t.ink3, borderWidth: 1, borderColor: vm.claim.canSubmit ? t.lime : t.line, alignItems: 'center' }}
+                        >
+                            <T w={700} s={14.5} c={vm.claim.canSubmit ? t.on : t.fg3}>{vm.claim.submitLabel}</T>
+                        </Press>
+
+                        <Press onPress={vm.claim.close} style={{ marginTop: 11, paddingVertical: 13, alignItems: 'center' }}>
+                            <T w={600} s={13} c={t.fg3}>Not now</T>
+                        </Press>
+                    </View>
+                )}
+
                 {/* ── Raise a request (tenant) ────────────────────────── */}
                 {vm.isNewRequest && vm.newRequest && (
                     <View>

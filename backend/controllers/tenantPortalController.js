@@ -28,6 +28,11 @@ const loadTenantContext = async (userId) => {
         `SELECT
             tu.id            AS user_id,
             tu.status        AS link_status,
+            tu.name          AS account_name,
+            tu.email         AS account_email,
+            tu.phone         AS account_phone,
+            tu.is_guest      AS is_guest,
+            tu.guest_code    AS guest_code,
             t.id             AS tenant_id,
             t.name, t.phone, t.email, t.company, t.image_url,
             t.deposit, t.rent_share, t.credit_score, t.move_in_date,
@@ -75,12 +80,34 @@ const getMe = async (req, res) => {
         const documents = await fetchDocuments(req.user.id);
         const idProof = summarise(documents);
 
+        // Who this account IS, independent of any tenancy. Sent in both branches
+        // because a guest needs it in both: their guest code is their name before a
+        // landlord accepts them and their identity after, and the prompt to finish
+        // the profile has to appear either way.
+        //
+        // `ctx.name` is the TENANTS row's name and is NULL until a landlord accepts
+        // them, which is why the account's own name is now selected separately. The
+        // old code fell back to req.user.email — fine for a registered tenant, but a
+        // guest has no email at all, so an unlinked guest had a blank name.
+        const guest = {
+            is_guest: !!ctx.is_guest,
+            code: ctx.guest_code || null,
+            // What finishing the profile actually buys, said once, here, so the app
+            // does not invent its own version of the reason.
+            why: 'Add your name, email and a password so you can sign in from any phone, recover your account, and your landlord sees who you are.'
+        };
+
         // Not yet linked to a unit by a landlord: the portal shows a friendly
         // "ask your landlord to link you" state rather than empty data.
         if (!ctx.tenant_id) {
             return res.status(200).json({
                 linked: false,
-                account: { name: ctx.name || req.user.email, email: req.user.email },
+                account: {
+                    name: ctx.name || ctx.account_name || req.user.email,
+                    email: ctx.account_email || null,
+                    phone: ctx.account_phone || null
+                },
+                guest,
                 id_proof: idProof,
                 documents
             });
@@ -135,6 +162,7 @@ const getMe = async (req, res) => {
                 upi_number: ctx.upi_number,
                 qr_code_url: ctx.qr_code_url
             },
+            guest,
             id_proof: idProof,
             documents
         });
