@@ -86,6 +86,7 @@ export default function PinPickScreen() {
                     interactive
                     onChange={p.move}
                     onSettle={p.settle}
+                    onZoom={p.setZoom}
                 />
 
                 {/* The pin. Fixed dead centre, and pointerEvents none so it never

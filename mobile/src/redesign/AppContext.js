@@ -1636,6 +1636,9 @@ function deriveVm(s, api) {
         canZoomOut: (p.zoom || 16) > MIN_ZOOM,
         zoomIn: () => put({ zoom: Math.min(MAX_ZOOM, (p.zoom || 16) + 1) }),
         zoomOut: () => put({ zoom: Math.max(MIN_ZOOM, (p.zoom || 16) - 1) }),
+        // Where a pinch lands. Clamped here as well as in the map, because this is
+        // the value that gets stored and the map is not the only thing that reads it.
+        setZoom: (v) => put({ zoom: Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Math.round(Number(v) || 16))) }),
 
         // While a finger is down. Cheap: state only, no network.
         move: (c) => put({ lat: c.lat, lon: c.lon }),
@@ -1671,7 +1674,7 @@ function deriveVm(s, api) {
         coordLine: `${roundCoord(lat)}, ${roundCoord(lon)}`,
 
         title: editing ? 'Move the pin' : 'Pin the property',
-        line: 'Drag the map so the pin sits on the building. Search first if it is easier.',
+        line: 'Drag the map so the pin sits on the building, and pinch to zoom. Search first if it is easier.',
         confirmLabel: 'Use this location',
 
         // Back to whichever form sent us, with the pin filled in. The form itself
@@ -2172,8 +2175,15 @@ function deriveVm(s, api) {
           locality: place.localityRaw || '',
           city: place.cityRaw || '',
           pincode: place.pincodeRaw || '',
-          lat: null,
-          lon: null
+          // Seeded from the property so the picker opens ON the building. These
+          // were hardcoded to null, which made the button lie: "Move pin" dropped
+          // the pin it was meant to move and opened the map at the default centre
+          // of Bengaluru, leaving you to find the place again. Nothing was lost —
+          // saving only sends a pin when there is one, so the stored coordinates
+          // survived — but every correction to an existing pin started from
+          // scratch.
+          lat: hasPin(place.lat, place.lon) ? Number(place.lat) : null,
+          lon: hasPin(place.lat, place.lon) ? Number(place.lon) : null
         }
       }),
       directionsLabel: 'Directions',

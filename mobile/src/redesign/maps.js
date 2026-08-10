@@ -223,7 +223,8 @@ export const openDirections = async (lat, lon, label) => {
 // fingertip means covering the exact spot you are trying to see.
 //
 // `onChange` fires with the centre while dragging; `onSettle` once the finger lifts,
-// which is when a reverse-geocode is worth spending a request on.
+// which is when a reverse-geocode is worth spending a request on. `onZoom` fires
+// when a pinch resolves to a new zoom level.
 export function TileMap({
     lat,
     lon,
@@ -233,6 +234,7 @@ export function TileMap({
     interactive = false,
     onChange,
     onSettle,
+    onZoom,
     style,
     children
 }) {
@@ -258,25 +260,135 @@ export function TileMap({
         }
     }, [lat, lon]);
 
+    // The PanResponder below is built once and kept in a ref, which means its
+    // handlers keep the props from the FIRST render for ever. That was already
+    // wrong before pinch existed: `zoom` was read straight out of that stale
+    // closure, so after changing zoom — with the buttons, or by choosing a search
+    // result, which jumps to 17 — the next drag converted pixels to degrees at the
+    // OLD zoom and moved the pin at the wrong speed. Worse, `onChange` was the
+    // first render's copy of the callback, which rebuilds the whole pin object from
+    // the first render's state: one drag after picking a search result threw away
+    // the address and snapped the zoom back.
+    //
+    // Everything the handlers need is therefore read through this ref, refreshed on
+    // every render, instead of being captured.
+    const live = React.useRef({});
+    live.current = { zoom, onChange, onSettle, onZoom };
+
     // Where the drag has moved us to, in lat/lon. Pixels → tiles → degrees.
     const centreNow = () => {
-        const z = zoom;
+        const z = live.current.zoom;
         const cx = lonToTileX(centre.current.lon, z) - drag.current.x / TILE_SIZE;
         const cy = latToTileY(centre.current.lat, z) - drag.current.y / TILE_SIZE;
         return { lat: tileYToLat(cy, z), lon: tileXToLon(cx, z) };
     };
 
+    // ── Pinch ─────────────────────────────────────────────────────────────────
+    // Two fingers zoom, anchored on the CENTRE of the map rather than on the
+    // midpoint between the fingers.
+    //
+    // That is the opposite of a general-purpose map, and deliberate here: the
+    // centre of this map is the pin, and the pin is the thing being chosen. Zooming
+    // about the fingers would slide the pin onto a different building mid-gesture
+    // and invalidate the address already shown underneath it. Anchoring on the
+    // centre means a pinch changes how much you can see and nothing else — the
+    // chosen coordinate and its address survive the gesture untouched, so there is
+    // also no reverse-geocode to re-run when it ends.
+    //
+    // Zoom levels are integers (a tile exists at 16 or 17, not 16.4), so the gesture
+    // scales the tiles that are already on screen and commits to the nearest whole
+    // level on release. Without that the map would jump a full level the instant a
+    // pinch crossed a threshold, which reads as a glitch rather than as zooming.
+    // `active` is "two fingers are down right now"; `was` is "this gesture was a
+    // pinch at some point". The second flag is not redundant, and leaving it out
+    // caused a bug that only showed up every other gesture.
+    //
+    // Whether the last touch event arrives as a move or as the release is up to the
+    // browser. When it came through as a move, the pinch committed there and
+    // `active` went false — so the release then took the DRAG path and called
+    // onSettle. onSettle rebuilds the whole pin object from state captured before
+    // the zoom was committed, so it put the old zoom straight back: the map visibly
+    // zoomed and then snapped to where it started. When the release happened to
+    // handle the pinch itself, it returned early and the zoom stuck. Same gesture,
+    // two outcomes, decided by event ordering.
+    //
+    // `was` closes that: a gesture that pinched never falls through to the pan
+    // handling, whichever event ends it.
+    const pinch = React.useRef({ active: false, was: false, start: 0, scale: 1 });
+
+    const twoFingerDistance = (touches) => {
+        const dx = touches[0].pageX - touches[1].pageX;
+        const dy = touches[0].pageY - touches[1].pageY;
+        return Math.sqrt(dx * dx + dy * dy);
+    };
+
+    // Fold the live pinch scale into a whole zoom level. Doubling the distance is
+    // one level in, halving is one level out — hence log base 2.
+    const commitPinch = () => {
+        if (!pinch.current.active) return;
+        const z = live.current.zoom;
+        const steps = Math.log(pinch.current.scale) / Math.LN2;
+        const next = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Math.round(z + steps)));
+        pinch.current = { active: false, was: true, start: 0, scale: 1 };
+        if (next !== z && live.current.onZoom) live.current.onZoom(next);
+    };
+
     const pan = React.useRef(
         PanResponder.create({
             onStartShouldSetPanResponder: () => interactive,
-            onMoveShouldSetPanResponder: (_e, g) => interactive && (Math.abs(g.dx) > 2 || Math.abs(g.dy) > 2),
-            onPanResponderGrant: () => { dragging.current = true; },
-            onPanResponderMove: (_e, g) => {
+            // A pinch can begin with almost no movement of the midpoint, so two
+            // touches claim the responder on their own — the 2px threshold alone
+            // would let a careful pinch through to whatever is underneath.
+            onMoveShouldSetPanResponder: (e, g) => interactive && (
+                e.nativeEvent.touches.length > 1 || Math.abs(g.dx) > 2 || Math.abs(g.dy) > 2
+            ),
+            onPanResponderGrant: () => {
+                dragging.current = true;
+                pinch.current = { active: false, was: false, start: 0, scale: 1 };
+            },
+            onPanResponderMove: (e, g) => {
+                const touches = e.nativeEvent.touches;
+
+                if (touches.length > 1) {
+                    const d = twoFingerDistance(touches);
+                    if (!pinch.current.active) {
+                        // A second finger landed mid-drag. Bank the pan so far into
+                        // the centre first, otherwise it is replayed as a jump the
+                        // moment the pinch ends and the drag baseline resets.
+                        centre.current = centreNow();
+                        drag.current = { x: 0, y: 0 };
+                        pinch.current = { active: true, was: true, start: d, scale: 1 };
+                    } else if (pinch.current.start > 0) {
+                        pinch.current.scale = d / pinch.current.start;
+                    }
+                    force((n) => n + 1);
+                    return;
+                }
+
+                // Back to one finger: settle the zoom before panning again, so the
+                // leftover finger does not drag the map at a stale scale.
+                if (pinch.current.active) {
+                    commitPinch();
+                    force((n) => n + 1);
+                    return;
+                }
+
                 drag.current = { x: g.dx, y: g.dy };
                 force((n) => n + 1);
-                if (onChange) onChange(centreNow());
+                if (live.current.onChange) live.current.onChange(centreNow());
             },
             onPanResponderRelease: () => {
+                // `was` as well as `active`: if the pinch already committed on a
+                // final move event, this gesture must still not be treated as a pan.
+                if (pinch.current.active || pinch.current.was) {
+                    // A pinch does not move the centre, so there is nothing new to
+                    // geocode — only the zoom to apply.
+                    commitPinch();
+                    pinch.current.was = false;
+                    dragging.current = false;
+                    force((n) => n + 1);
+                    return;
+                }
                 // Fold the drag into the centre and zero it, so the next drag starts
                 // from here rather than accumulating.
                 const c = centreNow();
@@ -284,10 +396,13 @@ export function TileMap({
                 drag.current = { x: 0, y: 0 };
                 dragging.current = false;
                 force((n) => n + 1);
-                if (onChange) onChange(c);
-                if (onSettle) onSettle(c);
+                if (live.current.onChange) live.current.onChange(c);
+                if (live.current.onSettle) live.current.onSettle(c);
             },
-            onPanResponderTerminate: () => { dragging.current = false; }
+            onPanResponderTerminate: () => {
+                pinch.current = { active: false, was: false, start: 0, scale: 1 };
+                dragging.current = false;
+            }
         })
     ).current;
 
@@ -296,13 +411,25 @@ export function TileMap({
     const n = Math.pow(2, z);
     const cx = lonToTileX(centre.current.lon, z) - drag.current.x / TILE_SIZE;
     const cy = latToTileY(centre.current.lat, z) - drag.current.y / TILE_SIZE;
-    // World-pixel coordinate of the viewport's top-left corner.
-    const originX = cx * TILE_SIZE - width / 2;
-    const originY = cy * TILE_SIZE - height / 2;
+
+    // While a pinch is in progress the tiles on screen are scaled to follow the
+    // fingers. Pinching OUT (scale below 1) shrinks them, which uncovers ground
+    // beyond the edges of the viewport, so the tile grid has to be built for the
+    // larger area that becomes visible — otherwise the map appears to shrink into
+    // the middle of a black frame. Pinching in never needs extra tiles: less is
+    // visible, not more.
+    const s = pinch.current.active ? pinch.current.scale : 1;
+    const span = s < 1 ? 1 / s : 1;
+    const vw = width * span;
+    const vh = height * span;
+
+    // World-pixel coordinate of the (possibly enlarged) grid's top-left corner.
+    const originX = cx * TILE_SIZE - vw / 2;
+    const originY = cy * TILE_SIZE - vh / 2;
     const firstX = Math.floor(originX / TILE_SIZE);
     const firstY = Math.floor(originY / TILE_SIZE);
-    const cols = Math.ceil(width / TILE_SIZE) + 2;
-    const rows = Math.ceil(height / TILE_SIZE) + 2;
+    const cols = Math.ceil(vw / TILE_SIZE) + 2;
+    const rows = Math.ceil(vh / TILE_SIZE) + 2;
 
     const tiles = [];
     for (let r = 0; r < rows; r += 1) {
@@ -327,15 +454,34 @@ export function TileMap({
             style={[{ width, height, overflow: 'hidden', position: 'relative' }, style]}
             {...(interactive ? pan.panHandlers : {})}
         >
-            {tiles.map((t) => (
-                <Image
-                    key={t.key}
-                    source={{ uri: t.uri }}
-                    style={{ position: 'absolute', left: t.left, top: t.top, width: TILE_SIZE, height: TILE_SIZE }}
-                    // The tiles are the map; fading them in makes a pan look broken.
-                    fadeDuration={0}
-                />
-            ))}
+            {/* The tiles live in their own layer so the pinch can scale THEM without
+                touching anything drawn on top — the pin, the zoom buttons and the
+                attribution must stay put and stay the size they are. The layer is
+                centred in the viewport and a React Native transform scales about an
+                element's own centre, which is what makes the zoom centre-anchored
+                with no origin arithmetic. At rest span is 1, so this collapses to
+                the plain full-size layer it was before. */}
+            <View
+                pointerEvents="none"
+                style={{
+                    position: 'absolute',
+                    left: (width - vw) / 2,
+                    top: (height - vh) / 2,
+                    width: vw,
+                    height: vh,
+                    transform: [{ scale: s }]
+                }}
+            >
+                {tiles.map((t) => (
+                    <Image
+                        key={t.key}
+                        source={{ uri: t.uri }}
+                        style={{ position: 'absolute', left: t.left, top: t.top, width: TILE_SIZE, height: TILE_SIZE }}
+                        // The tiles are the map; fading them in makes a pan look broken.
+                        fadeDuration={0}
+                    />
+                ))}
+            </View>
             {children}
         </View>
     );
