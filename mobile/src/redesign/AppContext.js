@@ -201,6 +201,11 @@ const INITIAL_STATE = {
   // filtered.
   theme: null, pref: 'system', q: '', pq: '', lq: '', place: 'sunrise', ticket: 1, tstatus: {},
   roster: {}, gone: [], mover: null, invite: 'sunrise', jq: '', rents: {}, draft: 0,
+  // Which guest's code is currently revealed on the member screen. Held as an id
+  // rather than a boolean so opening a different member never inherits the last
+  // one's revealed state — a credential should not appear on screen because of
+  // something you tapped two people ago.
+  greveal: null,
   // Which priority the dashboard's ticket list is filtered to ('all' = every one).
   tprio: 'all',
   idmode: 'email', adult: true, jfilter: 'all', paymethod: 'gpay', paid: false,
@@ -2711,6 +2716,38 @@ function deriveVm(s, api) {
           // Read from the server on open, rather than shipping every tenant's ID
           // proof out with the dashboard.
           go: () => api.loadDocs('tenant', who.id)
+        };
+      })(),
+
+      // ── The landlord as the recovery path ────────────────────────────────────
+      // A guest has no email, so there is no password to reset and no address to
+      // send a reset to. What there IS, always, is a landlord who accepted them
+      // and is holding the government ID they uploaded. So recovery is done in
+      // person: check the face against the ID already on file, read the code back.
+      // That is a stronger identity check than an emailed link, and it costs
+      // nothing — the code is already in the row.
+      //
+      // Hidden until asked for. Nobody needs a working credential sitting on a
+      // screen that gets opened to check somebody's rent.
+      guestId: (() => {
+        const code = who.guestCode || null;
+        const shown = !!code && s.greveal === who.id;
+        return {
+          is: !!code,
+          shown,
+          code: code || '',
+          // Masked to the same width, so revealing does not make the card jump.
+          masked: code ? '•'.repeat(code.length) : '',
+          title: 'Guest sign-in ID',
+          line: shown
+            ? 'Check their face against the ID on file before reading this out. It is the only thing they need to sign in.'
+            : 'This person has no email or password. If they change phones, this code is the only way back into their tenancy — and you are the only one who can give it to them.',
+          cta: shown ? 'Hide' : 'Show guest ID',
+          toggle: () => setState({ greveal: shown ? null : who.id }),
+          copy: () => copyText(code, 'Guest ID copied'),
+          // Said plainly, because it is the answer to "why is this person still
+          // called Guest 4417 in my list".
+          foot: 'It stops working when they leave, and disappears once they complete their profile.'
         };
       })()
     },

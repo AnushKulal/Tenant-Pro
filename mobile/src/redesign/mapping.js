@@ -303,6 +303,11 @@ export function mapTenant(t, payments, now) {
         // signed in — there is then nowhere for a document to have come from, which
         // the documents sheet reports rather than showing an empty list.
         userId: t.tenant_user_id != null ? String(t.tenant_user_id) : null,
+        // Set only for someone who joined as a guest and has not completed a
+        // profile yet. It is the whole of their credential, which is why the
+        // landlord can see it: they are the only way back in for a person who has
+        // changed phones.
+        guestCode: t.guest_code || null,
         idProof: idBadge(t.doc_count, t.doc_verified)
     };
 }

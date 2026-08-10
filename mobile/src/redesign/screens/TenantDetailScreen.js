@@ -127,6 +127,53 @@ export default function TenantDetailScreen() {
                     <T w={600} s={12.5} c={t.fg}>{who.idProof.cta}</T>
                 </Press>
             </Card>
+
+            {/* Guest sign-in ID — only for someone who joined as a guest and has
+                not completed a profile. This is the account-recovery path for a
+                person with no email: the landlord holds their government ID, so
+                they can verify them in person and read the code back. */}
+            {who.guestId.is && (
+                <Card radius={22} pad={0} style={{ paddingVertical: 16, paddingHorizontal: 18, marginTop: 8 }}>
+                    <Row justify="space-between" style={{ marginBottom: 10 }}>
+                        <Eyebrow s={9} ls={0.12} c={t.fg3}>{who.guestId.title.toUpperCase()}</Eyebrow>
+                        <Glyph name={who.guestId.shown ? 'eye-outline' : 'eye-off-outline'} size={14} color={t.fg3} />
+                    </Row>
+
+                    <Row gap={10} align="center" style={{ marginBottom: 12 }}>
+                        <T
+                            mono
+                            w={700}
+                            s={who.guestId.shown ? 21 : 19}
+                            lh={1}
+                            ls={0.18}
+                            c={who.guestId.shown ? t.amber : t.fg3}
+                            style={{ flex: 1 }}
+                        >
+                            {who.guestId.shown ? who.guestId.code : who.guestId.masked}
+                        </T>
+                        {who.guestId.shown && (
+                            <Press
+                                onPress={who.guestId.copy}
+                                style={{ width: 38, height: 38, borderRadius: 12, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line, alignItems: 'center', justifyContent: 'center' }}
+                            >
+                                <Glyph name="copy-outline" size={15} color={t.fg2} />
+                            </Press>
+                        )}
+                    </Row>
+
+                    <T w={400} s={12.5} lh={1.45} c={t.fg2} style={{ marginBottom: 12 }}>{who.guestId.line}</T>
+
+                    <Press
+                        onPress={who.guestId.toggle}
+                        style={{ paddingVertical: 13, borderRadius: 14, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', columnGap: 7 }}
+                    >
+                        <Glyph name={who.guestId.shown ? 'eye-off-outline' : 'eye-outline'} size={15} color={t.accent} />
+                        <T w={600} s={12.5} c={t.fg}>{who.guestId.cta}</T>
+                    </Press>
+
+                    <T w={400} s={11} lh={1.45} c={t.fg3} style={{ marginTop: 10 }}>{who.guestId.foot}</T>
+                </Card>
+            )}
         </ScrollView>
     );
 }

@@ -162,6 +162,16 @@ const getAllTenants = async (req, res) => {
                 p.name as property_name,
                 (SELECT tu.id FROM tenant_users tu
                   WHERE tu.tenant_id = t.id ORDER BY tu.id LIMIT 1) AS tenant_user_id,
+                -- A guest signs in with this code and nothing else, and there is no
+                -- password reset for an account with no email. The landlord is
+                -- therefore the recovery path: they hold the government ID this
+                -- person uploaded, so they can check a face against it and read the
+                -- code back — a stronger identity check than an emailed link.
+                -- Correlated the same way as tenant_user_id so a tenant with more
+                -- than one linked account still yields exactly one row.
+                (SELECT tu.guest_code FROM tenant_users tu
+                  WHERE tu.tenant_id = t.id AND tu.is_guest = 1
+                  ORDER BY tu.id LIMIT 1) AS guest_code,
                 (SELECT COUNT(*) FROM tenant_documents d
                   JOIN tenant_users tu ON d.tenant_user_id = tu.id
                   WHERE tu.tenant_id = t.id) AS doc_count,
