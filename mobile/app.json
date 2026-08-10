@@ -7,7 +7,7 @@
     "orientation": "portrait",
     "icon": "./assets/icon-tp.png",
     "userInterfaceStyle": "automatic",
-    "runtimeVersion": "1.0.0",
+    "runtimeVersion": { "policy": "fingerprint" },
     "updates": {
       "enabled": true,
       "url": "https://u.expo.dev/3b258101-bef2-412f-8be0-53af8b224dfb",
