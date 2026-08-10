@@ -206,6 +206,9 @@ const INITIAL_STATE = {
   // one's revealed state — a credential should not appear on screen because of
   // something you tapped two people ago.
   greveal: null,
+  // Which declared payment the confirm sheet is deciding, and the optional note
+  // that travels with a rejection.
+  paydec: null, paynote: '',
   // Which priority the dashboard's ticket list is filtered to ('all' = every one).
   tprio: 'all',
   idmode: 'email', adult: true, jfilter: 'all', paymethod: 'gpay', paid: false,
@@ -434,6 +437,11 @@ function deriveVm(s, api) {
   // People asking to be let into one of this owner's properties.
   const JOINS = D.joins || [];
   const PENDING_JOINS = JOINS.filter((j) => j.pending);
+  // Payments tenants say they have made, waiting on a yes or no. Every one of these
+  // is a tenant who believes they have paid and a month that has not cleared, so
+  // they are counted on the bell alongside people asking to join — both are "someone
+  // is blocked until you decide".
+  const DECLARED = D.declared || [];
   const PAYMENTS_SRC = D.payments || [];
   const EXPENSES_SRC = D.expenses || [];
   const live = !!s.live;
@@ -863,6 +871,24 @@ function deriveVm(s, api) {
             ? `Asked ${String(first.age).toLowerCase()} · accept or decline`
             : `${PENDING_JOINS.map((j) => String(j.name).split(' ')[0]).slice(0, 3).join(', ')}${PENDING_JOINS.length > 3 ? ' and more' : ''}`,
           go: () => setState({ overlay: 'joins' })
+        });
+      }
+      // Directly above overdue on purpose. A tenant in this queue may well be one of
+      // the tenants listed as overdue — they have paid and are waiting to be believed
+      // — so the landlord should see the claim before they see the accusation.
+      if (DECLARED.length) {
+        const oldest = DECLARED[0];
+        const total = DECLARED.reduce((a, p) => a + p.amountRaw, 0);
+        rows.push({
+          icon: 'cash',
+          tone: 'lime',
+          title: DECLARED.length === 1
+            ? `${oldest.name} says they paid ${oldest.amount}`
+            : `${DECLARED.length} payments waiting on you`,
+          sub: DECLARED.length === 1
+            ? `${oldest.method} · claimed ${String(oldest.age).toLowerCase()} · confirm or reject`
+            : `${money(total)} claimed · oldest ${String(oldest.age).toLowerCase()}`,
+          go: () => setState({ overlay: 'declared' })
         });
       }
       const late = inScope.filter((t) => t.state === 'overdue');
@@ -2307,10 +2333,16 @@ function deriveVm(s, api) {
     // not have — it used to be painted on unconditionally.
     hasAlerts: ALERTS.length > 0,
     alertCount: String(ALERTS.length),
-    // People waiting on a decision, surfaced as a number on the bell itself: the
-    // question "how many want in" should be answerable without opening anything.
-    bellCount: PENDING_JOINS.length ? String(PENDING_JOINS.length) : '',
-    bellUrgent: PENDING_JOINS.length > 0,
+    // Everything waiting on a decision, surfaced as a number on the bell itself, so
+    // "how many things are blocked on me" is answerable without opening anything.
+    //
+    // Declared payments are counted here and not only in the alerts list, because a
+    // payment nobody confirms is the one failure in this app that costs a tenant
+    // money: they have paid, their month has not cleared, and every screen still
+    // calls them overdue. Being one of two numbers on a bell is the cheapest way to
+    // make sure it is not missed.
+    bellCount: (PENDING_JOINS.length + DECLARED.length) ? String(PENDING_JOINS.length + DECLARED.length) : '',
+    bellUrgent: (PENDING_JOINS.length + DECLARED.length) > 0,
     alertsEmptyLine: 'Nothing needs you right now. Rent is on track and no tickets are open.',
 
     // ── Help & support (owner) ────────────────────────────────────────────────
@@ -2516,6 +2548,106 @@ function deriveVm(s, api) {
           api.decideJoin({ id: j.id, decision: 'reject', name: j.name });
         },
         busy: !!s.writing
+      };
+    })(),
+
+    // ── Payments a tenant says they made ──────────────────────────────────────
+    // The landlord's end of declarePayment, and the half that did not exist: the
+    // tenant could say "I paid" and there was nowhere for anybody to answer, so the
+    // claim sat in the payments table as 'Declared' for ever, counting toward
+    // nothing, while the tenant's due date never moved and every screen went on
+    // calling them overdue.
+    //
+    // Two levels, matching joins: a queue of everything waiting, and a sheet for the
+    // one decision. The queue exists because these arrive in batches — rent week
+    // produces six of them in a day — and deciding six things should not mean six
+    // trips through the bell.
+    // Reached from the bell's alert row, which is the only way into the joins queue
+    // too — there is deliberately no second entry point to keep in sync.
+    isDeclared: s.overlay === 'declared',
+    declaredQueue: (() => {
+      const total = DECLARED.reduce((a, p) => a + p.amountRaw, 0);
+      return {
+        count: DECLARED.length,
+        title: DECLARED.length
+          ? `${DECLARED.length} ${DECLARED.length === 1 ? 'payment needs' : 'payments need'} confirming`
+          : 'Nothing to confirm',
+        // The total is the reason to care: it is money the books do not yet show.
+        totalLine: DECLARED.length ? `${money(total)} claimed and not yet counted` : '',
+        empty: DECLARED.length === 0,
+        emptyLine: 'When a tenant marks their rent as paid, it lands here for you to confirm. Nothing counts toward your totals until you do.',
+        rows: DECLARED.map((p) => ({
+          id: p.id,
+          name: p.name,
+          initials: initialsOf(p.name),
+          img: p.img,
+          amount: p.amount,
+          method: p.method,
+          paidOn: p.paidOn,
+          age: p.age,
+          where: `${String(p.unit)} · ${String(p.prop).toUpperCase()}`,
+          // Flagged on the row, not just inside the sheet, so a short payment is
+          // visible while skimming a batch of six.
+          odd: p.matchesRent === false,
+          oddLine: p.shortBy ? `${p.shortBy} short of ${p.rent}` : p.overBy ? `${p.overBy} over ${p.rent}` : '',
+          open: () => setState({ overlay: 'paydecide', paydec: p.id, paynote: '' })
+        })),
+        close: () => setState({ overlay: null })
+      };
+    })(),
+
+    isPayDecide: s.overlay === 'paydecide',
+    payDecide: (() => {
+      const p = DECLARED.find((x) => x.id === s.paydec) || DECLARED[0] || null;
+      if (!p) return null;
+      const note = s.paynote || '';
+      return {
+        id: p.id,
+        name: p.name,
+        initials: initialsOf(p.name),
+        img: p.img,
+        where: `${String(p.unit)} · ${String(p.prop).toUpperCase()}`,
+        amount: p.amount,
+        method: p.method,
+        paidOn: p.paidOn,
+        age: `Claimed ${String(p.age).toLowerCase()}`,
+        // Only shown when there is one. A cash payment has no reference and a row
+        // reading "REFERENCE —" is worse than no row.
+        reference: p.reference,
+        hasReference: !!p.reference,
+        // The check a landlord would otherwise do by eye, done for them.
+        rent: p.rent,
+        matches: p.matchesRent,
+        amountNote: p.matchesRent === true
+          ? `Matches their rent of ${p.rent}.`
+          : p.shortBy
+            ? `${p.shortBy} less than their rent of ${p.rent}. Confirming credits only what they claim — the rest stays owed.`
+            : p.overBy
+              ? `${p.overBy} more than their rent of ${p.rent}.`
+              : '',
+        hasAmountNote: p.matchesRent !== null,
+        // Said plainly because it is the only irreversible-feeling part: confirming
+        // moves the due date, which is what actually clears the month.
+        confirmLine: 'Confirming counts this toward your totals and moves their next rent date forward a month.',
+        note,
+        setNote: (e) => setState({ paynote: evStr(e) }),
+        notePlaceholder: 'Why? (optional — the tenant sees this)',
+        busy: !!s.writing,
+        confirmLabel: s.writing ? 'Saving…' : 'Confirm payment',
+        rejectLabel: 'Reject',
+        confirm: () => {
+          setState({ overlay: null });
+          api.decidePayment({ id: p.id, decision: 'confirm', name: p.name, amount: p.amount });
+        },
+        // A rejection is a message to a person who believes they have paid, so the
+        // note travels with it. Not required — a landlord who just needs it gone
+        // should not be blocked on writing an essay.
+        reject: () => {
+          setState({ overlay: null });
+          api.decidePayment({ id: p.id, decision: 'reject', name: p.name, amount: p.amount, note });
+        },
+        back: () => setState({ overlay: 'declared', paynote: '' }),
+        close: () => setState({ overlay: null, paynote: '' })
       };
     })(),
 
@@ -3868,7 +4000,7 @@ export function AppProvider({ children }) {
   const loadOwnerData = useCallback(async ({ refresh = false, silent = false } = {}) => {
     if (!silent) setState(refresh ? { refreshing: true, dataError: '' } : { dataLoading: true, dataError: '' });
     try {
-      const [dashboard, propsRes, unitsRes, tenantsRes, txRes, reqRes, payRes, joinRes, demoRes, pulseRes] = await Promise.all([
+      const [dashboard, propsRes, unitsRes, tenantsRes, txRes, reqRes, payRes, joinRes, declRes, demoRes, pulseRes] = await Promise.all([
         apiOwner.dashboard('all'),
         apiProps.list(),
         apiUnits.list('all'),
@@ -3884,6 +4016,12 @@ export function AppProvider({ children }) {
         // Newer than the rest again — a backend without this route must not take
         // the dashboard down, so an empty inbox stands in.
         apiOwner.joinRequests('all').catch(() => ({ requests: [] })),
+        // Payments tenants say they have made. Fetched with the dashboard rather
+        // than when the queue is opened, because the count has to be on the bell
+        // before anybody thinks to look — an unconfirmed payment the landlord never
+        // noticed is the failure this whole flow exists to prevent. Tolerant of a
+        // backend without the route, like the others.
+        apiPayments.declared().catch(() => ({ payments: [] })),
         // Is this the demo account? Fetched with the dashboard rather than when
         // Settings opens, so the reset control is already correct the first time that
         // screen is drawn instead of appearing a moment later. A backend without the
@@ -3902,7 +4040,8 @@ export function AppProvider({ children }) {
         transactions: txRes.transactions,
         requests: reqRes.requests,
         paySettings: payRes.settings,
-        joinRequests: joinRes.requests
+        joinRequests: joinRes.requests,
+        declaredPayments: declRes.payments
       });
       if (pulseRes && pulseRes.stamp) pulseRef.current.stamp = pulseRes.stamp;
       setState({
@@ -4243,6 +4382,25 @@ export function AppProvider({ children }) {
         ? `${name} accepted${where ? ` into ${where}` : ''}`
         : `${name}'s request declined`,
       failed: decision === 'accept' ? 'Could not accept that request.' : 'Could not decline that request.'
+    }
+  ), [ownerWrite]);
+
+  // Confirm or reject a payment a tenant says they made.
+  //
+  // Goes through ownerWrite like every other landlord write, which matters more here
+  // than elsewhere: confirming advances next_rent_due on the server, so the due
+  // countdown on the dashboard, the overdue list, the tenant's own card and the
+  // collected total all change as a result of this one call. Nothing local is
+  // patched — the reload is what makes every one of those agree.
+  const decidePayment = useCallback(({ id, decision, name, amount, note }) => ownerWrite(
+    () => apiPayments.decide(id, decision, note),
+    {
+      done: decision === 'confirm'
+        ? `${amount} from ${name} confirmed`
+        : `Payment from ${name} rejected`,
+      failed: decision === 'confirm'
+        ? 'Could not confirm that payment.'
+        : 'Could not reject that payment.'
     }
   ), [ownerWrite]);
 
@@ -5283,7 +5441,7 @@ export function AppProvider({ children }) {
       pickRequestPhoto, createRequest, requestResetCode, submitNewPassword,
       recordPayment, saveTenantRent, assignTenant, moveTenantOut, deleteTenant, savePaymentSettings,
       pickPhotoFor, createProperty, saveProperty, deleteProperty, createUnit, createTenantRecord, goBackOneStep,
-      decideJoin, requestToJoin, holdJoinCode, askPermission, finishPermits,
+      decideJoin, decidePayment, requestToJoin, holdJoinCode, askPermission, finishPermits,
       loadDocs, decideDoc, loadMyDocs, pickDocPhoto, addMyDoc, removeMyDoc,
       lookupProperty, resetDemo, openUpiPayment, declareMyPayment,
       pickGuestPhoto, guestCheckCode, submitGuestJoin, submitGuestSignIn, submitClaim,
@@ -5295,7 +5453,7 @@ export function AppProvider({ children }) {
       pickRequestPhoto, createRequest, requestResetCode, submitNewPassword,
       recordPayment, saveTenantRent, assignTenant, moveTenantOut, deleteTenant, savePaymentSettings,
       pickPhotoFor, createProperty, saveProperty, deleteProperty, createUnit, createTenantRecord, goBackOneStep,
-      decideJoin, requestToJoin, holdJoinCode, askPermission, finishPermits,
+      decideJoin, decidePayment, requestToJoin, holdJoinCode, askPermission, finishPermits,
       loadDocs, decideDoc, loadMyDocs, pickDocPhoto, addMyDoc, removeMyDoc,
       lookupProperty, resetDemo, openUpiPayment, declareMyPayment,
       pickGuestPhoto, guestCheckCode, submitGuestJoin, submitGuestSignIn, submitClaim,

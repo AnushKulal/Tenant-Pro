@@ -197,6 +197,48 @@ export function mapPortalRequest(r) {
     };
 }
 
+// /payments/declared rows → the landlord's confirm queue.
+//
+// A declared payment is a CLAIM, not money received. The tenant has said "I paid
+// ₹9,000 by UPI on the 3rd" and nothing has happened to any total yet — it stays
+// that way until the landlord decides. So this shape leads with the three things
+// that decision is actually made on: how much, when, and by what method, plus
+// the reference the tenant typed so it can be matched against a bank statement.
+//
+// `matchesRent` exists because the commonest reason to hesitate is an amount that
+// is not the expected one, and comparing two rupee strings by eye is exactly the
+// kind of check a screen should have already done for you.
+export function mapDeclaredPayment(p, now = new Date()) {
+    const paid = asDate(p.payment_date);
+    const claimed = asDate(p.created_at);
+    const amount = Number(p.amount_paid) || 0;
+    const rent = Number(p.rent_share) || 0;
+    return {
+        id: p.id,
+        tenantId: p.tenant_id != null ? String(p.tenant_id) : null,
+        name: p.tenant_name || '',
+        img: mediaUrl(p.tenant_image),
+        unit: p.unit_number ? String(p.unit_number) : '—',
+        prop: p.property_name || '',
+        propertyId: p.property_id != null ? String(p.property_id) : null,
+        amount: `₹${inr(amount)}`,
+        amountRaw: amount,
+        method: String(p.payment_method || '').toUpperCase() || '—',
+        // Empty rather than a dash: the sheet hides the row entirely when a tenant
+        // paid in cash and had no reference to give.
+        reference: p.reference_id ? String(p.reference_id) : '',
+        paidOn: paid ? `${paid.getDate()} ${MON_TITLE[paid.getMonth()]} ${paid.getFullYear()}` : '',
+        // How long the landlord has been sitting on it, which is the thing that
+        // makes an unconfirmed payment rude rather than merely pending.
+        age: ageLabel(claimed, now),
+        rent: rent ? `₹${inr(rent)}` : '',
+        rentRaw: rent,
+        matchesRent: rent > 0 ? amount === rent : null,
+        shortBy: rent > 0 && amount < rent ? `₹${inr(rent - amount)}` : '',
+        overBy: rent > 0 && amount > rent ? `₹${inr(amount - rent)}` : ''
+    };
+}
+
 // /owner/join-requests rows → what the landlord's inbox shows. The requester is a
 // `tenant_users` account, not a tenant record yet — that is the whole point of the
 // request — so their name and contact come off the login account.
@@ -336,7 +378,7 @@ export function mapPayment(row, tenantsByName, now) {
 
 // Build the whole `state.data` bundle from the five owner endpoints.
 // `now` is injected so the result is deterministic and testable.
-export function mapOwnerData({ dashboard, properties, units, tenants, transactions, requests, paySettings, joinRequests }, now = new Date()) {
+export function mapOwnerData({ dashboard, properties, units, tenants, transactions, requests, paySettings, joinRequests, declaredPayments }, now = new Date()) {
     const props = (properties || []).map(mapProperty);
     const us = (units || []).map(mapUnit);
 
@@ -360,6 +402,9 @@ export function mapOwnerData({ dashboard, properties, units, tenants, transactio
         payments: pays,
         tickets: (requests || []).map((r) => mapRequest(r, now)),
         joins: (joinRequests || []).map((r) => mapJoinRequest(r, now)),
+        // Oldest first, matching the backend's ORDER BY: the claim that has been
+        // waiting longest is the one to deal with, not the newest arrival.
+        declared: (declaredPayments || []).map((r) => mapDeclaredPayment(r, now)),
         // The owner's UPI details, as tenants will see them. Null until they set
         // them up — an empty state, not a missing one.
         pay: paySettings

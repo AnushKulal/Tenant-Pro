@@ -126,7 +126,19 @@ export const tenants = {
 export const payments = {
     getSettings: () => body(http.get('/payments/settings')),
     saveSettings: (form) => body(http.post('/payments/settings', form, MULTIPART)),
-    record: (tenantId, payload) => body(http.post(`/payments/${tenantId}/payments`, payload))
+    record: (tenantId, payload) => body(http.post(`/payments/${tenantId}/payments`, payload)),
+    // Payments a tenant SAYS they made, waiting on the landlord. Until this was
+    // wired the tenant end existed and the landlord end did not: someone could
+    // declare a payment and nobody could act on it, so the claim sat in the table
+    // for ever and the tenant's month never cleared.
+    declared: () => body(http.get('/payments/declared')),
+    // Confirming is the moment the money becomes real — it counts toward every
+    // total AND advances next_rent_due, which is what clears the month. Rejecting
+    // keeps the row so the tenant can see it was refused and why, rather than
+    // watching their claim silently disappear.
+    decide: (id, decision, note) => body(
+        http.put(`/payments/declared/${id}`, { decision, ...(note ? { note } : {}) })
+    )
 };
 
 // ── Tenant portal (tenant JWT) ────────────────────────────────────────────────

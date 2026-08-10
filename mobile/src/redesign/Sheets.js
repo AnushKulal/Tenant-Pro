@@ -1249,6 +1249,191 @@ export default function Sheets() {
                     </View>
                 )}
 
+                {/* ── Payments a tenant says they made ─────────────────── */}
+                {/* The queue. These arrive in batches — rent week produces several in
+                    a day — so deciding them should not mean six trips through the
+                    bell. Each row taps into the decision sheet. */}
+                {vm.isDeclared && vm.declaredQueue && (
+                    <View>
+                        <Row justify="space-between" align="flex-start" style={{ marginBottom: 16 }}>
+                            <View style={{ flex: 1 }}>
+                                <T w={700} s={20} lh={1.1} style={{ letterSpacing: -0.8 }}>{vm.declaredQueue.title}</T>
+                                <Eyebrow s={10} ls={0.08} style={{ marginTop: 7 }}>TENANTS SAY THEY HAVE PAID</Eyebrow>
+                            </View>
+                            <Glyph name="cash" size={20} color={vm.declaredQueue.count ? t.lime : t.fg3} />
+                        </Row>
+
+                        {vm.declaredQueue.empty ? (
+                            <View style={{ alignItems: 'center', paddingVertical: 24, paddingHorizontal: 10, marginBottom: 8 }}>
+                                <View style={{ width: 52, height: 52, borderRadius: 18, backgroundColor: t.ink3, alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
+                                    <Glyph name="cash-outline" size={24} color={t.fg3} />
+                                </View>
+                                <T w={400} s={13} lh={1.5} c={t.fg2} style={{ textAlign: 'center' }}>{vm.declaredQueue.emptyLine}</T>
+                            </View>
+                        ) : (
+                            <View>
+                                {/* Money the books do not yet show — the reason to
+                                    care about this queue at all. */}
+                                <Row gap={9} style={{ padding: 13, borderRadius: 16, backgroundColor: t.lsoft, marginBottom: 10 }}>
+                                    <Glyph name="information-circle" size={16} color={t.pos} />
+                                    <T w={500} s={12} lh={1.4} c={t.pos} style={{ flex: 1 }}>{vm.declaredQueue.totalLine}</T>
+                                </Row>
+
+                                <View style={{ rowGap: 8, marginBottom: 14 }}>
+                                    {vm.declaredQueue.rows.map((p) => (
+                                        <Press key={p.id} onPress={p.open}>
+                                            <View style={{ borderRadius: 18, backgroundColor: t.ink3, borderWidth: 1, borderColor: p.odd ? t.amber : t.line, padding: 14 }}>
+                                                <Row gap={12}>
+                                                    <Avatar uri={p.img} initials={p.initials} size={44} radius={15} />
+                                                    <View style={{ flex: 1, minWidth: 0 }}>
+                                                        <T w={600} s={15} lh={1.2} c={t.fg} numberOfLines={1}>{p.name}</T>
+                                                        <T mono w={600} s={9} lh={1.4} ls={0.08} c={t.fg3} numberOfLines={1} style={{ marginTop: 4 }}>
+                                                            {p.where}
+                                                        </T>
+                                                        <T mono w={600} s={9} lh={1.4} ls={0.06} c={t.fg3} numberOfLines={1} style={{ marginTop: 3 }}>
+                                                            {`${p.method} · ${p.paidOn} · ${p.age}`}
+                                                        </T>
+                                                    </View>
+                                                    <View style={{ alignItems: 'flex-end' }}>
+                                                        <T w={700} s={17} lh={1} c={t.fg} style={{ letterSpacing: -0.5 }}>{p.amount}</T>
+                                                        <Glyph name="chevron-forward" size={15} color={t.fg3} style={{ marginTop: 7 }} />
+                                                    </View>
+                                                </Row>
+                                                {/* An amount that is not the expected one, flagged
+                                                    while skimming rather than only inside the sheet. */}
+                                                {p.odd && p.oddLine ? (
+                                                    <Row gap={7} style={{ marginTop: 11, paddingTop: 11, borderTopWidth: 1, borderTopColor: t.line }}>
+                                                        <Glyph name="alert-circle" size={13} color={t.amber} />
+                                                        <T w={500} s={11.5} lh={1.3} c={t.amber} style={{ flex: 1 }}>{p.oddLine}</T>
+                                                    </Row>
+                                                ) : null}
+                                            </View>
+                                        </Press>
+                                    ))}
+                                </View>
+                            </View>
+                        )}
+
+                        <Press onPress={vm.declaredQueue.close} style={{ width: '100%', paddingVertical: 15, borderRadius: 999, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line, alignItems: 'center' }}>
+                            <T w={600} s={13} c={t.fg2}>Close</T>
+                        </Press>
+                    </View>
+                )}
+
+                {/* The decision itself. Everything it takes to answer "did this money
+                    actually arrive" — amount, date, method, and the reference to check
+                    against a bank statement — then Confirm or Reject. */}
+                {vm.isPayDecide && vm.payDecide && (
+                    <View>
+                        <Row gap={13} style={{ marginBottom: 16 }}>
+                            <Avatar uri={vm.payDecide.img} initials={vm.payDecide.initials} size={52} radius={18} />
+                            <View style={{ flex: 1, minWidth: 0 }}>
+                                <T w={700} s={19} lh={1.15} style={{ letterSpacing: -0.6 }} numberOfLines={1}>{vm.payDecide.name}</T>
+                                <Eyebrow s={9} ls={0.08} style={{ marginTop: 6 }}>{vm.payDecide.where}</Eyebrow>
+                            </View>
+                        </Row>
+
+                        {/* The amount, given the weight it deserves — it is the whole
+                            question. */}
+                        <View style={{ padding: 16, borderRadius: 20, backgroundColor: t.ink3, borderWidth: 1, borderColor: vm.payDecide.matches === false ? t.amber : t.line, marginBottom: 8 }}>
+                            <Eyebrow s={9} ls={0.12} c={t.fg3}>THEY SAY THEY PAID</Eyebrow>
+                            <T w={700} s={34} lh={1} style={{ letterSpacing: -1.6, marginTop: 9 }}>{vm.payDecide.amount}</T>
+                            {vm.payDecide.hasAmountNote ? (
+                                <Row gap={7} align="flex-start" style={{ marginTop: 11 }}>
+                                    <Glyph
+                                        name={vm.payDecide.matches ? 'checkmark-circle' : 'alert-circle'}
+                                        size={14}
+                                        color={vm.payDecide.matches ? t.pos : t.amber}
+                                        style={{ marginTop: 1 }}
+                                    />
+                                    <T w={500} s={12} lh={1.4} c={vm.payDecide.matches ? t.pos : t.amber} style={{ flex: 1 }}>
+                                        {vm.payDecide.amountNote}
+                                    </T>
+                                </Row>
+                            ) : null}
+                        </View>
+
+                        <View style={{ rowGap: 8, marginBottom: 14 }}>
+                            <Row gap={11} style={{ padding: 13, borderRadius: 16, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line }}>
+                                <Glyph name="calendar-outline" size={16} color={t.accent} />
+                                <View style={{ flex: 1, minWidth: 0 }}>
+                                    <Eyebrow s={9} ls={0.1}>PAID ON</Eyebrow>
+                                    <T w={600} s={13.5} lh={1} style={{ marginTop: 5 }}>{vm.payDecide.paidOn}</T>
+                                </View>
+                                <Eyebrow s={9} ls={0.06} c={t.fg3}>{vm.payDecide.method}</Eyebrow>
+                            </Row>
+
+                            {/* Only when there is one — a cash payment has no reference,
+                                and a row reading "REFERENCE —" is worse than no row. */}
+                            {vm.payDecide.hasReference ? (
+                                <Row gap={11} style={{ padding: 13, borderRadius: 16, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line }}>
+                                    <Glyph name="barcode-outline" size={16} color={t.fg2} />
+                                    <View style={{ flex: 1, minWidth: 0 }}>
+                                        <Eyebrow s={9} ls={0.1}>REFERENCE</Eyebrow>
+                                        <T mono w={600} s={12.5} lh={1.2} numberOfLines={1} style={{ marginTop: 5 }}>{vm.payDecide.reference}</T>
+                                    </View>
+                                </Row>
+                            ) : null}
+
+                            <Row gap={11} style={{ padding: 13, borderRadius: 16, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line }}>
+                                <Glyph name="time-outline" size={16} color={t.fg2} />
+                                <View style={{ flex: 1, minWidth: 0 }}>
+                                    <Eyebrow s={9} ls={0.1}>WAITING</Eyebrow>
+                                    <T w={600} s={13.5} lh={1} style={{ marginTop: 5 }}>{vm.payDecide.age}</T>
+                                </View>
+                            </Row>
+                        </View>
+
+                        {/* A rejection is a message to somebody who believes they have
+                            paid, so the note travels with it. Optional on purpose. */}
+                        <TextInput
+                            value={vm.payDecide.note}
+                            onChangeText={vm.payDecide.setNote}
+                            placeholder={vm.payDecide.notePlaceholder}
+                            placeholderTextColor={t.fg3}
+                            multiline
+                            style={{
+                                fontFamily: grotesk,
+                                fontSize: 13,
+                                color: t.fg,
+                                backgroundColor: t.ink3,
+                                borderWidth: 1,
+                                borderColor: t.line,
+                                borderRadius: 16,
+                                paddingHorizontal: 14,
+                                paddingTop: 12,
+                                paddingBottom: 12,
+                                minHeight: 62,
+                                textAlignVertical: 'top',
+                                marginBottom: 12
+                            }}
+                        />
+
+                        <Row gap={8} align="flex-start" style={{ marginBottom: 14 }}>
+                            <Glyph name="information-circle-outline" size={14} color={t.fg3} style={{ marginTop: 1 }} />
+                            <T w={400} s={11.5} lh={1.45} c={t.fg3} style={{ flex: 1 }}>{vm.payDecide.confirmLine}</T>
+                        </Row>
+
+                        <Row gap={8}>
+                            <Press
+                                onPress={vm.payDecide.reject}
+                                disabled={vm.payDecide.busy}
+                                style={{ flex: 1, paddingVertical: 15, borderRadius: 999, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line, alignItems: 'center', opacity: vm.payDecide.busy ? 0.7 : 1 }}
+                            >
+                                <T w={600} s={13} c={t.coral}>{vm.payDecide.rejectLabel}</T>
+                            </Press>
+                            <Press
+                                onPress={vm.payDecide.confirm}
+                                disabled={vm.payDecide.busy}
+                                style={{ flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', columnGap: 8, paddingVertical: 15, borderRadius: 999, backgroundColor: t.lime, opacity: vm.payDecide.busy ? 0.7 : 1 }}
+                            >
+                                {vm.payDecide.busy ? <ActivityIndicator size="small" color={t.on} /> : <Glyph name="checkmark" size={16} color={t.on} />}
+                                <T w={700} s={14} c={t.on}>{vm.payDecide.confirmLabel}</T>
+                            </Press>
+                        </Row>
+                    </View>
+                )}
+
                 {/* ── Your landlord (tenant) ──────────────────────────── */}
                 {vm.isLandlordCard && (
                     <View>
