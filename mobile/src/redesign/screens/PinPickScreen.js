@@ -15,7 +15,7 @@ import { View, ActivityIndicator, Dimensions } from 'react-native';
 import { useVm } from '../AppContext';
 import { useT } from '../ThemeContext';
 import { T, Eyebrow, Row, Press, Glyph, SearchBar } from '../ui';
-import { TileMap, ATTRIBUTION, usingDevTiles } from '../maps';
+import { TileMap, ATTRIBUTION, usingDevTiles, tileConfigError } from '../maps';
 
 export default function PinPickScreen() {
     const vm = useVm();
@@ -110,7 +110,20 @@ export default function PinPickScreen() {
                     still on the development tile server" is the kind of thing that
                     ships. It costs a developer one glance and a real user never sees
                     it, since configuring a provider removes it. */}
-                {usingDevTiles() ? (
+                {/* A misconfigured tile URL takes priority over the development-tiles
+                    note, because it is the difference between a plain map and no map at
+                    all. An empty map otherwise looks identical to a slow one, which is
+                    how a build once shipped fetching tiles from the literal text
+                    "$EXPO_PUBLIC_MAP_TILE_URL" with nothing on screen to say so. The
+                    pin, the search and the coordinates all still work. */}
+                {tileConfigError() ? (
+                    <View style={{ position: 'absolute', left: 12, right: 12, top: 12, paddingVertical: 8, paddingHorizontal: 11, borderRadius: 12, backgroundColor: 'rgba(4,4,6,0.78)', flexDirection: 'row', alignItems: 'flex-start', columnGap: 8 }}>
+                        <Glyph name="warning-outline" size={13} color={t.red} />
+                        <T w={500} s={10.5} lh={1.4} c="#FFFFFF" style={{ flex: 1, opacity: 0.9 }}>
+                            {tileConfigError()}
+                        </T>
+                    </View>
+                ) : usingDevTiles() ? (
                     <View style={{ position: 'absolute', left: 12, right: 12, top: 12, paddingVertical: 8, paddingHorizontal: 11, borderRadius: 12, backgroundColor: 'rgba(4,4,6,0.78)', flexDirection: 'row', alignItems: 'flex-start', columnGap: 8 }}>
                         <Glyph name="warning-outline" size={13} color={t.amber} />
                         <T w={500} s={10.5} lh={1.4} c="#FFFFFF" style={{ flex: 1, opacity: 0.9 }}>

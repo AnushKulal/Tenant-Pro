@@ -16,12 +16,7 @@
         "gradleCommand": ":app:assembleRelease -x lintVitalAnalyzeRelease -x lintVitalRelease"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://tenantpro-backend.onrender.com",
-        "EXPO_PUBLIC_MAP_TILE_URL": "$EXPO_PUBLIC_MAP_TILE_URL",
-        "EXPO_PUBLIC_MAP_TILE_URL_DARK": "$EXPO_PUBLIC_MAP_TILE_URL_DARK",
-        "EXPO_PUBLIC_MAP_ATTRIBUTION": "$EXPO_PUBLIC_MAP_ATTRIBUTION",
-        "EXPO_PUBLIC_MAP_PROVIDER": "$EXPO_PUBLIC_MAP_PROVIDER",
-        "EXPO_PUBLIC_MAP_KEY": "$EXPO_PUBLIC_MAP_KEY"
+        "EXPO_PUBLIC_API_URL": "https://tenantpro-backend.onrender.com"
       }
     },
     "production": {
@@ -31,12 +26,7 @@
         "buildType": "app-bundle"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://tenantpro-backend.onrender.com",
-        "EXPO_PUBLIC_MAP_TILE_URL": "$EXPO_PUBLIC_MAP_TILE_URL",
-        "EXPO_PUBLIC_MAP_TILE_URL_DARK": "$EXPO_PUBLIC_MAP_TILE_URL_DARK",
-        "EXPO_PUBLIC_MAP_ATTRIBUTION": "$EXPO_PUBLIC_MAP_ATTRIBUTION",
-        "EXPO_PUBLIC_MAP_PROVIDER": "$EXPO_PUBLIC_MAP_PROVIDER",
-        "EXPO_PUBLIC_MAP_KEY": "$EXPO_PUBLIC_MAP_KEY"
+        "EXPO_PUBLIC_API_URL": "https://tenantpro-backend.onrender.com"
       }
     }
   },

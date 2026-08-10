@@ -86,8 +86,22 @@ const PROVIDERS = {
     }
 };
 
-const providerName = () => String(process.env.EXPO_PUBLIC_MAP_PROVIDER || '').trim().toLowerCase();
-const providerKey = () => String(process.env.EXPO_PUBLIC_MAP_KEY || '').trim();
+// EXPO_PUBLIC_* values are substituted into the bundle when it is built, and a build
+// that was handed the wrong thing hands on the placeholder itself — the literal text
+// "$EXPO_PUBLIC_MAP_TILE_URL" rather than a URL. That shipped once: eas.json listed
+// those placeholders as env VALUES and EAS does not shell-expand them, so an APK
+// fetched tiles from a string that is not an address and showed an empty map, while
+// the same code over the air was fine because that workflow passed real values.
+//
+// Anything still carrying a dollar sign is therefore treated as absent, so the
+// fallbacks below take over instead of the app quietly requesting nonsense.
+const realValue = (v) => {
+    const s = String(v || '').trim();
+    return (!s || s.includes('$')) ? '' : s;
+};
+
+const providerName = () => realValue(process.env.EXPO_PUBLIC_MAP_PROVIDER).toLowerCase();
+const providerKey = () => realValue(process.env.EXPO_PUBLIC_MAP_KEY);
 
 // A provider counts as configured only when BOTH the name and the key are present.
 // A name with no key would build a URL ending in "key=" and every tile would 401 —
@@ -107,8 +121,8 @@ const configuredProvider = () => {
 //   2. a named provider  (EXPO_PUBLIC_MAP_PROVIDER + …_KEY)   — the usual case
 //   3. the OSM fallback  — development only
 export const tileTemplate = (dark) => {
-    const explicitLight = process.env.EXPO_PUBLIC_MAP_TILE_URL || '';
-    const explicitDark = process.env.EXPO_PUBLIC_MAP_TILE_URL_DARK || '';
+    const explicitLight = realValue(process.env.EXPO_PUBLIC_MAP_TILE_URL);
+    const explicitDark = realValue(process.env.EXPO_PUBLIC_MAP_TILE_URL_DARK);
     if (dark && explicitDark) return explicitDark;
     if (explicitLight) return explicitLight;
 
@@ -123,7 +137,22 @@ export const tileTemplate = (dark) => {
 // policy does not permit distributed apps to pull from them. Surfaced as a function
 // rather than a comment so the app can say so out loud where a developer will see
 // it, instead of it being discovered when the tiles start returning 418.
-export const usingDevTiles = () => !process.env.EXPO_PUBLIC_MAP_TILE_URL && !configuredProvider();
+export const usingDevTiles = () => !realValue(process.env.EXPO_PUBLIC_MAP_TILE_URL) && !configuredProvider();
+
+// Whether the tile URL we are about to use is actually usable. An empty map is
+// indistinguishable from a slow one, which is how a build shipped with an unexpanded
+// placeholder and nobody could tell from the screen why there was nothing on it. The
+// picker prints this, so a broken configuration explains itself.
+export const tileConfigError = () => {
+    const t = tileTemplate(false);
+    if (!/^https?:\/\//i.test(t)) {
+        return 'Map tiles are not configured correctly — the tile URL did not survive the build. Search or type the address instead.';
+    }
+    if (configuredProvider() && !providerKey()) {
+        return 'Map tiles are missing their provider key. Search or type the address instead.';
+    }
+    return '';
+};
 
 // The names this build understands, for an error message worth reading.
 export const KNOWN_PROVIDERS = Object.keys(PROVIDERS);
@@ -139,7 +168,8 @@ export const tileUrl = (z, x, y, dark) => tileTemplate(dark)
 // a configured provider brings its own line; an explicit override can set
 // EXPO_PUBLIC_MAP_ATTRIBUTION to whatever theirs asks for.
 export const attribution = () => {
-    if (process.env.EXPO_PUBLIC_MAP_ATTRIBUTION) return process.env.EXPO_PUBLIC_MAP_ATTRIBUTION;
+    const explicit = realValue(process.env.EXPO_PUBLIC_MAP_ATTRIBUTION);
+    if (explicit) return explicit;
     const p = configuredProvider();
     return (p && p.credit) || '© OpenStreetMap contributors';
 };

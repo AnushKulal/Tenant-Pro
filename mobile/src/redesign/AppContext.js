@@ -1696,6 +1696,24 @@ function deriveVm(s, api) {
           // "12 80 Feet Road" over "Sunrise Apartments" where both exist.
           const streetLine = (a && (a.street || a.label)) || '';
           const typedAddress = String(form.address || '').trim();
+          // Did the pin land somewhere ELSE, or merely get nudged? Two different
+          // intentions arrive through the same button, and the street line should be
+          // treated differently for each.
+          //
+          // Only counts a difference when both sides actually say something. A blank
+          // field is not evidence of a move, so a new property — where the geocoder
+          // fills in everything and there is nothing to contradict — is never treated
+          // as having moved.
+          const differs = (x, y) => {
+            const l = String(x || '').trim().toLowerCase();
+            const r = String(y || '').trim().toLowerCase();
+            return !!l && !!r && l !== r;
+          };
+          const movedElsewhere = !!a && (
+            differs(a.locality, form.locality)
+            || differs(a.city, form.city)
+            || differs(a.postcode, form.pincode)
+          );
           setState({
             route: editing ? 'property' : 'units',
             overlay: p.back,
@@ -1703,18 +1721,24 @@ function deriveVm(s, api) {
               ...form,
               lat: roundCoord(lat),
               lon: roundCoord(lon),
-              // The picker fills the address in, but the street line is the one field
-              // it must NOT overwrite. A landlord types "Flat 3B, Sunrise Apartments"
-              // — a door number no geocoder can ever know — and later nudges the pin
-              // to sit on the building properly; replacing that with "Walton Road"
-              // throws the work away with no undo, because confirm goes straight back
-              // to the sheet. So it fills an EMPTY box and otherwise leaves what was
-              // typed alone.
+              // The street line is written when the box is empty, or when the pin has
+              // moved to a different place — and left alone when the pin was only
+              // nudged around where it already was.
+              //
+              // Both halves matter, and an earlier version of this only had one of
+              // them. Keeping a typed line unconditionally protects "Flat 3B, Sunrise
+              // Apartments" — a door number no geocoder can know — when the pin is
+              // dragged a few metres to sit on the building properly. But it also left
+              // "45, Sector 2, HSR Layout" in place after the pin was moved to
+              // Jayanagar, so the address contradicted the locality, city and pincode
+              // that had just been filled in around it. A record that disagrees with
+              // itself is worse than a lost door number, and the door number was never
+              // going to survive a move across the city anyway.
               //
               // The other three are the geocoder's to know and are a single token
-              // each, so those still win — retyping a city costs nothing, and being
+              // each, so those always win — retyping a city costs nothing, and being
               // wrong about which pincode a building sits in is worth correcting.
-              address: typedAddress ? form.address : (streetLine || form.address),
+              address: (!typedAddress || movedElsewhere) ? (streetLine || form.address) : form.address,
               locality: (a && a.locality) || form.locality,
               city: (a && a.city) || form.city,
               pincode: (a && a.postcode) || form.pincode,

@@ -49,6 +49,19 @@ jobs:
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           EAS_NO_VCS: "1"
+          # The map provider, same as eas-update.yml passes. These were missing here,
+          # and eas.json additionally overrode them with the literal text
+          # "$EXPO_PUBLIC_MAP_TILE_URL" — EAS does not shell-expand env values, so the
+          # placeholder itself was compiled into the APK. Tiles were then fetched from
+          # a URL that is not a URL, so an installed build showed an empty map while
+          # the same code shipped over the air worked: eas-update.yml passed the real
+          # values, so only the APK was affected. Both halves are fixed; keep this list
+          # in step with eas-update.yml.
+          EXPO_PUBLIC_MAP_PROVIDER: ${{ secrets.EXPO_PUBLIC_MAP_PROVIDER || 'maptiler' }}
+          EXPO_PUBLIC_MAP_KEY: ${{ secrets.EXPO_PUBLIC_MAP_KEY }}
+          EXPO_PUBLIC_MAP_TILE_URL: ${{ secrets.EXPO_PUBLIC_MAP_TILE_URL }}
+          EXPO_PUBLIC_MAP_TILE_URL_DARK: ${{ secrets.EXPO_PUBLIC_MAP_TILE_URL_DARK }}
+          EXPO_PUBLIC_MAP_ATTRIBUTION: ${{ secrets.EXPO_PUBLIC_MAP_ATTRIBUTION }}
           # Give Gradle room on the 7 GB runner and disable the daemon (lower
           # overhead) — the earlier failure was an OutOfMemoryError: Metaspace.
           GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.workers.max=2 -Xmx5120m -XX:MaxMetaspaceSize=2g"
