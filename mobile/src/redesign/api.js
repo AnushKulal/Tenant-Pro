@@ -211,8 +211,21 @@ const asPlace = (f) => {
         subtitle: [line2, p.postcode, p.country].filter(Boolean).join(' · '),
         postcode: p.postcode || '',
         city: p.city || p.town || p.village || '',
-        locality: p.district || p.suburb || '',
-        street: [p.housenumber, p.street].filter(Boolean).join(' ')
+        locality: p.district || p.suburb || p.locality || p.neighbourhood || '',
+        street: [p.housenumber, p.street].filter(Boolean).join(' '),
+        // The name of the thing itself — a road, a landmark, a building. `title`
+        // above has always used it; the STRUCTURED fields did not, and those are
+        // what the property form reads. Reverse-geocoding a pin dropped in an
+        // Indian city almost always resolves to a road or a POI, which comes back
+        // as name: "Walton Road" with no `street` key at all — so the form's
+        // address box received an empty string, kept whatever was in it, and looked
+        // like it had ignored the pin, while the screen directly above it had been
+        // showing the road name the whole time.
+        //
+        // Kept separate from `street` rather than folded into it: a landmark name is
+        // not a street, and the caller should decide which it prefers instead of
+        // having one silently arrive dressed as the other.
+        label: p.name || ''
     };
 };
 

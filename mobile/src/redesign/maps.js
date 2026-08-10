@@ -275,6 +275,14 @@ export function TileMap({
     const live = React.useRef({});
     live.current = { zoom, onChange, onSettle, onZoom };
 
+    // For holding the previous zoom's tiles on screen while the new ones load —
+    // see the long note further down, next to where they are chosen.
+    const drawn = React.useRef(null);          // the layer this render is drawing
+    const under = React.useRef(null);          // the older layer kept beneath it
+    const tilesRef = React.useRef([]);         // current tiles, for the load counter
+    const loaded = React.useRef(new Set());    // which of them have painted
+    const shownZoomRef = React.useRef(null);
+
     // Where the drag has moved us to, in lat/lon. Pixels → tiles → degrees.
     const centreNow = () => {
         const z = live.current.zoom;
@@ -322,12 +330,22 @@ export function TileMap({
         return Math.sqrt(dx * dx + dy * dy);
     };
 
+    // A gesture is capped at three levels each way. Not a UI nicety — a bound on
+    // work. The tile grid has to cover whatever a shrink uncovers, so an unclamped
+    // pinch that reached a scale of 0.1 would ask for a grid ten times the viewport
+    // — hundreds of tiles in one frame, most of them thrown away the moment the
+    // gesture commits and the level changes. That is enough to trip a tile
+    // provider's rate limit, and a rate-limited tile is a permanently empty square.
+    // Three levels is more than any single pinch needs; repeat the gesture to go
+    // further.
+    const clampScale = (v) => Math.max(0.125, Math.min(8, v));
+
     // Fold the live pinch scale into a whole zoom level. Doubling the distance is
     // one level in, halving is one level out — hence log base 2.
     const commitPinch = () => {
         if (!pinch.current.active) return;
         const z = live.current.zoom;
-        const steps = Math.log(pinch.current.scale) / Math.LN2;
+        const steps = Math.log(clampScale(pinch.current.scale)) / Math.LN2;
         const next = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Math.round(z + steps)));
         pinch.current = { active: false, was: true, start: 0, scale: 1 };
         if (next !== z && live.current.onZoom) live.current.onZoom(next);
@@ -373,6 +391,10 @@ export function TileMap({
                     return;
                 }
 
+                // Panning moves the live tiles but not the older layer held beneath
+                // them, so any leftover fallback would slide out of register and
+                // show through as a doubled map. It has done its job by now anyway.
+                under.current = null;
                 drag.current = { x: g.dx, y: g.dy };
                 force((n) => n + 1);
                 if (live.current.onChange) live.current.onChange(centreNow());
@@ -416,10 +438,17 @@ export function TileMap({
     // fingers. Pinching OUT (scale below 1) shrinks them, which uncovers ground
     // beyond the edges of the viewport, so the tile grid has to be built for the
     // larger area that becomes visible — otherwise the map appears to shrink into
-    // the middle of a black frame. Pinching in never needs extra tiles: less is
+    // the middle of an empty frame. Pinching in never needs extra tiles: less is
     // visible, not more.
-    const s = pinch.current.active ? pinch.current.scale : 1;
-    const span = s < 1 ? 1 / s : 1;
+    const s = clampScale(pinch.current.active ? pinch.current.scale : 1);
+
+    // The grid widens ONE step at a threshold rather than tracking the scale
+    // continuously. Following the scale exactly would rebuild the grid on every
+    // frame of the gesture and request a fresh ring of tiles each time — all of
+    // them discarded the instant the pinch commits and the zoom level changes.
+    // One wider grid covers the margin a normal pinch uncovers and bounds the
+    // requests to roughly half again as many tiles.
+    const span = s < 0.75 ? 1.5 : 1;
     const vw = width * span;
     const vh = height * span;
 
@@ -428,7 +457,12 @@ export function TileMap({
     const originY = cy * TILE_SIZE - vh / 2;
     const firstX = Math.floor(originX / TILE_SIZE);
     const firstY = Math.floor(originY / TILE_SIZE);
-    const cols = Math.ceil(vw / TILE_SIZE) + 2;
+    // Never more columns than the world has tiles. East-west wrapping folds column
+    // `n` back onto column 0, and since the key carries the wrapped x, asking for
+    // more than a full world would emit the same key twice — React drops duplicates,
+    // so the map would come up short exactly where it looked widest. Only reachable
+    // at the far zoomed-out end, where a whole world fits across the screen.
+    const cols = Math.min(n, Math.ceil(vw / TILE_SIZE) + 2);
     const rows = Math.ceil(vh / TILE_SIZE) + 2;
 
     const tiles = [];
@@ -449,11 +483,86 @@ export function TileMap({
         }
     }
 
+    // ── Not going blank across a zoom change ──────────────────────────────────
+    // Every tile's key contains its zoom level, so changing zoom unmounts EVERY
+    // tile on screen and mounts a whole new set that has to come over the network.
+    // For as long as that takes, nothing is painted and the page shows through:
+    // the map went black and then reappeared. The buttons had always done this;
+    // pinching made it obvious, because a pinch can cross two levels at once and
+    // ends with the tiles already scaled, so the blank frame lands mid-gesture.
+    //
+    // So keep the tiles from the PREVIOUS zoom underneath, scaled to line up,
+    // until the new ones have painted. Which is cheap here only because zoom is
+    // centre-anchored: both layers are centred on the same coordinate, so lining
+    // them up is one scale factor of 2^(new − old) about the centre, with no
+    // origin arithmetic and nothing to keep in sync.
+    //
+    // Note the layer held underneath is the previous zoom's, NOT a spare copy of
+    // the current one, so at most one extra grid is ever mounted.
+    if (shownZoomRef.current !== z) {
+        const last = drawn.current;
+        const sameSpot = last
+            && Math.abs(last.centre.lat - centre.current.lat) < 1e-9
+            && Math.abs(last.centre.lon - centre.current.lon) < 1e-9;
+        // Only reuse a layer that covers the same ground. A layer from a different
+        // centre would sit visibly offset under the new tiles.
+        under.current = (sameSpot && last.z !== z) ? last : null;
+        shownZoomRef.current = z;
+        loaded.current = new Set();
+    }
+    drawn.current = { z, centre: { lat: centre.current.lat, lon: centre.current.lon }, tiles, vw, vh };
+    tilesRef.current = tiles;
+
+    // Drop the layer underneath once every tile above it has painted, so it is not
+    // held on screen — or in memory — for longer than it is doing something.
+    const noteLoaded = (key) => {
+        if (!under.current) return;
+        loaded.current.add(key);
+        if (tilesRef.current.every((t) => loaded.current.has(t.key))) {
+            under.current = null;
+            force((k) => k + 1);
+        }
+    };
+
+    const beneath = under.current;
+    const beneathScale = beneath ? Math.pow(2, z - beneath.z) : 1;
+
     return (
         <View
-            style={[{ width, height, overflow: 'hidden', position: 'relative' }, style]}
+            style={[
+                { width, height, overflow: 'hidden', position: 'relative' },
+                // An explicit ground colour, so a tile that has not arrived yet reads
+                // as map-still-loading rather than as a hole in the screen. Without
+                // it the page behind shows through, which in the dark theme is black.
+                { backgroundColor: dark ? '#1B1F24' : '#E7E9EC' },
+                style
+            ]}
             {...(interactive ? pan.panHandlers : {})}
         >
+            {/* The previous zoom's tiles, scaled to line up, shown only until the
+                new ones above them have painted. */}
+            {beneath ? (
+                <View
+                    pointerEvents="none"
+                    style={{
+                        position: 'absolute',
+                        left: (width - beneath.vw) / 2,
+                        top: (height - beneath.vh) / 2,
+                        width: beneath.vw,
+                        height: beneath.vh,
+                        transform: [{ scale: beneathScale }]
+                    }}
+                >
+                    {beneath.tiles.map((t) => (
+                        <Image
+                            key={t.key}
+                            source={{ uri: t.uri }}
+                            style={{ position: 'absolute', left: t.left, top: t.top, width: TILE_SIZE, height: TILE_SIZE }}
+                            fadeDuration={0}
+                        />
+                    ))}
+                </View>
+            ) : null}
             {/* The tiles live in their own layer so the pinch can scale THEM without
                 touching anything drawn on top — the pin, the zoom buttons and the
                 attribution must stay put and stay the size they are. The layer is
@@ -479,6 +588,12 @@ export function TileMap({
                         style={{ position: 'absolute', left: t.left, top: t.top, width: TILE_SIZE, height: TILE_SIZE }}
                         // The tiles are the map; fading them in makes a pan look broken.
                         fadeDuration={0}
+                        onLoad={() => noteLoaded(t.key)}
+                        // A tile that fails — a rate limit, a dead provider — must not
+                        // pin the older layer underneath it for ever, so a failure
+                        // counts as settled too. The stale tile below stays visible,
+                        // which is the best available answer for that square.
+                        onError={() => noteLoaded(t.key)}
                     />
                 ))}
             </View>

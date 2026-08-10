@@ -690,6 +690,14 @@ function deriveVm(s, api) {
       overlay: null,
       pin: { back: which, lat: start.lat, lon: start.lon, zoom: hasPin(form.lat, form.lon) ? 17 : 13, q: '', results: [], searching: false, address: null, error: '' }
     });
+    // Describe where the pin is STARTING, not only where it is dragged to. Dragging
+    // was the sole trigger for a reverse-geocode, so opening the picker on a
+    // property that is already pinned — exactly what "Move pin" does — and pressing
+    // "Use this location" without dragging first left the address unknown, and the
+    // form got a bare coordinate and nothing else. The picker also had no address to
+    // print, so it sat there saying "Drag to place the pin" over a perfectly good
+    // location.
+    api.describePin(start.lat, start.lon);
   };
 
 
@@ -1683,6 +1691,11 @@ function deriveVm(s, api) {
           const key = editing ? 'ep' : 'np';
           const form = editing ? (s.ep || BLANK_EDIT_PROPERTY) : (s.np || BLANK_PROPERTY);
           const a = p.address || null;
+          // A pin on a road or a landmark has no house number, so `street` is empty
+          // and the name is the only thing describing it. Preferring `street` keeps
+          // "12 80 Feet Road" over "Sunrise Apartments" where both exist.
+          const streetLine = (a && (a.street || a.label)) || '';
+          const typedAddress = String(form.address || '').trim();
           setState({
             route: editing ? 'property' : 'units',
             overlay: p.back,
@@ -1690,12 +1703,18 @@ function deriveVm(s, api) {
               ...form,
               lat: roundCoord(lat),
               lon: roundCoord(lon),
-              // The picker fills the address in. Whatever it found wins over what was
-              // typed, because the point of choosing a place on a map is not having
-              // to type it -- and every field stays editable afterwards, so a
-              // geocoder that gets the flat number wrong is corrected in a second.
-              // A field the geocoder had nothing for is left exactly as it was.
-              address: (a && a.street) || form.address,
+              // The picker fills the address in, but the street line is the one field
+              // it must NOT overwrite. A landlord types "Flat 3B, Sunrise Apartments"
+              // — a door number no geocoder can ever know — and later nudges the pin
+              // to sit on the building properly; replacing that with "Walton Road"
+              // throws the work away with no undo, because confirm goes straight back
+              // to the sheet. So it fills an EMPTY box and otherwise leaves what was
+              // typed alone.
+              //
+              // The other three are the geocoder's to know and are a single token
+              // each, so those still win — retyping a city costs nothing, and being
+              // wrong about which pincode a building sits in is worth correcting.
+              address: typedAddress ? form.address : (streetLine || form.address),
               locality: (a && a.locality) || form.locality,
               city: (a && a.city) || form.city,
               pincode: (a && a.postcode) || form.pincode,
@@ -4939,14 +4958,22 @@ export function AppProvider({ children }) {
   // What the pin is currently over, in words. Best-effort: a failed lookup leaves
   // the pin exactly where it is, because the coordinate is the thing being chosen
   // and the address is only a confirmation of it.
+  // Its OWN sequence counter, not the search box's. Sharing one meant the two
+  // cancelled each other: searchPlaces bumps the counter before its "fewer than
+  // three characters" early return, so a single keystroke in the search field — or
+  // tapping the clear button — threw away an in-flight reverse-geocode and left the
+  // address null, which is one of the ways the form ended up unfilled. The two
+  // requests answer different questions and neither should silence the other.
+  const descSeq = useRef(0);
+
   const describePin = useCallback(async (lat, lon) => {
-    const mine = ++pinSeq.current;
+    const mine = ++descSeq.current;
     try {
       const place = await apiPlaces.reverse(lat, lon);
-      if (mine !== pinSeq.current) return;
+      if (mine !== descSeq.current) return;
       setState({ pin: { ...stateRef.current.pin, address: place } });
     } catch (e) {
-      if (mine !== pinSeq.current) return;
+      if (mine !== descSeq.current) return;
       setState({ pin: { ...stateRef.current.pin, address: null } });
     }
   }, [setState]);
