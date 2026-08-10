@@ -13,7 +13,7 @@ Almost everything is JavaScript and goes out over the air. The exception is anyt
 that needs native code compiled in: a new `expo-*` module, a new permission, an
 `app.json` plugin, an SDK bump. Those need a build.
 
-## Why `runtimeVersion` is a fingerprint
+## Why `runtimeVersion` matters
 
 `runtimeVersion` is the compatibility label between JS and the binary underneath it.
 Expo stamps it into the APK at build time and onto every OTA update at publish time,
@@ -25,43 +25,46 @@ It used to be the hardcoded string `"1.0.0"`. A constant matches everything, so 
 update was delivered to every build regardless of what native code that build
 contained. That is not a hypothetical:
 
-- **8 Aug** — an APK is built.
+- **8 Aug** — an APK is built. Label: `1.0.0`.
 - **9 Aug** — `expo-location` is added and an OTA update ships the JS that calls it.
-- The update installs happily onto the 8 Aug APK, which has no location module in it.
-  "Use my current location" does nothing, with no error explaining why.
+  Label: also `1.0.0`.
+- The labels match, so the update installs onto a binary with no location module in
+  it. "Use my current location" does nothing, with no error explaining why.
 
-It is now `{ "policy": "fingerprint" }`. Expo hashes the actual native inputs —
-dependencies, config plugins, permissions, autolinking — so adding a native module
-changes the label automatically, with nothing to remember. Verified rather than
-assumed: removing the `expo-location` plugin moves the hash from `564efec4…` to
-`cd4d2353…`, so an update built with location could not have reached a binary
-without it.
+It is now `{ "policy": "appVersion" }`, so the label is the `version` field above —
+today `1.3.0`. Old installs carry `1.0.0`, do not match, and correctly stop receiving
+updates they cannot run.
 
-### Why not the other policies
+### The rule this policy asks you to remember
 
-- `"1.0.0"` or any fixed string — matches everything, protects nothing.
-- `{ "policy": "sdkVersion" }` — tracks the Expo SDK only. Adding `expo-location`
-  does not change the SDK version, so **this would not have caught the bug above.**
-- `{ "policy": "appVersion" }` — tracks `version` in `app.json`. That was `1.3.0` on
-  both sides of the incident, so **this would not have caught it either**, unless you
-  remember to bump the version every time native code changes. Fingerprint is the
-  same discipline without the remembering.
+**Bump `version` whenever you add anything native, and build.** The policy only
+separates old binaries from new JS if the version string actually changes, so:
 
-Fingerprint stability depends on both workflows computing the same hash from the same
-commit. Two things keep that true, and both matter:
+```
+add expo-location  ->  bump version 1.3.0 -> 1.4.0  ->  build  ->  install
+                       (now old 1.3.0 installs are correctly locked out)
+```
 
-- `android/` and `ios/` are gitignored, so every run starts from the same managed
-  project rather than a generated one that may differ.
-- `package-lock.json` is committed, so the dependency tree the hash covers is the
-  same tree in both workflows.
+Skip the bump and the old bug returns exactly as before: both sides read `1.3.0`,
+they match, and the update lands on a binary without the module. Note this is how the
+August incident would have played out even under this policy — `version` had been
+`1.3.0` since 6 Aug, unchanged across both the build and the module being added.
+
+`{ "policy": "sdkVersion" }` is weaker still: it tracks the Expo SDK, and adding
+`expo-location` does not change that. `{ "policy": "fingerprint" }` is the option that
+needs no remembering — Expo hashes the real native inputs, so adding a module changes
+the label on its own. Measured on this project: dropping the `expo-location` plugin
+moves the hash from `564efec4…` to `cd4d2353…`. It is available here (SDK 54,
+expo-updates 29) if the manual bump ever gets missed.
 
 ## The catch when the label changes
 
-`runtimeVersion` is baked into an APK when it is built. Change the policy and every
-APK built before the change keeps its old label — so new updates no longer match it
-and stop arriving. **Changing this file's `runtimeVersion` therefore requires a new
-build, and users must install it.** Installs older than that change are frozen at
-whatever JS they already have until they do.
+`runtimeVersion` is baked into an APK when it is built. Change the policy — or the
+`version` it reads from — and every APK built beforehand keeps its old label, so new
+updates no longer match it and stop arriving. **Any change here therefore requires a
+new build, and users must install it.** Older installs are frozen at whatever JS they
+already have until they do. That is the intended behaviour, not a fault: an update
+they cannot run is worse than no update.
 
 ## Shipping something native
 
