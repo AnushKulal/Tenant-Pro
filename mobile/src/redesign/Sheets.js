@@ -804,7 +804,12 @@ export default function Sheets() {
                 {/* ── Pay (tenant) ────────────────────────────────────── */}
                 {vm.isPay && (
                     <View>
-                        <T w={700} s={20} lh={1} style={{ letterSpacing: -0.8, marginBottom: 16 }}>{vm.payLabel || 'Pay rent'}</T>
+                        {/* Was `vm.payLabel || 'Pay rent'`. payLabel went away with the
+                            prototype's payment wiring, so the fallback was the only
+                            thing that ever rendered — the read survived as noise, and
+                            an `|| default` on a key that cannot exist hides the fact
+                            that it is gone. */}
+                        <T w={700} s={20} lh={1} style={{ letterSpacing: -0.8, marginBottom: 16 }}>Pay rent</T>
                         {/* The landlord's real UPI details. Tap either row to copy it. */}
                         {vm.payInfo.missing ? (
                             <Row gap={9} align="flex-start" style={{ paddingVertical: 12, paddingHorizontal: 13, borderRadius: 14, backgroundColor: t.asoft, marginBottom: 16 }}>
@@ -1393,7 +1398,15 @@ export default function Sheets() {
                             placeholderTextColor={t.fg3}
                             multiline
                             style={{
-                                fontFamily: grotesk,
+                                // grotesk is a FUNCTION of weight — grotesk(400) — and
+                                // passing the function itself handed React Native a
+                                // callable where it expected a font name. It calls
+                                // .indexOf on that string while resolving the family,
+                                // so the whole sheet died with "i.indexOf is not a
+                                // function" the instant a landlord opened a payment to
+                                // confirm it. Every other call site in the app passes a
+                                // weight; this was the only one that did not.
+                                fontFamily: grotesk(400),
                                 fontSize: 13,
                                 color: t.fg,
                                 backgroundColor: t.ink3,
