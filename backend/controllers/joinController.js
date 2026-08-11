@@ -225,9 +225,19 @@ const createJoinRequest = async (req, res) => {
             return res.status(409).json({ message: 'You are already a tenant of this landlord.' });
         }
 
+        // How long they say they are staying. An ASK, not a decision — the landlord
+        // sets the real dates on accept, and this only pre-fills their choice. Bad
+        // input is refused rather than dropped: silently discarding it would show the
+        // landlord "did not say" for somebody who did say, and the landlord would
+        // then date the stay wrong on the strength of it.
+        const asked = parseStayUntil(req.body?.stay_until);
+        if (!asked.ok) {
+            return res.status(400).json({ message: asked.message });
+        }
+
         const [result] = await db.query(
-            'INSERT INTO join_requests (tenant_user_id, owner_id, property_id, note) VALUES (?, ?, ?, ?)',
-            [userId, property.owner_id, property.id, note]
+            'INSERT INTO join_requests (tenant_user_id, owner_id, property_id, note, requested_stay_until) VALUES (?, ?, ?, ?, ?)',
+            [userId, property.owner_id, property.id, note, toSqlDate(asked.value)]
         );
 
         // 'Pending' is what the account's status was always meant to mean, but only
@@ -247,6 +257,7 @@ const createJoinRequest = async (req, res) => {
                 property_name: property.name,
                 status: 'Pending',
                 note,
+                requested_stay_until: toSqlDate(asked.value),
                 created_at: new Date().toISOString(),
                 decided_at: null
             }
@@ -268,7 +279,7 @@ const getMyJoinRequests = async (req, res) => {
 
         const [requests] = await db.query(
             `SELECT jr.id, jr.property_id, jr.unit_id, jr.status, jr.note,
-                    jr.created_at, jr.decided_at,
+                    jr.requested_stay_until, jr.created_at, jr.decided_at,
                     p.name AS property_name, p.locality, p.city,
                     u.unit_number
              FROM join_requests jr
@@ -313,7 +324,7 @@ const getJoinRequests = async (req, res) => {
         // needs a decision must never be pushed off the screen by newer decided ones.
         const [requests] = await db.query(
             `SELECT jr.id, jr.tenant_user_id, jr.property_id, jr.unit_id, jr.status,
-                    jr.note, jr.created_at, jr.decided_at,
+                    jr.note, jr.requested_stay_until, jr.created_at, jr.decided_at,
                     tu.name AS requester_name, tu.email AS requester_email, tu.phone AS requester_phone,
                     -- A guest applicant has no name and no email — only a phone number
                     -- and the ID they photographed. The landlord has to know that
@@ -390,7 +401,7 @@ const decideJoinRequest = async (req, res) => {
         // than only in the UPDATE) is what makes another landlord's request a clean
         // 404 instead of a silent no-op that reports success.
         const [check] = await db.query(
-            'SELECT id, tenant_user_id, property_id, status FROM join_requests WHERE id = ? AND owner_id = ?',
+            'SELECT id, tenant_user_id, property_id, status, requested_stay_until FROM join_requests WHERE id = ? AND owner_id = ?',
             [requestId, ownerId]
         );
         if (check.length === 0) {
@@ -410,7 +421,23 @@ const decideJoinRequest = async (req, res) => {
             return res.status(200).json({ message: 'Request rejected.', status: 'Rejected' });
         }
 
-        return await acceptRequest(res, ownerId, request, unit_id || null, stay_until);
+        // A landlord who names no date inherits what the applicant asked for. The
+        // distinction is between the KEY being absent and its value being null, and it
+        // has to be: null is how "open-ended" is said, so treating the two the same
+        // would make it impossible to override an applicant's ask with no expiry at
+        // all. The app always sends the key; this is for every other caller.
+        const named = Object.prototype.hasOwnProperty.call(req.body || {}, 'stay_until');
+        let chosen = stay_until;
+        if (!named) {
+            // A request can sit Pending until the date it asked for has gone by. That
+            // stale ask must not become a 400 on the landlord's Accept -- they never
+            // typed it and cannot see it -- so it is dropped and the tenancy is
+            // open-ended, which is what no date has always meant here.
+            const stale = parseStayUntil(request.requested_stay_until);
+            chosen = stale.ok ? request.requested_stay_until || null : null;
+        }
+
+        return await acceptRequest(res, ownerId, request, unit_id || null, chosen);
     } catch (error) {
         console.error('Owner decideJoinRequest error:', error);
         res.status(500).json({ message: 'Failed to update the join request.' });

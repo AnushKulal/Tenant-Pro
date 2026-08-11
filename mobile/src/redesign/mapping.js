@@ -282,6 +282,14 @@ export function mapDocument(d, now) {
 
 export function mapJoinRequest(r, now) {
     const created = asDate(r.created_at);
+    // What the applicant said when they asked. Kept in both shapes on purpose: the
+    // ISO string is what goes back to the server on accept, and the label is what the
+    // landlord reads. Deriving the label at render time from the string would mean
+    // parsing a date in three different sheets.
+    const wants = asDate(r.requested_stay_until);
+    const iso = wants
+        ? `${wants.getFullYear()}-${String(wants.getMonth() + 1).padStart(2, '0')}-${String(wants.getDate()).padStart(2, '0')}`
+        : null;
     return {
         id: r.id,
         name: r.requester_name || 'Someone',
@@ -295,6 +303,14 @@ export function mapJoinRequest(r, now) {
         note: r.note || '',
         age: ageLabel(created, now),
         askedOn: created ? `${created.getDate()} ${MON_TITLE[created.getMonth()]} ${created.getFullYear()}` : '',
+        // The stay they asked for. null means they did not say, or said "not sure" —
+        // both of which are answers, and neither of which is a date.
+        askedStay: iso,
+        askedStayLabel: wants ? `${wants.getDate()} ${MON_TITLE[wants.getMonth()]} ${wants.getFullYear()}` : '',
+        // Whether that ask is still ahead of us. A request left sitting long enough
+        // outlives the date it asked for, and offering the landlord a chip that the
+        // server will refuse is worse than not offering it.
+        askedStayStale: !!wants && !!now && wants < new Date(new Date(now).setHours(0, 0, 0, 0)),
         // Whether this stranger has put an ID up at all — the first thing worth
         // knowing before letting them into a building. NOT called `id`: that is
         // already this request's primary key.

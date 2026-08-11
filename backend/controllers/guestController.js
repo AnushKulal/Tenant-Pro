@@ -32,7 +32,7 @@
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const db = require('../config/db');
-const { stayState, toSqlDate } = require('../utils/guestStay');
+const { stayState, toSqlDate, parseStayUntil } = require('../utils/guestStay');
 const { getFileUrl } = require('../middleware/uploadMiddleware');
 const { findPropertyByCode } = require('./joinController');
 const { fetchDocuments, summarise, DOC_TYPES } = require('./documentController');
@@ -146,6 +146,18 @@ const joinAsGuest = async (req, res) => {
         }
         const docNumber = String(req.body.doc_number || '').trim().slice(0, 64) || null;
 
+        // How long they say they are staying. Checked here, before the account is
+        // created, for the same reason every other failure above is: a rejected date
+        // must not leave a guest account and a document behind it.
+        //
+        // This is the applicant's ASK and nothing more. The landlord sets the real
+        // dates when they accept, and a guest who could set their own expiry could set
+        // it to never -- which is the whole thing guest expiry exists to prevent.
+        const asked = parseStayUntil(req.body.stay_until);
+        if (!asked.ok) {
+            return res.status(400).json({ message: asked.message });
+        }
+
         // Which property. Same two ways in as a normal join request.
         const wantedCode = String(req.body.code || '').trim().toUpperCase();
         const propertyId = Number(req.body.property_id) || null;
@@ -228,8 +240,8 @@ const joinAsGuest = async (req, res) => {
 
             const note = String(req.body.note || '').trim().slice(0, 300) || null;
             const [jr] = await conn.query(
-                'INSERT INTO join_requests (tenant_user_id, owner_id, property_id, note) VALUES (?, ?, ?, ?)',
-                [userId, property.owner_id, property.id, note]
+                'INSERT INTO join_requests (tenant_user_id, owner_id, property_id, note, requested_stay_until) VALUES (?, ?, ?, ?, ?)',
+                [userId, property.owner_id, property.id, note, toSqlDate(asked.value)]
             );
 
             await conn.commit();
@@ -243,7 +255,13 @@ const joinAsGuest = async (req, res) => {
                 token: signTenantToken(user),
                 tenant: { ...user, is_guest: 1, guest_code: guestCode },
                 guest_code: guestCode,
-                request: { id: jr.insertId, property_id: property.id, property_name: property.name, status: 'Pending' },
+                request: {
+                    id: jr.insertId,
+                    property_id: property.id,
+                    property_name: property.name,
+                    status: 'Pending',
+                    requested_stay_until: toSqlDate(asked.value)
+                },
                 documents,
                 id_proof: summarise(documents)
             });

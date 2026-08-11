@@ -1241,6 +1241,14 @@ export default function Sheets() {
                             being made — and the resulting date is spelled out so the
                             landlord is not choosing an abstraction. */}
                         <Eyebrow s={9} ls={0.12} c={t.fg3} style={{ marginTop: 4, marginBottom: 9 }}>HOW LONG IS THIS STAY?</Eyebrow>
+                        {/* What the applicant themselves said, above the chips rather
+                            than inside them, because it is a fact about the request and
+                            not one of the options — the option that matches it is
+                            already preselected below. */}
+                        <Row gap={8} align="flex-start" style={{ marginBottom: 10, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 13, backgroundColor: vm.joinDecide.hasAsked ? t.lsoft : t.ink3 }}>
+                            <Glyph name="person-outline" size={14} color={vm.joinDecide.hasAsked ? t.lime : t.fg3} style={{ marginTop: 1 }} />
+                            <T w={500} s={11.5} lh={1.45} c={vm.joinDecide.hasAsked ? t.fg : t.fg3} style={{ flex: 1 }}>{vm.joinDecide.askedLine}</T>
+                        </Row>
                         <Chips items={vm.joinDecide.stayOptions} t={t} />
                         <Row gap={8} align="flex-start" style={{ marginBottom: 14 }}>
                             <Glyph name="time-outline" size={14} color={t.fg3} style={{ marginTop: 1 }} />

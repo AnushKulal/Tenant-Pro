@@ -136,6 +136,36 @@ export default function GuestJoinScreen() {
                             style={{ marginBottom: 16 }}
                         />
 
+                        {/* How long they are staying, asked of the person who knows.
+                            A guest ID expires with the stay, and the landlord used to
+                            have to guess the dates from nothing — so this is the ask,
+                            and the line underneath is careful to say the landlord still
+                            decides. Chips rather than a date picker: somebody moving
+                            into a PG thinks "three months", not "12 November". */}
+                        <Eyebrow s={9} ls={0.12} c={t.fg3} style={{ marginBottom: 9 }}>HOW LONG ARE YOU STAYING?</Eyebrow>
+                        <Row wrap gap={7} style={{ marginBottom: 10 }}>
+                            {g.stayOptions.map((o) => (
+                                <Press
+                                    key={o.label}
+                                    onPress={o.go}
+                                    style={{
+                                        paddingVertical: 10,
+                                        paddingHorizontal: 14,
+                                        borderRadius: 999,
+                                        backgroundColor: o.on ? t.fg : t.ink2,
+                                        borderWidth: 1,
+                                        borderColor: o.on ? t.fg : t.line
+                                    }}
+                                >
+                                    <T mono w={600} s={10} lh={1} ls={0.06} c={o.on ? t.ink : t.fg2}>{o.label.toUpperCase()}</T>
+                                </Press>
+                            ))}
+                        </Row>
+                        <Row gap={8} align="flex-start" style={{ marginBottom: 16 }}>
+                            <Glyph name="time-outline" size={13} color={t.fg3} style={{ marginTop: 1 }} />
+                            <T w={400} s={11.5} lh={1.45} c={t.fg3} style={{ flex: 1 }}>{g.stayLine}</T>
+                        </Row>
+
                         <Eyebrow s={9} ls={0.12} c={t.fg3} style={{ marginBottom: 9 }}>WHICH ID</Eyebrow>
                         <Row wrap gap={7} style={{ marginBottom: 13 }}>
                             {g.docTypes.map((d) => (

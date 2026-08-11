@@ -94,6 +94,47 @@ const fmtDay = (v) => {
   if (!v || isNaN(d.getTime())) return '';
   return `${d.getDate()} ${MON_SHORT[d.getMonth()]} ${d.getFullYear()}`;
 };
+// "Three months from today", as both the date a server stores and the date a person
+// reads. One helper because the guest's request form, the landlord's decide sheet and
+// the accept call all have to mean the same day — computing it three times from three
+// places is how a chip labelled 12 Nov ends up sending 11 Nov.
+//
+// setMonth overflows on its own (31 Jan + 1 month lands on 3 March), which would
+// quietly hand out two extra days, so a month that is too short is clamped to its own
+// last day. `null` months means open-ended, and there is no date to give.
+const stayFromMonths = (months) => {
+  if (months == null) return null;
+  const now = new Date();
+  const day = now.getDate();
+  const d = new Date(now.getFullYear(), now.getMonth() + months, 1);
+  const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  d.setDate(Math.min(day, lastDay));
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return { iso: `${d.getFullYear()}-${mm}-${dd}`, label: fmtDay(d) };
+};
+
+const monthsLabel = (months) => (months == null ? 'Not sure yet' : `${months} month${months === 1 ? '' : 's'}`);
+
+// The landlord's stay choice, resolved to a date. Three kinds of value, because
+// "open-ended" and "not chosen yet" are different things and null can only be one of
+// them: 'asked' means take the applicant's own answer, a number means that many
+// months from today, and null means no expiry at all.
+//
+// 'asked' is also what the sheet resets to for each new request, so it has to survive
+// an applicant who said nothing — six months is the fallback the sheet used before
+// anybody was asked, and it stays the fallback now.
+const ASKED_FALLBACK_MONTHS = 6;
+const resolveJoinStay = (choice, request) => {
+  if (choice === 'asked') {
+    const asked = request && request.askedStay;
+    const stale = !!(request && request.askedStayStale);
+    if (asked && !stale) return { iso: asked, label: request.askedStayLabel || fmtDay(asked) };
+    return stayFromMonths(ASKED_FALLBACK_MONTHS);
+  }
+  return stayFromMonths(choice);
+};
+
 // How long ago, in words, for the demo card's "last reset" line. Coarse on purpose:
 // the answer to "is this demo stale" is days, never minutes, and "2 days ago" reads
 // better than a date you have to compare against today yourself.
@@ -189,6 +230,11 @@ const BLANK_GUEST_FORM = {
   docType: 'aadhaar',
   docNumber: '',
   photo: null,      // { uri, name, type } from the camera or the library
+  // How long they say they are staying, in months, or null for "not sure yet".
+  // Undated is the honest default for somebody who genuinely does not know, but 3 is
+  // the answer most PG guests give, and a preselected chip is what makes the question
+  // read as answerable rather than as another required field.
+  stayMonths: 3,
   busy: false,
   error: ''
 };
@@ -223,7 +269,10 @@ const INITIAL_STATE = {
   // Which join request the landlord has opened from the inbox.
   join: null,
   // Months a guest's stay runs for when the landlord accepts them. null = open-ended.
-  joinStay: 6,
+  // 'asked' means "whatever this applicant asked for", which is what the decide sheet
+  // should open on — see resolveJoinStay. It falls back to six months for an applicant
+  // who did not say, which is what this used to be pinned to for everybody.
+  joinStay: 'asked',
 
   // The property being edited (a copy of its current values, so cancelling leaves
   // the real one untouched).
@@ -1830,6 +1879,25 @@ function deriveVm(s, api) {
         pick: () => api.pickGuestPhoto('library'),
         clearPhoto: () => put({ photo: null }),
 
+        // ── How long they are staying ──
+        // Asked here, of the person who actually knows, instead of being guessed by
+        // the landlord from nothing. It is still only an ASK: the landlord sets the
+        // real dates when they accept, because a guest who could set their own expiry
+        // could set it to never — which is precisely what guest expiry exists to stop.
+        // Said plainly on the screen, so nobody reads a chip as a promise.
+        stayMonths: g.stayMonths,
+        stayOptions: [1, 3, 6, 12, null].map((months) => ({
+          label: monthsLabel(months),
+          on: g.stayMonths === months,
+          go: () => put({ stayMonths: months })
+        })),
+        stayLine: (() => {
+          const until = stayFromMonths(g.stayMonths);
+          return until
+            ? `We will tell your landlord you are planning to stay until ${until.label}. They confirm the dates when they accept, and you can always ask them to extend.`
+            : 'Your landlord will set the dates when they accept, and you can ask them to change them later.';
+        })(),
+
         canJoin: phoneDigits.length >= 10 && !!g.photo && !g.busy,
         submit: () => api.submitGuestJoin(),
         submitLabel: g.busy ? 'Sending…' : 'Send my request',
@@ -2522,7 +2590,10 @@ function deriveVm(s, api) {
             ? messageNumber(j.phone, j.name, `Hi ${String(j.name).split(' ')[0]}, about your request to join ${j.property} on TenantPro — `)
             : flash(`No number on file for ${j.name}`)),
           // Open the decision sheet, where a room can be chosen.
-          open: () => setState({ overlay: 'joindecide', join: j.id }),
+          // 'asked' resets the stay choice to whatever THIS applicant asked for.
+          // Without the reset the sheet kept the previous request's answer, so a
+          // landlord who set 12 months for one person silently set 12 for the next.
+          open: () => setState({ overlay: 'joindecide', join: j.id, joinStay: 'asked' }),
           decline: () => api.decideJoin({ id: j.id, decision: 'reject', name: j.name }),
           // Whether this stranger has put an ID up, and a way straight to it. The
           // whole point of showing it here is that it answers "should I accept
@@ -2581,19 +2652,45 @@ function deriveVm(s, api) {
         // landlord admitting somebody thinks in months — "three months" — not in
         // calendar dates, and a picker inside a bottom sheet is a fiddly way to say
         // something simple. The resulting date is shown so the choice is not abstract.
+        //
+        // The applicant is asked the same question when they apply, and their answer
+        // becomes the FIRST chip and the preselected one — they are the person who
+        // knows. It stays a chip the landlord can move off, because the dates are a
+        // commercial term and letting the applicant set their own expiry would be
+        // letting them set it to never.
+        //
+        // Three kinds of value live in s.joinStay: 'asked' (use their date), a number
+        // of months, or null for open-ended. null cannot double as "not chosen"
+        // precisely because it is a real choice.
+        askedStay: j.askedStay || null,
+        askedStayLabel: j.askedStayLabel || '',
+        // A request left long enough outlives the date it asked for. The chip is
+        // dropped rather than shown greyed: the server refuses a past date, so the
+        // honest move is not to offer it.
+        hasAsked: !!j.askedStay && !j.askedStayStale,
+        askedLine: !j.askedStay
+          ? 'They did not say how long they are staying.'
+          : j.askedStayStale
+            ? `They asked to stay until ${j.askedStayLabel}, which has already passed. Pick the dates yourself.`
+            : `They asked to stay until ${j.askedStayLabel}.`,
+
         stayMonths: s.joinStay,
-        stayOptions: [1, 3, 6, 12, null].map((months) => ({
-          label: months === null ? 'Open-ended' : `${months} month${months === 1 ? '' : 's'}`,
-          on: s.joinStay === months,
-          go: () => set('joinStay', months)
-        })),
+        stayOptions: [
+          ...(j.askedStay && !j.askedStayStale
+            ? [{ label: `As asked · ${j.askedStayLabel}`, on: s.joinStay === 'asked', go: () => set('joinStay', 'asked') }]
+            : []),
+          ...[1, 3, 6, 12, null].map((months) => ({
+            label: months === null ? 'Open-ended' : monthsLabel(months),
+            on: s.joinStay === months,
+            go: () => set('joinStay', months)
+          }))
+        ],
         stayLine: (() => {
-          if (s.joinStay === null) {
+          const until = resolveJoinStay(s.joinStay, j);
+          if (!until) {
             return 'Their guest ID will not expire. They can still complete a profile at any time.';
           }
-          const d = new Date();
-          d.setMonth(d.getMonth() + s.joinStay);
-          return `Their guest ID works until ${fmtDay(d)}. After that they complete a profile to keep access, or you extend the dates.`;
+          return `Their guest ID works until ${until.label}. After that they complete a profile to keep access, or you extend the dates.`;
         })(),
         idState: (j.idProof && j.idProof.state) || 'none',
         idLabel: (j.idProof && j.idProof.label) || 'NO ID ON FILE',
@@ -2618,14 +2715,11 @@ function deriveVm(s, api) {
             where: room ? `room ${room.no}` : '',
             // Turned into a date here rather than on the server: the landlord is
             // looking at the date this produces, so the app and the server must not
-            // each compute "six months from now" from their own clocks.
+            // each compute "six months from now" from their own clocks. Same resolver
+            // the line above the button uses, so the date sent is the date shown.
             stayUntil: (() => {
-              if (s.joinStay === null) return null;
-              const d = new Date();
-              d.setMonth(d.getMonth() + s.joinStay);
-              const mm = String(d.getMonth() + 1).padStart(2, '0');
-              const dd = String(d.getDate()).padStart(2, '0');
-              return `${d.getFullYear()}-${mm}-${dd}`;
+              const until = resolveJoinStay(s.joinStay, j);
+              return until ? until.iso : null;
             })()
           });
         },
@@ -4928,6 +5022,12 @@ export function AppProvider({ children }) {
       form.append('doc_type', g.docType);
       form.append('doc_number', g.docNumber || '');
       form.append('document', filePart(g.photo, `guest-id-${Date.now()}.jpg`));
+      // Sent as the date rather than the month count, so the landlord sees exactly the
+      // day this screen showed them — and so a request that sits in the inbox for a
+      // week still means the day they asked for, not a week later. Omitted entirely
+      // for "not sure yet": an empty string would be a date the server has to guess at.
+      const wants = stayFromMonths(g.stayMonths);
+      if (wants) form.append('stay_until', wants.iso);
       const res = await apiAuth.joinAsGuest(form);
 
       // From here a guest is an ordinary signed-in tenant. Same session storage,
