@@ -1,6 +1,7 @@
 const db = require('../config/db');
 const { getFileUrl } = require('../middleware/uploadMiddleware');
 const { endGuestIdentity } = require('./guestController');
+const { parseStayUntil, toSqlDate } = require('../utils/guestStay');
 
 // --- 1. ADD TENANT ---
 const addTenant = async (req, res) => {
@@ -361,6 +362,46 @@ const updateFinancials = async (req, res) => {
     }
 };
 
+
+// --- CHANGE WHEN A GUEST'S STAY ENDS ---
+//
+// The escape hatch that makes hard expiry acceptable. Access ending on a date is only
+// reasonable if the landlord can move that date — a guest still living in the room
+// whose ID stopped working needs the landlord to be able to fix it in one tap, not to
+// re-admit them from scratch.
+//
+// Sending null clears the date, which is open-ended again. Extending a stay that has
+// ALREADY expired is deliberately allowed: that is the common case, discovered when
+// the guest says they cannot sign in.
+const updateStay = async (req, res) => {
+    try {
+        const tenantId = req.params.id;
+        const ownerId = req.user.id;
+
+        // Ownership and the move-in date in one read: the validator needs the floor, and
+        // a second query for it would be a second chance to forget the owner check.
+        const [existing] = await db.query(
+            'SELECT id, move_in_date FROM tenants WHERE id = ? AND owner_id = ?',
+            [tenantId, ownerId]
+        );
+        if (existing.length === 0) return res.status(404).json({ message: 'Tenant not found or unauthorized.' });
+
+        const stay = parseStayUntil(req.body?.stay_until, { notBefore: existing[0].move_in_date });
+        if (!stay.ok) return res.status(400).json({ message: stay.message });
+
+        const value = toSqlDate(stay.value);
+        await db.query('UPDATE tenants SET stay_until = ? WHERE id = ?', [value, tenantId]);
+
+        res.status(200).json({
+            message: value ? 'Stay dates updated.' : 'This stay is open-ended again.',
+            stay_until: value
+        });
+    } catch (error) {
+        console.error('Error updating stay dates:', error);
+        res.status(500).json({ message: 'Server error while updating the stay dates.' });
+    }
+};
+
 // --- 1. GET ALL UNASSIGNED TENANTS ---
 const getUnassignedTenants = async (req, res) => {
     try {
@@ -434,4 +475,4 @@ const assignTenantToRoom = async (req, res) => {
 };
 
 // Export controllers
-module.exports = { addTenant, getTenantsByUnit, moveOutTenant, getAllTenants, assignUnit, updateTenant, deleteTenant, updateFinancials, getUnassignedTenants, assignTenantToRoom };
+module.exports = { addTenant, getTenantsByUnit, moveOutTenant, getAllTenants, assignUnit, updateTenant, deleteTenant, updateFinancials, updateStay, getUnassignedTenants, assignTenantToRoom };

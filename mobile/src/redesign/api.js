@@ -73,8 +73,19 @@ export const owner = {
     sendRequestMessage: (id, text) => body(http.post(`/owner/requests/${id}/messages`, { body: text })),
     // People asking to be let into one of this owner's properties.
     joinRequests: (status = 'all') => body(http.get('/owner/join-requests', { params: { status } })),
-    decideJoinRequest: (id, decision, unitId) => body(
-        http.put(`/owner/join-requests/${id}`, { decision, ...(unitId != null ? { unit_id: unitId } : {}) })
+    decideJoinRequest: (id, decision, unitId, stayUntil = null) => body(
+        http.put(`/owner/join-requests/${id}`, {
+            decision,
+            ...(unitId != null ? { unit_id: unitId } : {}),
+            // Only sent on an accept, and only when there is one: the endpoint treats a
+            // missing value as open-ended, and sending null on a reject would read like
+            // the rejection had dates.
+            ...(decision === 'accept' && stayUntil ? { stay_until: stayUntil } : {})
+        })
+    ),
+    // Move a guest's end date. Sending null clears it, which is open-ended again.
+    updateStay: (tenantId, stayUntil) => body(
+        http.put(`/tenants/${tenantId}/stay`, { stay_until: stayUntil })
     ),
     // ID proofs. Two read paths because there are two moments a landlord needs to
     // see one: for somebody already their tenant, and for a stranger asking to be.

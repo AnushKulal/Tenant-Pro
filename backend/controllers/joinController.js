@@ -10,6 +10,7 @@
 // everything to req.user.id as the tenant_users id; the owner handlers reject
 // tenant tokens and scope everything to req.user.id as owner_id.
 const db = require('../config/db');
+const { parseStayUntil, toSqlDate } = require('../utils/guestStay');
 
 const JOIN_STATUSES = ['Pending', 'Accepted', 'Rejected'];
 
@@ -379,7 +380,7 @@ const decideJoinRequest = async (req, res) => {
         }
         const ownerId = req.user.id;
         const requestId = req.params.id;
-        const { decision, unit_id } = req.body || {};
+        const { decision, unit_id, stay_until } = req.body || {};
 
         if (decision !== 'accept' && decision !== 'reject') {
             return res.status(400).json({ message: "Decision must be 'accept' or 'reject'." });
@@ -409,7 +410,7 @@ const decideJoinRequest = async (req, res) => {
             return res.status(200).json({ message: 'Request rejected.', status: 'Rejected' });
         }
 
-        return await acceptRequest(res, ownerId, request, unit_id || null);
+        return await acceptRequest(res, ownerId, request, unit_id || null, stay_until);
     } catch (error) {
         console.error('Owner decideJoinRequest error:', error);
         res.status(500).json({ message: 'Failed to update the join request.' });
@@ -424,7 +425,13 @@ const decideJoinRequest = async (req, res) => {
 // runs as one transaction on a single pooled connection — note that every query
 // below must go through `conn`, since db.query() would grab a DIFFERENT connection
 // and land outside the transaction.
-const acceptRequest = async (res, ownerId, request, unitId) => {
+const acceptRequest = async (res, ownerId, request, unitId, stayUntilRaw = null) => {
+    // Checked BEFORE the transaction opens: a rejected date should cost nothing and
+    // must not leave a half-created tenancy behind.
+    const stay = parseStayUntil(stayUntilRaw);
+    if (!stay.ok) {
+        return res.status(400).json({ message: stay.message });
+    }
     const conn = await db.getConnection();
     try {
         await conn.beginTransaction();
@@ -532,8 +539,8 @@ const acceptRequest = async (res, ownerId, request, unitId) => {
         } else {
             const [created] = await conn.query(
                 `INSERT INTO tenants
-                    (owner_id, unit_id, status, name, phone, email, deposit, rent_share, move_in_date, billing_cycle, next_rent_due)
-                 VALUES (?, ?, 'Active', ?, ?, ?, 0, ?, ?, 'Anniversary', ?)`,
+                    (owner_id, unit_id, status, name, phone, email, deposit, rent_share, move_in_date, billing_cycle, next_rent_due, stay_until)
+                 VALUES (?, ?, 'Active', ?, ?, ?, 0, ?, ?, 'Anniversary', ?, ?)`,
                 [
                     ownerId,
                     unit ? unit.id : null,
@@ -542,7 +549,10 @@ const acceptRequest = async (res, ownerId, request, unitId) => {
                     account.email || null,
                     rentShare,
                     unit ? moveIn : null,
-                    unit ? nextRentDue : null
+                    unit ? nextRentDue : null,
+                    // When a guest's access ends. NULL is open-ended, which is what a
+                    // landlord who leaves the field alone gets.
+                    toSqlDate(stay.value)
                 ]
             );
             tenantId = created.insertId;

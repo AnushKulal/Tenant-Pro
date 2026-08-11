@@ -8,6 +8,8 @@
 // Auth: the `protect` middleware attaches req.user = { id, email, role }. `id` is
 // the tenant_users row id; the linked landlord `tenants.id` is resolved here.
 const db = require('../config/db');
+// Aliased: rentDates exports a toSqlDate of its own and this file already uses it.
+const { stayState, toSqlDate: stayDate } = require('../utils/guestStay');
 const { getFileUrl } = require('../middleware/uploadMiddleware');
 // Message reads/writes are shared with the owner side so a thread behaves
 // identically whichever end of it you are standing at.
@@ -36,7 +38,7 @@ const loadTenantContext = async (userId) => {
             t.id             AS tenant_id,
             t.name, t.phone, t.email, t.company, t.image_url,
             t.deposit, t.rent_share, t.credit_score, t.move_in_date,
-            t.billing_cycle, t.next_rent_due, t.status AS tenancy_status,
+            t.billing_cycle, t.next_rent_due, t.status AS tenancy_status, t.stay_until,
             u.id AS unit_id, u.unit_number, u.room_type, u.base_rent,
             p.id AS property_id, p.name AS property_name, p.address, p.locality, p.city, p.image_url AS property_image,
             p.property_type, p.latitude AS property_lat, p.longitude AS property_lon,
@@ -96,6 +98,19 @@ const getMe = async (req, res) => {
             // What finishing the profile actually buys, said once, here, so the app
             // does not invent its own version of the reason.
             why: 'Add your name, email and a password so you can sign in from any phone, recover your account, and your landlord sees who you are.'
+        };
+
+        // When this stay ends, and therefore when the guest ID stops working. Computed
+        // on the server so the app and the middleware cannot disagree about whether
+        // somebody is expired — the app would otherwise be free to draw a live-looking
+        // portal for an account every request is about to be refused for.
+        const stay = stayState({ stayUntil: ctx.stay_until, isGuest: ctx.is_guest });
+        guest.stay = {
+            ends_on: stayDate(stay.endsOn),
+            days_left: stay.daysLeft,
+            open_ended: stay.open,
+            expired: stay.expired,
+            ends_soon: stay.endsSoon
         };
 
         // Not yet linked to a unit by a landlord: the portal shows a friendly

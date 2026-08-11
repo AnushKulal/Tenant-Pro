@@ -4,7 +4,7 @@
 // linked tenant record.
 const express = require('express');
 const router = express.Router();
-const { protect } = require('../middleware/authMiddleware');
+const { protect, requireLiveStay } = require('../middleware/authMiddleware');
 const upload = require('../middleware/uploadMiddleware');
 const {
     getMe,
@@ -31,6 +31,25 @@ const { claimAccount } = require('../controllers/guestController');
 router.use(protect);
 
 router.get('/me', getMe);
+
+// Upgrading a guest to a full account. Registered HERE, above the expiry guard, and
+// the reason is in the note below: an expired guest must be able to take the one
+// action that restores their access.
+router.post('/claim-account', claimAccount);
+
+// ── Guest stay expiry ─────────────────────────────────────────────────────────
+// Applied to everything BELOW this line, which deliberately leaves two routes above
+// it reachable by an expired guest:
+//
+//   GET  /me            so the app can say WHY they are locked out and offer the fix
+//   POST /claim-account so taking that fix is possible — locking a guest out of the
+//                       one action that restores their access would make the message
+//                       "add an email to keep your account" a dead end.
+//
+// Everything else — the room, the tickets, the payment history, raising a request —
+// belongs to a live stay.
+router.use(requireLiveStay);
+
 // The tenant's equivalent of the owner's pulse: cheap counts so the portal can notice
 // being accepted into a property, or a payment being confirmed, without a manual pull.
 router.get('/pulse', getPulse);
@@ -72,6 +91,7 @@ router.delete('/documents/:id', deleteMyDocument);
 // "Guest 7K2QFH", and an email and password so they can sign in from anywhere and
 // recover the account. Authenticated because it upgrades the CALLER's own account —
 // the guest token they already hold is the proof of which account that is.
-router.post('/claim-account', claimAccount);
+// claim-account is registered ABOVE the expiry guard — see there. Moving it back down
+// here would lock an expired guest out of the fix the lock-out message offers them.
 
 module.exports = router;

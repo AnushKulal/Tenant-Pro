@@ -33,6 +33,25 @@ export default function MeScreen() {
                     </Row>
                     <T w={700} s={17} lh={1.2} style={{ letterSpacing: -0.5 }}>{vm.myGuest.title}</T>
                     <T w={400} s={12.5} lh={1.5} c={t.fg2} style={{ marginTop: 7 }}>{vm.myGuest.why}</T>
+                    {/* When the guest ID stops working, and what makes access outlive
+                        it. Placed above "what your landlord sees" because a date that
+                        has passed is the more urgent of the two. */}
+                    {vm.myGuest.stayLine ? (
+                        <View style={{ marginTop: 12, padding: 12, borderRadius: 14, backgroundColor: vm.myGuest.stayEnded ? t.csoft : t.ink3, borderWidth: 1, borderColor: vm.myGuest.stayTone ? t[vm.myGuest.stayTone] : t.line }}>
+                            <Row gap={8} align="flex-start">
+                                <Glyph
+                                    name={vm.myGuest.stayEnded ? 'alert-circle' : 'time-outline'}
+                                    size={15}
+                                    color={vm.myGuest.stayTone ? t[vm.myGuest.stayTone] : t.fg2}
+                                    style={{ marginTop: 1 }}
+                                />
+                                <View style={{ flex: 1, minWidth: 0 }}>
+                                    <T w={600} s={12.5} lh={1.4} c={vm.myGuest.stayTone ? t[vm.myGuest.stayTone] : t.fg}>{vm.myGuest.stayLine}</T>
+                                    <T w={400} s={12} lh={1.45} c={t.fg2} style={{ marginTop: 5 }}>{vm.myGuest.stayFix}</T>
+                                </View>
+                            </Row>
+                        </View>
+                    ) : null}
                     {vm.myGuest.seenAs ? (
                         <T w={400} s={12.5} lh={1.5} c={t.fg3} style={{ marginTop: 7 }}>{vm.myGuest.seenAs}</T>
                     ) : null}

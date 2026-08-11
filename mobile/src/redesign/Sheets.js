@@ -1236,6 +1236,17 @@ export default function Sheets() {
                             </Row>
                         )}
 
+                        {/* How long the guest ID lasts. Shown before Accept, not buried
+                            in settings afterwards, because it is part of the decision
+                            being made — and the resulting date is spelled out so the
+                            landlord is not choosing an abstraction. */}
+                        <Eyebrow s={9} ls={0.12} c={t.fg3} style={{ marginTop: 4, marginBottom: 9 }}>HOW LONG IS THIS STAY?</Eyebrow>
+                        <Chips items={vm.joinDecide.stayOptions} t={t} />
+                        <Row gap={8} align="flex-start" style={{ marginBottom: 14 }}>
+                            <Glyph name="time-outline" size={14} color={t.fg3} style={{ marginTop: 1 }} />
+                            <T w={400} s={11.5} lh={1.45} c={t.fg3} style={{ flex: 1 }}>{vm.joinDecide.stayLine}</T>
+                        </Row>
+
                         <Row gap={8}>
                             <Press onPress={vm.joinDecide.decline} disabled={vm.joinDecide.busy} style={{ paddingVertical: 15, paddingHorizontal: 18, borderRadius: 999, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line }}>
                                 <T w={600} s={13.5} c={t.fg2}>Decline</T>

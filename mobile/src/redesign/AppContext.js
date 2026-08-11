@@ -222,6 +222,8 @@ const INITIAL_STATE = {
   joining: false,
   // Which join request the landlord has opened from the inbox.
   join: null,
+  // Months a guest's stay runs for when the landlord accepts them. null = open-ended.
+  joinStay: 6,
 
   // The property being edited (a copy of its current values, so cancelling leaves
   // the real one untouched).
@@ -2574,6 +2576,25 @@ function deriveVm(s, api) {
           return u ? { id: u.id, no: u.no, label: `${u.no} · ${u.rent}` } : null;
         })(),
         noRoomsLine: 'Every room in this property is full. You can still accept them and assign a room once one frees up.',
+
+        // How long the guest ID lasts. Presets rather than a date picker because a
+        // landlord admitting somebody thinks in months — "three months" — not in
+        // calendar dates, and a picker inside a bottom sheet is a fiddly way to say
+        // something simple. The resulting date is shown so the choice is not abstract.
+        stayMonths: s.joinStay,
+        stayOptions: [1, 3, 6, 12, null].map((months) => ({
+          label: months === null ? 'Open-ended' : `${months} month${months === 1 ? '' : 's'}`,
+          on: s.joinStay === months,
+          go: () => set('joinStay', months)
+        })),
+        stayLine: (() => {
+          if (s.joinStay === null) {
+            return 'Their guest ID will not expire. They can still complete a profile at any time.';
+          }
+          const d = new Date();
+          d.setMonth(d.getMonth() + s.joinStay);
+          return `Their guest ID works until ${fmtDay(d)}. After that they complete a profile to keep access, or you extend the dates.`;
+        })(),
         idState: (j.idProof && j.idProof.state) || 'none',
         idLabel: (j.idProof && j.idProof.label) || 'NO ID ON FILE',
         idFg: (j.idProof && j.idProof.fg) || 'fg3',
@@ -2594,7 +2615,18 @@ function deriveVm(s, api) {
             decision: 'accept',
             unitId: room ? room.id : null,
             name: j.name,
-            where: room ? `room ${room.no}` : ''
+            where: room ? `room ${room.no}` : '',
+            // Turned into a date here rather than on the server: the landlord is
+            // looking at the date this produces, so the app and the server must not
+            // each compute "six months from now" from their own clocks.
+            stayUntil: (() => {
+              if (s.joinStay === null) return null;
+              const d = new Date();
+              d.setMonth(d.getMonth() + s.joinStay);
+              const mm = String(d.getMonth() + 1).padStart(2, '0');
+              const dd = String(d.getDate()).padStart(2, '0');
+              return `${d.getFullYear()}-${mm}-${dd}`;
+            })()
           });
         },
         decline: () => {
@@ -3566,6 +3598,33 @@ function deriveVm(s, api) {
         // actually persuades someone to finish.
         seenAs: g && g.code ? `Your landlord sees you as “Guest ${g.code}”.` : '',
         cta: 'Complete my profile',
+
+        // When this guest ID stops working. The server decides, so the app cannot draw
+        // a live-looking portal for an account the middleware is about to refuse.
+        // Deliberately phrased as a fact and a way out rather than a warning: a guest
+        // whose stay ends on Friday has not done anything wrong.
+        stayLine: (() => {
+          const st = (g && g.stay) || null;
+          if (!isGuest || !st || st.open_ended) return '';
+          if (st.expired) return `Your guest ID ended on ${fmtDay(st.ends_on)}.`;
+          if (st.days_left === 0) return 'Your guest ID works until the end of today.';
+          if (st.days_left === 1) return 'Your guest ID works until tomorrow.';
+          return `Your guest ID works until ${fmtDay(st.ends_on)} — ${st.days_left} days.`;
+        })(),
+        // Amber while it is close, coral once it is gone. Anything further out is a
+        // plain fact and gets no colour at all.
+        stayTone: (() => {
+          const st = (g && g.stay) || null;
+          if (!isGuest || !st) return '';
+          if (st.expired) return 'coral';
+          if (st.ends_soon) return 'amber';
+          return '';
+        })(),
+        stayEnded: !!(g && g.stay && g.stay.expired),
+        // The one thing worth saying next to an ending date: finishing the profile is
+        // what makes access survive it.
+        stayFix: 'Add an email and password and your account keeps working after that date.',
+
         open: () => setState({ overlay: 'claim', claim: { name: '', email: '', password: '', busy: false, error: '' } })
       };
     })(),
@@ -4431,8 +4490,8 @@ export function AppProvider({ children }) {
   // Accept or reject a request to join a property. Accepting creates the tenant
   // record and links their login, which changes the roster, the occupancy and the
   // dues — hence the full refresh ownerWrite does rather than patching one row.
-  const decideJoin = useCallback(({ id, decision, unitId, name, where }) => ownerWrite(
-    () => apiOwner.decideJoinRequest(id, decision, unitId),
+  const decideJoin = useCallback(({ id, decision, unitId, name, where, stayUntil = null }) => ownerWrite(
+    () => apiOwner.decideJoinRequest(id, decision, unitId, stayUntil),
     {
       done: decision === 'accept'
         ? `${name} accepted${where ? ` into ${where}` : ''}`

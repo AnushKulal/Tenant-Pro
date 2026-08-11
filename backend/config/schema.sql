@@ -90,6 +90,7 @@ CREATE TABLE IF NOT EXISTS `tenants` (
   `move_in_date` date DEFAULT NULL,
   `billing_cycle` varchar(20) DEFAULT 'Anniversary',
   `next_rent_due` date DEFAULT NULL,
+  `stay_until` date DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `owner_id` (`owner_id`),
   CONSTRAINT `tenants_ibfk_1` FOREIGN KEY (`owner_id`) REFERENCES `owners` (`id`) ON DELETE CASCADE

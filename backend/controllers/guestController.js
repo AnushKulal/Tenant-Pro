@@ -32,6 +32,7 @@
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const db = require('../config/db');
+const { stayState, toSqlDate } = require('../utils/guestStay');
 const { getFileUrl } = require('../middleware/uploadMiddleware');
 const { findPropertyByCode } = require('./joinController');
 const { fetchDocuments, summarise, DOC_TYPES } = require('./documentController');
@@ -272,8 +273,13 @@ const guestLogin = async (req, res) => {
             return res.status(400).json({ message: 'Enter your 6-character guest ID and the mobile number you used.' });
         }
 
+        // The tenancy is joined in for its stay dates: refusing an expired guest at the
+        // door is clearer than admitting them and having every subsequent request fail.
         const [rows] = await db.query(
-            'SELECT id, name, email, phone, status, tenant_id, guest_code FROM tenant_users WHERE guest_code = ? AND phone = ? AND is_guest = 1 LIMIT 1',
+            `SELECT u.id, u.name, u.email, u.phone, u.status, u.tenant_id, u.guest_code, t.stay_until
+             FROM tenant_users u
+             LEFT JOIN tenants t ON u.tenant_id = t.id
+             WHERE u.guest_code = ? AND u.phone = ? AND u.is_guest = 1 LIMIT 1`,
             [code, phone]
         );
         const user = rows[0];
@@ -281,6 +287,18 @@ const guestLogin = async (req, res) => {
             return res.status(404).json({
                 code: 'NO_GUEST',
                 message: 'That guest ID and number do not match. A guest ID only lasts while you are in the property.'
+            });
+        }
+
+        // Past the end of the stay. Says the date rather than just "expired", because
+        // the first thing anybody asks is "since when" — and names the two real ways
+        // forward instead of leaving them at a locked door.
+        const stay = stayState({ stayUntil: user.stay_until, isGuest: true });
+        if (stay.expired) {
+            return res.status(403).json({
+                code: 'GUEST_STAY_ENDED',
+                endedOn: toSqlDate(stay.endsOn),
+                message: `This guest ID ended on ${toSqlDate(stay.endsOn)}. Ask your landlord to extend your dates, or sign in with an email and password if you set one up.`
             });
         }
 
