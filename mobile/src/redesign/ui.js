@@ -16,6 +16,7 @@ import { View, Text, Pressable, Image, StyleSheet, TextInput, Platform } from 'r
 import { Ionicons } from '@expo/vector-icons';
 import { useT } from './ThemeContext';
 import { grotesk, mono as monoFamily } from './theme';
+import { qrMatrix } from './qr';
 
 // ── Text ─────────────────────────────────────────────────────────────────────
 // w: weight (400/500/600/700). s: size px. lh: line-height MULTIPLIER (like CSS
@@ -484,3 +485,72 @@ export function IdToggle({ thumbX, emailFg, mobileFg, onEmail, onMobile, style }
 }
 
 export const S = StyleSheet.create({ flex1: { flex: 1 }, center: { alignItems: 'center', justifyContent: 'center' } });
+
+// ── QR code ───────────────────────────────────────────────────────────────────
+// The matrix comes from qr.js, which is pure arithmetic and lives apart from React
+// so it can be tested against a real decoder without stubbing a renderer.
+//
+// Drawn as one absolutely-positioned View per horizontal RUN of dark modules rather
+// than one per module. A 41x41 code is 1,681 modules; run-length encoding it turns
+// that into roughly 300 views, and light modules cost nothing because they are just
+// the light background showing through. One View per module was visibly slow to
+// mount on a mid-range Android.
+//
+// `value` is the only input that matters: change the amount and the URI changes, so
+// the matrix is recomputed and the code on screen is for the new amount. The useMemo
+// keys on the string, so nothing recomputes while a sheet re-renders for other
+// reasons.
+export function QrCode({ value, size = 232, quiet = 2, ec }) {
+    const t = useT();
+    const built = React.useMemo(() => {
+        try {
+            return { m: qrMatrix(value, ec ? { ec } : undefined), error: '' };
+        } catch (e) {
+            // Too long for version 10. Better to say so than to draw something that
+            // looks like a QR and scans as nothing.
+            return { m: null, error: 'This payment is too long to fit in a QR code.' };
+        }
+    }, [value, ec]);
+
+    if (!built.m) {
+        return (
+            <View style={{ width: size, height: size, borderRadius: 14, backgroundColor: t.ink3, alignItems: 'center', justifyContent: 'center', padding: 18 }}>
+                <T w={500} s={12} lh={1.45} c={t.fg2} style={{ textAlign: 'center' }}>{built.error}</T>
+            </View>
+        );
+    }
+
+    const { size: n, modules } = built.m;
+    // The quiet zone is part of the specification, not padding for looks: a scanner
+    // needs light margin to find the edges. Four modules is the spec's minimum but
+    // two plus a white card around it reads reliably and wastes less screen.
+    const span = n + quiet * 2;
+    const cell = size / span;
+    const rows = [];
+    for (let r = 0; r < n; r += 1) {
+        let c = 0;
+        while (c < n) {
+            if (!modules[r][c]) { c += 1; continue; }
+            let end = c;
+            while (end < n && modules[r][end]) end += 1;
+            rows.push({ key: `${r}-${c}`, x: (c + quiet) * cell, y: (r + quiet) * cell, w: (end - c) * cell });
+            c = end;
+        }
+    }
+
+    return (
+        <View
+            style={{ width: size, height: size, backgroundColor: '#FFFFFF', borderRadius: 14, overflow: 'hidden' }}
+            accessible
+            accessibilityRole="image"
+            accessibilityLabel="Payment QR code"
+        >
+            {rows.map((run) => (
+                <View
+                    key={run.key}
+                    style={{ position: 'absolute', left: run.x, top: run.y, width: run.w, height: cell, backgroundColor: '#000000' }}
+                />
+            ))}
+        </View>
+    );
+}

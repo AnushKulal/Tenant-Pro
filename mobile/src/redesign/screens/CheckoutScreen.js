@@ -24,7 +24,7 @@ import React from 'react';
 import { View, ScrollView } from 'react-native';
 import { useVm } from '../AppContext';
 import { useT } from '../ThemeContext';
-import { T, Eyebrow, Card, Row, Press, Glyph, Field } from '../ui';
+import { T, Eyebrow, Card, Row, Press, Glyph, Field, QrCode } from '../ui';
 
 export default function CheckoutScreen() {
     const vm = useVm();
@@ -185,9 +185,26 @@ export default function CheckoutScreen() {
                                             <T w={400} s={12} lh={1.3} c={t.fg3}>Paying to</T>
                                             <T mono w={600} s={11} lh={1.3} c={t.fg}>{c.payeeLabel}</T>
                                         </Row>
-                                        <T w={400} s={12.5} lh={1.5} c={t.fg2} style={{ marginTop: 11 }}>
-                                            Opens your UPI app with the amount and reference already filled in. Come back here afterwards to record it.
-                                        </T>
+
+                                        {/* The QR carries the payee, the exact amount and the
+                                            reference, so scanning it from ANOTHER phone works
+                                            just as well as tapping through on this one — and
+                                            the reference is what makes the credit findable in
+                                            a bank statement afterwards. It is regenerated from
+                                            the URI, so an amount change is reflected with no
+                                            stale code to clear. */}
+                                        {c.canUpi ? (
+                                            <View style={{ alignItems: 'center', marginTop: 15 }}>
+                                                <QrCode value={c.upiUri} size={220} />
+                                                <T w={400} s={12} lh={1.45} c={t.fg2} style={{ marginTop: 13, textAlign: 'center', maxWidth: 250 }}>
+                                                    Scan with any UPI app to pay {c.amountLabel}, or use the button below on this phone.
+                                                </T>
+                                            </View>
+                                        ) : (
+                                            <T w={400} s={12.5} lh={1.5} c={t.fg2} style={{ marginTop: 11 }}>
+                                                Opens your UPI app with the amount and reference already filled in.
+                                            </T>
+                                        )}
                                     </Card>
                                     <PrimaryButton label="Open my UPI app" onPress={c.openUpi} disabled={!c.canUpi} />
                                 </>

@@ -22,6 +22,7 @@ import {
 } from './api';
 import { mapOwnerData, mapPortalRequest, mapDocument, mapMyPlace } from './mapping';
 import { hasPin, roundCoord, DEFAULT_CENTER, openDirections, MIN_ZOOM, MAX_ZOOM } from './maps';
+import { upiUri } from './qr';
 import {
   loadSession, saveOwnerSession, saveTenantSession, clearSession,
   hasOnboarded, setOnboarded, hasSeenPermits, setPermitsSeen
@@ -3188,6 +3189,13 @@ function deriveVm(s, api) {
         // Can we even hand off? Without the landlord's UPI details there is nothing
         // to open, and saying so is more use than a button that does nothing.
         canUpi: !!payee && amount > 0,
+        // The exact string the QR encodes, and the same one openUpiPayment opens.
+        // Derived from the amount and reference rather than stored, so changing either
+        // produces a new URI and therefore a new QR — there is no stale code to
+        // invalidate because there is nothing cached to go stale.
+        upiUri: (!!payee && amount > 0)
+          ? upiUri({ payee, name: landlordCard.name, amount, reference })
+          : '',
         payee,
         payeeLabel: upiId || (upiNumber ? `${upiNumber} (UPI number)` : ''),
         missingUpi: !payee,
@@ -4165,19 +4173,14 @@ export function AppProvider({ children }) {
   // installed the openURL rejects, and saying so beats a dead button.
   const openUpiPayment = useCallback(async ({ payee, amount, reference, name }) => {
     if (!payee || !(amount > 0)) { flash('Your landlord has not added a UPI ID yet'); return; }
-    const q = [
-      `pa=${encodeURIComponent(payee)}`,
-      `pn=${encodeURIComponent(name || 'Landlord')}`,
-      `am=${encodeURIComponent(String(amount))}`,
-      'cu=INR',
-      // The note is what carries the reference into the landlord's bank statement.
-      `tn=${encodeURIComponent(`Rent ${reference}`)}`
-    ].join('&');
-    // Remembered before we leave, so returning to a fresh screen still knows which
-    // reference was sent and can ask about it.
+    // Built by upiUri, the same function the QR is drawn from. It used to be assembled
+    // here by hand, which meant the button and the QR could describe different
+    // payments — and the hand-built one was already missing the `tr` reference field
+    // and sent the amount unrounded.
+    const url = upiUri({ payee, name: name || 'Landlord', amount, reference });
     setState({ pay: { ...stateRef.current.pay, reference, asked: true } });
     try {
-      await Linking.openURL(`upi://pay?${q}`);
+      await Linking.openURL(url);
     } catch (e) {
       setState({ pay: { ...stateRef.current.pay, asked: false } });
       flash(copyToClipboard(payee)
