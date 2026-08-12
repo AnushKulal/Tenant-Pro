@@ -23,6 +23,7 @@ import {
 import { mapOwnerData, mapPortalRequest, mapDocument, mapMyPlace } from './mapping';
 import { hasPin, roundCoord, DEFAULT_CENTER, openDirections, MIN_ZOOM, MAX_ZOOM } from './maps';
 import { upiUri } from './qr';
+import { readBuild } from './buildinfo';
 import {
   loadSession, saveOwnerSession, saveTenantSession, clearSession,
   hasOnboarded, setOnboarded, hasSeenPermits, setPermitsSeen
@@ -3161,6 +3162,17 @@ function deriveVm(s, api) {
     // anything. `demo` is null for everybody else, so `isDemoAccount` is false and
     // Settings draws nothing.
     isDemoAccount: !!(s.demo && s.demo.is_demo),
+
+    // What this install actually is. On both Settings screens, because the absence of
+    // it hid a real failure for days: build 17 carried runtimeVersion "1.0.0" while
+    // every update published afterwards was "1.3.0", so the app correctly received
+    // nothing, silently, while every publish reported success. The runtime version is
+    // the number that makes that visible, and an app that shows no version at all
+    // turns a two-second check into an archaeology exercise.
+    //
+    // Read here rather than in the screens so both roles show the same thing, and so
+    // it is a value the view-model can be tested against.
+    build: readBuild(),
     demoCard: (() => {
       const d = s.demo || {};
       const c = d.counts || {};

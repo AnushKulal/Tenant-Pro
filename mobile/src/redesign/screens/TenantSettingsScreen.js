@@ -87,7 +87,17 @@ export default function TenantSettingsScreen() {
                 <T w={600} s={13} lh={1} c={t.coral}>Sign out</T>
             </Press>
 
-            <Eyebrow s={9} ls={0.08} c={t.fg3} style={{ textAlign: 'center', marginTop: 16, lineHeight: 14 }}>TENANTPRO v2.0 · BUILD 240</Eyebrow>
+            {/* The real version — see the note on the owner's Settings screen. This
+                was a hardcoded "v2.0 · BUILD 240" from the prototype, which is how an
+                install stuck on an old runtimeVersion stayed invisible. */}
+            <View style={{ marginTop: 16, alignItems: 'center', rowGap: 4 }}>
+                <Eyebrow s={9} ls={0.08} c={t.fg3} style={{ textAlign: 'center', lineHeight: 14 }}>
+                    TENANTPRO · {vm.build.versionLine.toUpperCase()}
+                </Eyebrow>
+                <Eyebrow s={8.5} ls={0.06} c={t.fg3} style={{ textAlign: 'center', lineHeight: 13 }}>
+                    {vm.build.bundleLine.toUpperCase()}{vm.build.hasUpdate ? ` · ${vm.build.updateShort.toUpperCase()}` : ''}
+                </Eyebrow>
+            </View>
         </ScrollView>
     );
 }

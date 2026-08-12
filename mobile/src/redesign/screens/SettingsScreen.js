@@ -109,9 +109,21 @@ export default function SettingsScreen() {
         <T w={600} s={13} c={t.coral}>Sign out</T>
       </Press>
 
-      <T mono w={600} s={9} lh={1.6} ls={0.08} c={t.fg3} style={{ textAlign: 'center', marginTop: 16 }}>
-        TENANTPRO v2.0 · BUILD 240
-      </T>
+      {/* The real version, not a number typed into the markup.
+          This said "TENANTPRO v2.0 · BUILD 240" — invented in the prototype and never
+          replaced. It was worse than showing nothing: it looked like a version, so
+          nobody thought to doubt it, and an install stuck on runtimeVersion "1.0.0"
+          went undiagnosed for days while every update published successfully to
+          "1.3.0" and silently reached nobody. The runtime version is the number that
+          makes that visible in two seconds. */}
+      <View style={{ marginTop: 16, alignItems: 'center', rowGap: 4 }}>
+        <T mono w={600} s={9} lh={1.5} ls={0.08} c={t.fg3} style={{ textAlign: 'center' }}>
+          TENANTPRO · {vm.build.versionLine.toUpperCase()}
+        </T>
+        <T mono w={600} s={8.5} lh={1.5} ls={0.06} c={t.fg3} style={{ textAlign: 'center' }}>
+          {vm.build.bundleLine.toUpperCase()}{vm.build.hasUpdate ? ` · ${vm.build.updateShort.toUpperCase()}` : ''}
+        </T>
+      </View>
     </ScrollView>
   );
 }
