@@ -18,7 +18,7 @@ import React, { useEffect } from 'react';
 import { View, ScrollView, Image, ActivityIndicator } from 'react-native';
 import { useVm } from '../AppContext';
 import { useT } from '../ThemeContext';
-import { T, Eyebrow, Row, Press, Glyph, Field, IconChip } from '../ui';
+import { T, Eyebrow, Row, Press, Glyph, Field, IconChip, DocThumb } from '../ui';
 
 export default function DocumentsScreen() {
     const vm = useVm();
@@ -86,11 +86,13 @@ export default function DocumentsScreen() {
                         key={x.id}
                         style={{ borderRadius: 18, backgroundColor: t.ink2, borderWidth: 1, borderColor: x.verified ? t.pos : t.line, padding: 14 }}
                     >
+                        {/* Opens full screen in the app, where it zooms. A tenant who can
+                            actually look at what they sent can tell a blurred photograph
+                            from a readable one — which is the most common reason a
+                            landlord rejects an ID. */}
                         <Press onPress={x.open}>
                             <Row gap={12}>
-                                <View style={{ width: 40, height: 40, borderRadius: 13, backgroundColor: t.vsoft, alignItems: 'center', justifyContent: 'center' }}>
-                                    <Glyph name={x.isPdf ? 'document-text' : 'image'} size={17} color={t.accent} />
-                                </View>
+                                <DocThumb uri={x.thumb} isPdf={x.isPdf} size={40} radius={13} />
                                 <View style={{ flex: 1, minWidth: 0 }}>
                                     <T w={600} s={14} lh={1.2} numberOfLines={1}>{x.label}</T>
                                     {x.hasNumber ? (

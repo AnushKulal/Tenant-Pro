@@ -368,6 +368,48 @@ export function IconChip({ name, size = 17, color, bg, box = 30, radius = 10, ic
     );
 }
 
+// A thumbnail of an uploaded document, which says so when it is not there.
+//
+// The document rows used to draw a generic glyph whether or not the file existed, so
+// a landlord could not tell "an ID I have not opened yet" from "an ID that is gone" —
+// and on a host with an ephemeral disk the second one is a real, recurring state:
+// files written under ./uploads are wiped by the next deploy, and every URL pointing
+// at them 404s from then on. An <Image> whose fetch fails renders as nothing at all,
+// so without an onError this failure was literally invisible.
+//
+// A broken picture is therefore drawn as a broken picture, and the tone is the
+// caller's business: the row can put it in a warning colour where that matters.
+export function DocThumb({ uri, isPdf, size = 42, radius = 14, missingColor, style }) {
+    const t = useT();
+    // Reset on a new URL, or a row whose file failed once keeps the broken state after
+    // the tenant re-uploads and the list refreshes.
+    const [failed, setFailed] = React.useState(false);
+    React.useEffect(() => { setFailed(false); }, [uri]);
+
+    const box = [{ width: size, height: size, borderRadius: radius, backgroundColor: t.vsoft }, style];
+    const gone = !uri || failed;
+
+    if (isPdf || gone) {
+        return (
+            <View style={[...box, { alignItems: 'center', justifyContent: 'center' }]}>
+                <Glyph
+                    name={isPdf ? 'document-text' : gone ? 'image-outline' : 'image'}
+                    size={Math.round(size * 0.42)}
+                    color={isPdf ? t.accent : (missingColor || t.coral)}
+                />
+            </View>
+        );
+    }
+    return (
+        <Image
+            source={{ uri }}
+            style={box}
+            resizeMode="cover"
+            onError={() => setFailed(true)}
+        />
+    );
+}
+
 // ── Media ─────────────────────────────────────────────────────────────────────
 export function Face({ uri, size = 34, radius, style }) {
     const t = useT();

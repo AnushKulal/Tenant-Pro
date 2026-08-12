@@ -8,7 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useVm } from './AppContext';
 import { useT } from './ThemeContext';
 import { grotesk } from './theme';
-import { T, Eyebrow, Row, Press, Glyph, Field, Avatar, Composer } from './ui';
+import { T, Eyebrow, Row, Press, Glyph, Field, Avatar, Composer, DocThumb } from './ui';
 import { useSheetIn, useFadeIn } from './motion';
 import { KeyboardScroll, useKeyboardHeight } from './keyboard';
 
@@ -999,14 +999,19 @@ export default function Sheets() {
                                     key={d.id}
                                     style={{ borderRadius: 18, backgroundColor: t.ink3, borderWidth: 1, borderColor: d.verified ? t.pos : t.line, padding: 14 }}
                                 >
-                                    {/* Tapping opens the file in whatever the phone uses for
-                                        images and PDFs — it can zoom and rotate, which is what
-                                        reading an ID card actually needs. */}
+                                    {/* Tapping opens the ID full screen IN the app, where it
+                                        pinches and double-taps to zoom — reading a number off
+                                        a photographed card needs that. It used to hand the file
+                                        to the browser, which took the landlord away from the
+                                        Verify and Reject buttons they were about to press. */}
                                     <Press onPress={d.open}>
                                         <Row gap={12}>
-                                            <View style={{ width: 42, height: 42, borderRadius: 14, backgroundColor: t.vsoft, alignItems: 'center', justifyContent: 'center' }}>
-                                                <Glyph name={d.isPdf ? 'document-text' : 'image'} size={18} color={t.accent} />
-                                            </View>
+                                            {/* The actual picture, not a glyph. A generic icon
+                                                looks the same whether the upload arrived or
+                                                not, so a missing file was indistinguishable
+                                                from one nobody had opened yet — DocThumb draws
+                                                a failed fetch as a failure. */}
+                                            <DocThumb uri={d.thumb} isPdf={d.isPdf} size={42} radius={14} />
                                             <View style={{ flex: 1, minWidth: 0 }}>
                                                 <T w={600} s={14.5} lh={1.2} numberOfLines={1}>{d.label}</T>
                                                 {d.hasNumber ? (

@@ -294,6 +294,11 @@ const INITIAL_STATE = {
   // `key` identifies the open view ('tenant:7' / 'join:3') so a late response for
   // a person the landlord has navigated away from is discarded, not rendered.
   docs: { key: '', from: null, list: [], summary: null, person: null, noAccount: false, loading: false, error: '', deciding: 0 },
+  // The document currently open full-screen, or null. Deliberately NOT part of
+  // `docs`: it sits above whichever sheet opened it — the landlord's list or the
+  // tenant's own — and closing it must leave that sheet exactly as it was, with the
+  // Verify and Reject buttons still there. Both sheets set this same key.
+  docView: null,
   // The tenant's own documents, and the add form.
   myDocs: { list: [], summary: null, loading: false, error: '', loaded: false },
   docForm: { type: 'aadhaar', number: '', photo: null, error: '', busy: false },
@@ -634,6 +639,19 @@ function deriveVm(s, api) {
   const openLink = (url) => {
     if (!url) { flash('That file is missing.'); return; }
     Linking.openURL(url).catch(() => copyText(url, 'Could not open the file — its link is copied'));
+  };
+
+  // Open a document in the app's own full-screen viewer. Takes the mapped row rather
+  // than just a URL, because the viewer's header names the document and its verdict —
+  // "Aadhaar card · PENDING" — and a landlord looking at a photograph of a card should
+  // not have to remember which of three rows they tapped.
+  //
+  // openLink above is now reached only from here, for PDFs and for a failed image
+  // load. It used to be what "Open" did for everything, which is why the app kept
+  // disappearing into a browser.
+  const viewDoc = (x) => {
+    if (!x || !x.url) { flash('That file is missing.'); return; }
+    setState({ docView: { url: x.url, label: x.label || 'ID document', status: String(x.status || '').toUpperCase(), isPdf: !!x.isPdf } });
   };
 
   // The landlord contact, resolved once: from /tenant-portal/me when the tenancy is
@@ -2880,14 +2898,44 @@ function deriveVm(s, api) {
           note: x.note,
           hasNote: !!x.note,
           busy: s.docs.deciding === x.id,
-          // Opens in whatever the phone uses for images and PDFs.
-          open: () => (x.url ? openLink(x.url) : flash('That file is missing.')),
+          // A thumbnail, so the ID is visibly THERE without tapping anything. The row
+          // used to show a generic glyph, which looks identical whether the file
+          // loaded or not — the landlord could not tell a missing upload from one they
+          // had not opened yet.
+          thumb: x.isPdf ? null : x.url,
+          // Opens in the app now. It used to go out to Linking.openURL, which threw
+          // the landlord into a browser — away from the Verify and Reject buttons they
+          // were about to use, and into a cache this app does not control.
+          open: () => (x.url ? viewDoc(x) : flash('That file is missing.')),
           verify: () => api.decideDoc(x.id, 'verified'),
           reject: () => api.decideDoc(x.id, 'rejected'),
           // Undo, for the landlord who tapped the wrong one.
           reopen: () => api.decideDoc(x.id, 'pending')
         })),
         close: () => setState({ overlay: d.from || null, docs: { ...INITIAL_STATE.docs } })
+      };
+    })(),
+
+    // The full-screen document viewer, above every sheet. One key for both document
+    // lists, because there is only ever one document being looked at and the viewer
+    // does not care whose it is.
+    docView: (() => {
+      const v = s.docView;
+      return {
+        open: !!v,
+        url: (v && v.url) || null,
+        label: (v && v.label) || '',
+        status: (v && v.status) || '',
+        isPdf: !!(v && v.isPdf),
+        close: () => setState({ docView: null }),
+        // The escape hatch, for a PDF or an image that would not download. Closing
+        // first matters: leaving a full-screen Modal mounted while the system viewer
+        // comes up means returning to the app behind a black screen.
+        openOutside: () => {
+          const url = v && v.url;
+          setState({ docView: null });
+          openLink(url);
+        }
       };
     })(),
 
@@ -3490,7 +3538,11 @@ function deriveVm(s, api) {
           note: x.note,
           hasNote: !!x.note,
           by: x.by ? `${x.verified ? 'Verified' : 'Rejected'} by ${x.by} ${x.decidedAge}`.trim() : '',
-          open: () => (x.url ? openLink(x.url) : flash('That file is missing.')),
+          // Same in-app viewer the landlord gets. A tenant who cannot see what they
+          // uploaded cannot tell a blurry photograph from a clear one, which is the
+          // most common reason an ID gets rejected.
+          thumb: x.isPdf ? null : x.url,
+          open: () => (x.url ? viewDoc(x) : flash('That file is missing.')),
           // A verified document cannot be withdrawn — the verdict is a record of
           // what was checked, and deleting the evidence would leave the badge
           // standing on nothing. The server refuses it too; this just does not

@@ -22,6 +22,7 @@ import Header from './Header';
 import DeckDock from './DeckDock';
 import Sheets from './Sheets';
 import Toast from './Toast';
+import DocViewer from './docview';
 import UpdateSheet from './UpdateSheet';
 import Loading from './Loading';
 
@@ -242,6 +243,22 @@ function Shell() {
                 sheet replays the `tpsheet` slide-up when it opens. */}
             <Sheets key={state.overlay || 'none'} />
             <Toast />
+
+            {/* An ID, full screen, in the app. Mounted here rather than inside Sheets
+                for two reasons: Sheets is keyed on the open overlay, so it remounts
+                whenever one closes and would tear the viewer down with it; and the
+                tenant's own documents live on a ROUTE, not a sheet, so a viewer inside
+                Sheets could never open from there at all. It is a Modal, so it paints
+                above everything regardless of where it sits in this tree. */}
+            <DocViewer
+                visible={vm.docView.open}
+                uri={vm.docView.url}
+                label={vm.docView.label}
+                status={vm.docView.status}
+                isPdf={vm.docView.isPdf}
+                onClose={vm.docView.close}
+                onOpenOutside={vm.docView.openOutside}
+            />
 
             {/* OTA prompt — v1's UpdateGate is bypassed in v2, so the redesign owns it. */}
             <UpdateSheet />
