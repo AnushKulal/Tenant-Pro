@@ -24,6 +24,7 @@ import React from 'react';
 import { View, Image, Modal, Animated, PanResponder, ActivityIndicator, StatusBar } from 'react-native';
 import { useT } from './ThemeContext';
 import { T, Eyebrow, Press, Glyph } from './ui';
+import { useIdShield, shieldWorks } from './shield';
 
 // Zoom bounds. 1 is fit-to-screen, and there is no reason to go under it: this is a
 // viewer, not a canvas, and pinching a document smaller than the screen only ever
@@ -43,6 +44,12 @@ const twoFingerDistance = (touches) => {
 
 export default function DocViewer({ visible, uri, label, status, isPdf, onClose, onOpenOutside }) {
     const t = useT();
+
+    // Somebody's government ID is on screen, full size. While it is, the OS refuses to
+    // put the window in a screenshot, a screen recording, or the recent-apps preview —
+    // a capture comes out black. Scoped to `visible` so the rest of the app can still
+    // be screenshotted normally; see shield.js for why that scoping matters.
+    useIdShield(!!visible && !isPdf, 'tenantpro-id-viewer');
 
     // Animated rather than state: a pinch fires dozens of move events a second, and
     // setState on each one drops frames badly enough to feel broken. setValue on an
@@ -275,10 +282,21 @@ export default function DocViewer({ visible, uri, label, status, isPdf, onClose,
                             on a static picture, and an unreadable ID that could have
                             been zoomed is a verification that does not happen. */}
                         {!loading && !failed ? (
-                            <View style={{ position: 'absolute', bottom: 34, left: 0, right: 0, alignItems: 'center' }}>
+                            <View style={{ position: 'absolute', bottom: 34, left: 0, right: 0, alignItems: 'center', rowGap: 8 }}>
                                 <View style={{ paddingVertical: 8, paddingHorizontal: 15, borderRadius: 999, backgroundColor: 'rgba(0,0,0,0.55)' }}>
                                     <T mono w={600} s={9} lh={1} ls={0.08} c="rgba(255,255,255,0.75)">PINCH OR DOUBLE-TAP TO ZOOM</T>
                                 </View>
+                                {/* Only where it is true. On iOS nothing is prevented —
+                                    Apple exposes no way to blank a screenshot — so
+                                    claiming protection there would be a promise the
+                                    platform cannot keep, made to the person whose ID
+                                    it is. */}
+                                {shieldWorks ? (
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', columnGap: 6, paddingVertical: 7, paddingHorizontal: 13, borderRadius: 999, backgroundColor: 'rgba(0,0,0,0.55)' }}>
+                                        <Glyph name="eye-off-outline" size={12} color="rgba(255,255,255,0.75)" />
+                                        <T mono w={600} s={8.5} lh={1} ls={0.06} c="rgba(255,255,255,0.72)">SCREENSHOTS OF THIS ID ARE BLOCKED</T>
+                                    </View>
+                                ) : null}
                             </View>
                         ) : null}
                     </View>

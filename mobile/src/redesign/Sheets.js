@@ -10,6 +10,7 @@ import { useT } from './ThemeContext';
 import { grotesk } from './theme';
 import { T, Eyebrow, Row, Press, Glyph, Field, Avatar, Composer, DocThumb } from './ui';
 import { useSheetIn, useFadeIn } from './motion';
+import { useIdShield } from './shield';
 import { KeyboardScroll, useKeyboardHeight } from './keyboard';
 
 // ── The conversation on a maintenance request ────────────────────────────────
@@ -224,6 +225,12 @@ export default function Sheets() {
     const vm = useVm();
     const t = useT();
     const insets = useSafeAreaInsets();
+
+    // The documents sheet lists thumbnails of government IDs, so a screenshot of it
+    // leaks the same thing the full-screen viewer does. Its own tag, because the viewer
+    // opens ON TOP of this sheet — expo-screen-capture reference-counts by tag, so
+    // sharing one would let closing the viewer unshield the sheet still underneath it.
+    useIdShield(!!vm.isDocs, 'tenantpro-id-sheet');
     // `animation: tpsheet .26s cubic-bezier(.2,.8,.2,1)` — slide the sheet up from
     // off-screen while the scrim fades in. Keyed on which overlay is open so each
     // sheet replays the motion (see the key on <Sheets/> usage in RedesignRoot).

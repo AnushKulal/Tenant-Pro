@@ -19,6 +19,7 @@ import { View, ScrollView, Image, ActivityIndicator } from 'react-native';
 import { useVm } from '../AppContext';
 import { useT } from '../ThemeContext';
 import { T, Eyebrow, Row, Press, Glyph, Field, IconChip, DocThumb } from '../ui';
+import { useIdShield } from '../shield';
 
 export default function DocumentsScreen() {
     const vm = useVm();
@@ -26,6 +27,11 @@ export default function DocumentsScreen() {
     const d = vm.tdocs;
     const f = d.form;
     const col = (v) => (v && (v[0] === '#' || v.startsWith('rgb')) ? v : t[v]);
+
+    // The thumbnails on this screen are photographs of government IDs, so a screenshot
+    // of it leaks the same thing the full-screen viewer does. Shielded for the whole
+    // time the screen is mounted, and released on the way out — see shield.js.
+    useIdShield(true, 'tenantpro-id-mydocs');
 
     // Reached by the gate (which routes here directly rather than through
     // goTDocs), so fetch on mount if nothing has been loaded yet.
