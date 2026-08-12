@@ -42,18 +42,42 @@ const DOC_COLUMNS = `
     o.name AS verified_by_name
 `;
 
-// Everything one account has uploaded, newest first.
-const fetchDocuments = async (tenantUserId) => {
+const decorate = (rows) => rows.map((r) => ({ ...r, doc_label: DOC_TYPES[r.doc_type] || DOC_TYPES.other }));
+
+// Everything a SET of accounts has uploaded, newest first.
+//
+// A set, not one account, because one person can hold more than one tenant_users row
+// pointing at the same tenants row — the demo account ships exactly that
+// (demo@gmail.com and tenant@gmail.com both linked to Rahul Sharma), and a guest who
+// later completes a profile is another way in. The landlord's list already counts
+// documents across ALL of them:
+//
+//     SELECT COUNT(*) FROM tenant_documents d
+//       JOIN tenant_users tu ON d.tenant_user_id = tu.id
+//      WHERE tu.tenant_id = t.id
+//
+// ...while this fetch used to be handed ONE arbitrarily-chosen account id. When the
+// document belonged to the other one, the tenant's card said "1 ID TO CHECK" and the
+// sheet it opened said "Nothing uploaded yet" — reproduced exactly against a live
+// database. Counting one way and reading another is the bug; making both span the
+// tenant is the fix.
+const fetchDocumentsForAccounts = async (ids) => {
+    const list = (Array.isArray(ids) ? ids : [ids]).filter((x) => x != null);
+    if (!list.length) return [];
     const [rows] = await db.query(
         `SELECT ${DOC_COLUMNS}
          FROM tenant_documents d
          LEFT JOIN owners o ON d.verified_by = o.id
-         WHERE d.tenant_user_id = ?
+         WHERE d.tenant_user_id IN (?)
          ORDER BY d.created_at DESC`,
-        [tenantUserId]
+        [list]
     );
-    return rows.map((r) => ({ ...r, doc_label: DOC_TYPES[r.doc_type] || DOC_TYPES.other }));
+    return decorate(rows);
 };
+
+// One account, for the callers that genuinely mean one: a tenant reading their own,
+// and an applicant who has no tenancy yet and therefore no second row to merge with.
+const fetchDocuments = async (tenantUserId) => fetchDocumentsForAccounts([tenantUserId]);
 
 // A one-line summary of where an account stands, used by the portal to decide
 // whether to nag and by the landlord's list to show a badge. Deliberately derived
@@ -197,31 +221,50 @@ const respondWithDocuments = async (res, ownerId, tenantUserId, person) => {
 const getTenantDocuments = async (req, res) => {
     try {
         if (isTenantToken(req)) return res.status(403).json({ message: 'Landlord access only.' });
+        // The tenant, and ownership, in one statement. Two queries rather than a join
+        // that returns one row per portal account: this used to LEFT JOIN
+        // tenant_users and then read rows[0], which silently picked ONE account out of
+        // however many the tenant has — with no ORDER BY, so which one was up to
+        // MySQL. See fetchDocumentsForAccounts for what that cost.
         const [rows] = await db.query(
-            `SELECT tu.id AS tenant_user_id, t.name, t.phone, t.email
-             FROM tenants t
-             LEFT JOIN tenant_users tu ON tu.tenant_id = t.id
-             WHERE t.id = ? AND t.owner_id = ?`,
+            'SELECT id, name, phone, email FROM tenants WHERE id = ? AND owner_id = ?',
             [req.params.id, req.user.id]
         );
         if (!rows.length) return res.status(404).json({ message: 'Tenant not found.' });
+        const person = { name: rows[0].name, phone: rows[0].phone, email: rows[0].email };
+
+        // EVERY portal account linked to this tenant, because that is what the
+        // landlord's own badge counts.
+        const [accounts] = await db.query(
+            'SELECT id FROM tenant_users WHERE tenant_id = ?',
+            [rows[0].id]
+        );
 
         // A tenant the landlord typed in by hand has no portal account, so there is
         // nowhere for documents to have come from. Say that rather than 404ing, so
         // the app can offer to invite them instead.
-        if (!rows[0].tenant_user_id) {
+        if (!accounts.length) {
             return res.status(200).json({
                 documents: [],
                 summary: summarise([]),
                 via: 'tenant',
                 no_account: true,
-                person: { name: rows[0].name, phone: rows[0].phone, email: rows[0].email },
+                person,
                 types: DOC_TYPES
             });
         }
 
-        await respondWithDocuments(res, req.user.id, rows[0].tenant_user_id, {
-            name: rows[0].name, phone: rows[0].phone, email: rows[0].email
+        // Ownership is already proven above — the tenants row matched this owner_id —
+        // so there is no ownerMaySee call to make here. Going through it per account
+        // would re-derive the same fact once per row and, worse, would make the answer
+        // depend on which account happened to be checked first.
+        const documents = await fetchDocumentsForAccounts(accounts.map((a) => a.id));
+        return res.status(200).json({
+            documents,
+            summary: summarise(documents),
+            via: 'tenant',
+            person,
+            types: DOC_TYPES
         });
     } catch (error) {
         console.error('Error fetching documents for tenant:', error);
