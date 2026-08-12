@@ -208,6 +208,14 @@ const initDb = async () => {
         // Existing rows were all confirmed by a landlord (nothing else could), so the
         // 'landlord' default backfills them correctly.
         await ensureColumn(conn, 'payments', 'confirmation_source', "enum('landlord','gateway','bank') NOT NULL DEFAULT 'landlord'");
+
+        // When a guest's access ends. NULL means open-ended, which is every full
+        // account and any guest a landlord has not dated — so adding the column
+        // changes nothing for anybody already in the table.
+        await ensureColumn(conn, 'tenants', 'stay_until', 'date DEFAULT NULL');
+        // ...and what the applicant asked for when they raised their hand. NULL on
+        // every existing request, which is exactly right: nobody was ever asked.
+        await ensureColumn(conn, 'join_requests', 'requested_stay_until', 'date DEFAULT NULL');
         await ensureColumn(conn, 'payments', 'gateway_ref', 'varchar(120) DEFAULT NULL');
         await ensureIndex(conn, 'payments', 'gateway_ref', '(`gateway_ref`)');
 

@@ -90,6 +90,7 @@ CREATE TABLE IF NOT EXISTS `tenants` (
   `move_in_date` date DEFAULT NULL,
   `billing_cycle` varchar(20) DEFAULT 'Anniversary',
   `next_rent_due` date DEFAULT NULL,
+  `stay_until` date DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `owner_id` (`owner_id`),
   CONSTRAINT `tenants_ibfk_1` FOREIGN KEY (`owner_id`) REFERENCES `owners` (`id`) ON DELETE CASCADE
@@ -368,6 +369,15 @@ CREATE TABLE IF NOT EXISTS `join_requests` (
   `unit_id` int(11) DEFAULT NULL,
   `status` enum('Pending','Accepted','Rejected') NOT NULL DEFAULT 'Pending',
   `note` varchar(300) DEFAULT NULL,
+  -- How long the applicant SAYS they are staying. Stored as the date they asked
+  -- for rather than a month count, because a request can sit Pending for a
+  -- fortnight and "three months" resolved at accept time is not the three months
+  -- they asked for. The landlord still decides: this pre-fills their choice and is
+  -- never itself the answer -- tenants.stay_until, written on accept, is.
+  --
+  -- NULL means they did not say, or said "not sure yet", which is a legitimate
+  -- answer and not a missing value.
+  `requested_stay_until` date DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   -- NULL for as long as the request is Pending, which is what makes "how long has
   -- this been waiting" answerable without a separate event log.

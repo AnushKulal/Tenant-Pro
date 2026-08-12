@@ -32,6 +32,7 @@
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const db = require('../config/db');
+const { stayState, toSqlDate, parseStayUntil } = require('../utils/guestStay');
 const { getFileUrl } = require('../middleware/uploadMiddleware');
 const { findPropertyByCode } = require('./joinController');
 const { fetchDocuments, summarise, DOC_TYPES } = require('./documentController');
@@ -145,6 +146,18 @@ const joinAsGuest = async (req, res) => {
         }
         const docNumber = String(req.body.doc_number || '').trim().slice(0, 64) || null;
 
+        // How long they say they are staying. Checked here, before the account is
+        // created, for the same reason every other failure above is: a rejected date
+        // must not leave a guest account and a document behind it.
+        //
+        // This is the applicant's ASK and nothing more. The landlord sets the real
+        // dates when they accept, and a guest who could set their own expiry could set
+        // it to never -- which is the whole thing guest expiry exists to prevent.
+        const asked = parseStayUntil(req.body.stay_until);
+        if (!asked.ok) {
+            return res.status(400).json({ message: asked.message });
+        }
+
         // Which property. Same two ways in as a normal join request.
         const wantedCode = String(req.body.code || '').trim().toUpperCase();
         const propertyId = Number(req.body.property_id) || null;
@@ -227,8 +240,8 @@ const joinAsGuest = async (req, res) => {
 
             const note = String(req.body.note || '').trim().slice(0, 300) || null;
             const [jr] = await conn.query(
-                'INSERT INTO join_requests (tenant_user_id, owner_id, property_id, note) VALUES (?, ?, ?, ?)',
-                [userId, property.owner_id, property.id, note]
+                'INSERT INTO join_requests (tenant_user_id, owner_id, property_id, note, requested_stay_until) VALUES (?, ?, ?, ?, ?)',
+                [userId, property.owner_id, property.id, note, toSqlDate(asked.value)]
             );
 
             await conn.commit();
@@ -242,7 +255,13 @@ const joinAsGuest = async (req, res) => {
                 token: signTenantToken(user),
                 tenant: { ...user, is_guest: 1, guest_code: guestCode },
                 guest_code: guestCode,
-                request: { id: jr.insertId, property_id: property.id, property_name: property.name, status: 'Pending' },
+                request: {
+                    id: jr.insertId,
+                    property_id: property.id,
+                    property_name: property.name,
+                    status: 'Pending',
+                    requested_stay_until: toSqlDate(asked.value)
+                },
                 documents,
                 id_proof: summarise(documents)
             });
@@ -272,8 +291,13 @@ const guestLogin = async (req, res) => {
             return res.status(400).json({ message: 'Enter your 6-character guest ID and the mobile number you used.' });
         }
 
+        // The tenancy is joined in for its stay dates: refusing an expired guest at the
+        // door is clearer than admitting them and having every subsequent request fail.
         const [rows] = await db.query(
-            'SELECT id, name, email, phone, status, tenant_id, guest_code FROM tenant_users WHERE guest_code = ? AND phone = ? AND is_guest = 1 LIMIT 1',
+            `SELECT u.id, u.name, u.email, u.phone, u.status, u.tenant_id, u.guest_code, t.stay_until
+             FROM tenant_users u
+             LEFT JOIN tenants t ON u.tenant_id = t.id
+             WHERE u.guest_code = ? AND u.phone = ? AND u.is_guest = 1 LIMIT 1`,
             [code, phone]
         );
         const user = rows[0];
@@ -281,6 +305,18 @@ const guestLogin = async (req, res) => {
             return res.status(404).json({
                 code: 'NO_GUEST',
                 message: 'That guest ID and number do not match. A guest ID only lasts while you are in the property.'
+            });
+        }
+
+        // Past the end of the stay. Says the date rather than just "expired", because
+        // the first thing anybody asks is "since when" — and names the two real ways
+        // forward instead of leaving them at a locked door.
+        const stay = stayState({ stayUntil: user.stay_until, isGuest: true });
+        if (stay.expired) {
+            return res.status(403).json({
+                code: 'GUEST_STAY_ENDED',
+                endedOn: toSqlDate(stay.endsOn),
+                message: `This guest ID ended on ${toSqlDate(stay.endsOn)}. Ask your landlord to extend your dates, or sign in with an email and password if you set one up.`
             });
         }
 

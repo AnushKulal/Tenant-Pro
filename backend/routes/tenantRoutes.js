@@ -10,6 +10,7 @@ const {
     updateTenant,
     deleteTenant,
     updateFinancials,
+    updateStay,
     getUnassignedTenants, 
     assignTenantToRoom
 } = require('../controllers/tenantController');
@@ -35,6 +36,10 @@ router.delete('/:id', protect, deleteTenant);        // Erases them (Hard Delete
 
 // --- New Route: Update Financial Details (Rent) ---
 router.put('/:id/financials', protect, updateFinancials);
+
+// When a guest's stay ends. Separate from the general update because it is the one
+// field that revokes access, and it belongs to the landlord alone.
+router.put('/:id/stay', protect, updateStay);
 
 // --- Fetch the unassigned tenant list 
 router.get('/unassigned', protect, getUnassignedTenants);
