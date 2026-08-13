@@ -380,11 +380,16 @@ const declarePayment = async (req, res) => {
             });
         }
 
+        // due_date records WHICH rent this claim is for, captured at declaration rather
+        // than at confirmation. Both moments read the same value — next_rent_due only
+        // moves once the landlord confirms — but recording it here means a claim that is
+        // never decided still carries what it was for, and the two insert paths stay
+        // symmetrical instead of one of them quietly relying on the other.
         const [result] = await db.query(
             `INSERT INTO payments
-                (tenant_id, amount_paid, payment_date, payment_method, reference_id, status, declared_by)
-             VALUES (?, ?, ?, ?, ?, 'Declared', ?)`,
-            [ctx.tenant_id, amount, toSqlDate(when), method, reference, ctx.user_id]
+                (tenant_id, amount_paid, payment_date, payment_method, reference_id, status, declared_by, due_date)
+             VALUES (?, ?, ?, ?, ?, 'Declared', ?, ?)`,
+            [ctx.tenant_id, amount, toSqlDate(when), method, reference, ctx.user_id, ctx.next_rent_due || null]
         );
 
         res.status(201).json({

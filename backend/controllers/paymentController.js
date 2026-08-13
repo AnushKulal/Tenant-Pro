@@ -115,10 +115,15 @@ const recordPayment = async (req, res) => {
         }
 
         // 2. Save the actual payment receipt to the database
+        // due_date records WHICH rent this settles — the tenant's next_rent_due right
+        // now, before step 3 moves it forward. Captured here because this is the only
+        // moment it is knowable: next_rent_due is overwritten below, so afterwards there
+        // is no way to say whether this payment was early, on time or late. That missing
+        // fact is why the tenant score reported "None missed" for everybody.
         await db.query(
-            `INSERT INTO payments (tenant_id, amount_paid, payment_date, payment_method, reference_id, status)
-             VALUES (?, ?, ?, ?, ?, 'Confirmed')`,
-            [id, amount, payment_date, payment_mode, reference_id || null]
+            `INSERT INTO payments (tenant_id, amount_paid, payment_date, payment_method, reference_id, status, due_date)
+             VALUES (?, ?, ?, ?, ?, 'Confirmed', ?)`,
+            [id, amount, payment_date, payment_mode, reference_id || null, tenants[0].next_rent_due || null]
         );
 
         // 3. Push the due date forward by one month. The month arithmetic -- including
