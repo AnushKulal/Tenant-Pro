@@ -34,7 +34,7 @@ const bcrypt = require('bcryptjs');
 const db = require('../config/db');
 const { stayState, toSqlDate, parseStayUntil } = require('../utils/guestStay');
 const { getFileUrl } = require('../middleware/uploadMiddleware');
-const { findPropertyByCode } = require('./joinController');
+const { findPropertyByCode, validateRequestedUnit } = require('./joinController');
 const { fetchDocuments, summarise, DOC_TYPES } = require('./documentController');
 const { newGuestCode, guestDisplayName, looksLikeGuestCode } = require('../utils/guestCode');
 
@@ -202,6 +202,14 @@ const joinAsGuest = async (req, res) => {
             if (dupe) return res.status(409).json(dupe);
         }
 
+        // Which room they asked for, validated against THIS property. Checked here for
+        // the same reason as every refusal above: before the account exists, so a bad
+        // room id cannot leave a guest and an uploaded ID orphaned behind it.
+        const wantedUnit = await validateRequestedUnit(req.body.requested_unit_id, property.id);
+        if (!wantedUnit.ok) {
+            return res.status(400).json({ message: wantedUnit.message });
+        }
+
         const conn = await db.getConnection();
         try {
             await conn.beginTransaction();
@@ -240,8 +248,10 @@ const joinAsGuest = async (req, res) => {
 
             const note = String(req.body.note || '').trim().slice(0, 300) || null;
             const [jr] = await conn.query(
-                'INSERT INTO join_requests (tenant_user_id, owner_id, property_id, note, requested_stay_until) VALUES (?, ?, ?, ?, ?)',
-                [userId, property.owner_id, property.id, note, toSqlDate(asked.value)]
+                `INSERT INTO join_requests
+                    (tenant_user_id, owner_id, property_id, note, requested_stay_until, requested_unit_id)
+                 VALUES (?, ?, ?, ?, ?, ?)`,
+                [userId, property.owner_id, property.id, note, toSqlDate(asked.value), wantedUnit.value]
             );
 
             await conn.commit();
@@ -260,7 +270,8 @@ const joinAsGuest = async (req, res) => {
                     property_id: property.id,
                     property_name: property.name,
                     status: 'Pending',
-                    requested_stay_until: toSqlDate(asked.value)
+                    requested_stay_until: toSqlDate(asked.value),
+                    requested_unit_id: wantedUnit.value
                 },
                 documents,
                 id_proof: summarise(documents)

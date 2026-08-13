@@ -77,6 +77,37 @@ const shareOf = (unit) => {
     return unit.rent_split_type === 'Custom' ? base : Number((base / capacity).toFixed(0));
 };
 
+// The room an applicant asked for, checked. Returns { ok, value } or
+// { ok: false, message }.
+//
+// "No room named" is a legitimate answer, not an error: somebody who taps "request to
+// join" from a search result never saw a room list, and a property with no rooms
+// created yet has nothing to offer. Only a room that does not belong to this property
+// is refused — and it is refused rather than dropped, because silently storing NULL
+// would show the landlord "they did not pick a room" for somebody who did.
+//
+// Deliberately NOT a capacity check. A full room can be asked for: the landlord may be
+// about to free a bed, and the accept path already refuses to over-fill a room with its
+// own locked check. Blocking the ASK here would also make the answer depend on
+// occupancy at request time, which can change while a request sits waiting.
+const validateRequestedUnit = async (raw, propertyId) => {
+    if (raw === null || raw === undefined || String(raw).trim() === '') {
+        return { ok: true, value: null };
+    }
+    const id = Number(raw);
+    if (!Number.isInteger(id) || id <= 0) {
+        return { ok: false, message: 'That room is not one we can read.' };
+    }
+    const [rows] = await db.query(
+        'SELECT id FROM units WHERE id = ? AND property_id = ?',
+        [id, propertyId]
+    );
+    if (!rows.length) {
+        return { ok: false, message: 'That room does not belong to this property.' };
+    }
+    return { ok: true, value: id };
+};
+
 // Trims and length-caps the requester's optional note to the column width, or
 // returns null when there is nothing but whitespace.
 const cleanNote = (note) => {
@@ -97,11 +128,17 @@ const cleanNote = (note) => {
 // to join, which is the entire point of the screen.
 //
 // What it returns is bounded to what somebody already holding the invite code is
-// entitled to see before asking: the property, roughly where it is, whether there
-// is a bed, and who the landlord is. Deliberately NOT included: the other tenants,
-// their rents, or anything about the landlord beyond a name — a code is a weak
-// secret that gets forwarded around, and this endpoint needs no login-specific
-// trust to be safe.
+// entitled to see before asking: the property, roughly where it is, the rooms with
+// what one bed in each costs, how many beds are free, and the landlord's name and
+// number so they can be reached. Deliberately still NOT included: the other tenants
+// or their individual rents — a code is a weak secret that gets forwarded around, and
+// nobody's tenancy should be readable by whoever it reached.
+//
+// The contact details and the room list were both withheld here originally, on the
+// reasoning that a code holder is barely trusted. That was overcautious in one
+// direction and unhelpful in the other: the code exists to be handed out to
+// prospective tenants, and asking somebody to photograph their government ID for a
+// property whose rooms, prices and landlord they cannot see is the wrong way round.
 //
 // There is no search-by-name here on purpose. Listing or searching every property
 // in the database would let anyone with a tenant account enumerate every landlord's
@@ -127,7 +164,7 @@ const lookupProperty = async (req, res) => {
         // occupancy figures use rather than a second rule.
         const [rows] = await db.query(
             `SELECT p.id, p.name, p.address, p.locality, p.city, p.property_type, p.image_url,
-                    o.name AS owner_name,
+                    o.name AS owner_name, o.phone AS owner_phone,
                     (SELECT COUNT(*) FROM units u WHERE u.property_id = p.id) AS unit_count,
                     (SELECT COALESCE(SUM(u.capacity), 0) FROM units u WHERE u.property_id = p.id) AS bed_count,
                     (SELECT COUNT(*) FROM tenants t
@@ -144,11 +181,43 @@ const lookupProperty = async (req, res) => {
         const beds = Number(row.bed_count) || 0;
         const taken = Number(row.taken) || 0;
 
+        // The rooms, so somebody deciding whether to ask can see what they would be
+        // asking FOR. Occupancy is counted per room rather than derived from
+        // units.status, because status is a label a landlord can leave stale while the
+        // beds underneath it fill up — and "2 beds free" has to be true.
+        const [units] = await db.query(
+            `SELECT u.id, u.unit_number, u.room_type, u.capacity, u.base_rent, u.rent_split_type,
+                    (SELECT COUNT(*) FROM tenants t WHERE t.unit_id = u.id AND t.status = 'Active') AS occupied
+             FROM units u
+             WHERE u.property_id = ?
+             ORDER BY u.unit_number`,
+            [row.id]
+        );
+
+        const rooms = units.map((u) => {
+            const capacity = Math.max(1, Number(u.capacity) || 1);
+            const occupied = Math.min(capacity, Number(u.occupied) || 0);
+            return {
+                id: u.id,
+                unit_number: u.unit_number,
+                room_type: u.room_type,
+                capacity,
+                occupied,
+                free: capacity - occupied,
+                // Per BED, via the same shareOf() the accept path charges with — so the
+                // price shown before asking is the price actually billed afterwards. An
+                // 'Equal' room's base_rent is the whole room, and showing that would
+                // quote somebody in a 3-bed ₹30,000 room three times their real rent.
+                rent: shareOf(u)
+            };
+        });
+
         res.status(200).json({
             property: {
                 id: row.id,
                 code,
                 name: row.name,
+                address: row.address,
                 locality: row.locality,
                 city: row.city,
                 property_type: row.property_type,
@@ -156,9 +225,17 @@ const lookupProperty = async (req, res) => {
                 unit_count: Number(row.unit_count) || 0,
                 // Never negative, even if a room is over-filled by a manual edit.
                 free_beds: Math.max(0, beds - taken),
-                // First name only: enough to recognise "yes, that is who gave me the
-                // code", without handing out a full contact record to a code holder.
-                owner_first_name: String(row.owner_name || '').trim().split(/\s+/)[0] || ''
+                owner_first_name: String(row.owner_name || '').trim().split(/\s+/)[0] || '',
+                // Full name and a number to ring. This deliberately reverses an earlier
+                // decision to withhold them "without handing out a full contact record
+                // to a code holder" — a landlord hands the code out precisely so people
+                // will get in touch, and a stranger being asked to move in has a fair
+                // claim to a phone number before they upload a photograph of their ID.
+                // It is a real number going to whoever holds the code, so if that ever
+                // needs narrowing, gate it here rather than in the app.
+                owner_name: String(row.owner_name || '').trim(),
+                owner_phone: row.owner_phone || null,
+                rooms
             }
         });
     } catch (error) {
@@ -235,9 +312,20 @@ const createJoinRequest = async (req, res) => {
             return res.status(400).json({ message: asked.message });
         }
 
+        // Which room they asked for, if the app showed them a list. Validated against
+        // THIS property: a room id from somewhere else is refused rather than stored,
+        // because a request carrying another landlord's room would show up in this
+        // landlord's sheet as a room they do not have.
+        const wantedUnit = await validateRequestedUnit(req.body?.requested_unit_id, property.id);
+        if (!wantedUnit.ok) {
+            return res.status(400).json({ message: wantedUnit.message });
+        }
+
         const [result] = await db.query(
-            'INSERT INTO join_requests (tenant_user_id, owner_id, property_id, note, requested_stay_until) VALUES (?, ?, ?, ?, ?)',
-            [userId, property.owner_id, property.id, note, toSqlDate(asked.value)]
+            `INSERT INTO join_requests
+                (tenant_user_id, owner_id, property_id, note, requested_stay_until, requested_unit_id)
+             VALUES (?, ?, ?, ?, ?, ?)`,
+            [userId, property.owner_id, property.id, note, toSqlDate(asked.value), wantedUnit.value]
         );
 
         // 'Pending' is what the account's status was always meant to mean, but only
@@ -258,6 +346,7 @@ const createJoinRequest = async (req, res) => {
                 status: 'Pending',
                 note,
                 requested_stay_until: toSqlDate(asked.value),
+                requested_unit_id: wantedUnit.value,
                 created_at: new Date().toISOString(),
                 decided_at: null
             }
@@ -279,12 +368,14 @@ const getMyJoinRequests = async (req, res) => {
 
         const [requests] = await db.query(
             `SELECT jr.id, jr.property_id, jr.unit_id, jr.status, jr.note,
-                    jr.requested_stay_until, jr.created_at, jr.decided_at,
+                    jr.requested_stay_until, jr.requested_unit_id, jr.created_at, jr.decided_at,
                     p.name AS property_name, p.locality, p.city,
-                    u.unit_number
+                    u.unit_number,
+                    ru.unit_number AS requested_unit_number
              FROM join_requests jr
              LEFT JOIN properties p ON jr.property_id = p.id
              LEFT JOIN units u ON jr.unit_id = u.id
+             LEFT JOIN units ru ON jr.requested_unit_id = ru.id
              WHERE jr.tenant_user_id = ?
              ORDER BY jr.created_at DESC, jr.id DESC`,
             [req.user.id]
@@ -324,7 +415,9 @@ const getJoinRequests = async (req, res) => {
         // needs a decision must never be pushed off the screen by newer decided ones.
         const [requests] = await db.query(
             `SELECT jr.id, jr.tenant_user_id, jr.property_id, jr.unit_id, jr.status,
-                    jr.note, jr.requested_stay_until, jr.created_at, jr.decided_at,
+                    jr.note, jr.requested_stay_until, jr.requested_unit_id,
+                    jr.created_at, jr.decided_at,
+                    ru.unit_number AS requested_unit_number,
                     tu.name AS requester_name, tu.email AS requester_email, tu.phone AS requester_phone,
                     -- A guest applicant has no name and no email — only a phone number
                     -- and the ID they photographed. The landlord has to know that
@@ -346,6 +439,7 @@ const getJoinRequests = async (req, res) => {
              LEFT JOIN tenant_users tu ON jr.tenant_user_id = tu.id
              LEFT JOIN properties p ON jr.property_id = p.id
              LEFT JOIN units u ON jr.unit_id = u.id
+             LEFT JOIN units ru ON jr.requested_unit_id = ru.id
              WHERE jr.owner_id = ?${statusFilter}
              ORDER BY (jr.status = 'Pending') DESC, jr.created_at DESC, jr.id DESC`,
             params
@@ -401,7 +495,7 @@ const decideJoinRequest = async (req, res) => {
         // than only in the UPDATE) is what makes another landlord's request a clean
         // 404 instead of a silent no-op that reports success.
         const [check] = await db.query(
-            'SELECT id, tenant_user_id, property_id, status, requested_stay_until FROM join_requests WHERE id = ? AND owner_id = ?',
+            'SELECT id, tenant_user_id, property_id, status, requested_stay_until, requested_unit_id FROM join_requests WHERE id = ? AND owner_id = ?',
             [requestId, ownerId]
         );
         if (check.length === 0) {
@@ -437,7 +531,14 @@ const decideJoinRequest = async (req, res) => {
             chosen = stale.ok ? request.requested_stay_until || null : null;
         }
 
-        return await acceptRequest(res, ownerId, request, unit_id || null, chosen);
+        // The room, with the same rule as the date above: a landlord who names none
+        // inherits what the applicant asked for. The app always sends the key, so this
+        // is for every other caller — and it is what makes the applicant's choice a
+        // default rather than a note nobody acts on.
+        const namedUnit = Object.prototype.hasOwnProperty.call(req.body || {}, 'unit_id');
+        const room = namedUnit ? (unit_id || null) : (request.requested_unit_id || null);
+
+        return await acceptRequest(res, ownerId, request, room, chosen);
     } catch (error) {
         console.error('Owner decideJoinRequest error:', error);
         res.status(500).json({ message: 'Failed to update the join request.' });
@@ -636,5 +737,8 @@ module.exports = {
     // public route. Shared rather than copied: propCode already exists twice (here
     // and in the app's mapping.js) and has to stay byte-identical in both, so a
     // third copy is a third thing to keep in step.
-    findPropertyByCode
+    findPropertyByCode,
+    // Same reason: a guest picks a room from the same list, and "does this room belong
+    // to this property" must be one rule, not two that can drift.
+    validateRequestedUnit
 };
