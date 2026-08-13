@@ -216,6 +216,9 @@ const initDb = async () => {
         // ...and what the applicant asked for when they raised their hand. NULL on
         // every existing request, which is exactly right: nobody was ever asked.
         await ensureColumn(conn, 'join_requests', 'requested_stay_until', 'date DEFAULT NULL');
+        // ...and which room they asked for, once the app could show them the rooms.
+        // NULL on every existing request, which is correct: nobody was offered a choice.
+        await ensureColumn(conn, 'join_requests', 'requested_unit_id', 'int(11) DEFAULT NULL');
         await ensureColumn(conn, 'payments', 'gateway_ref', 'varchar(120) DEFAULT NULL');
         await ensureIndex(conn, 'payments', 'gateway_ref', '(`gateway_ref`)');
 

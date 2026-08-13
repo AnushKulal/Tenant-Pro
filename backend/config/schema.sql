@@ -378,6 +378,15 @@ CREATE TABLE IF NOT EXISTS `join_requests` (
   -- NULL means they did not say, or said "not sure yet", which is a legitimate
   -- answer and not a missing value.
   `requested_stay_until` date DEFAULT NULL,
+  -- Which room the applicant asked for, when they could see the rooms before asking.
+  -- Distinct from `unit_id` above on purpose: unit_id is where the landlord actually
+  -- PUT them, this is what they wanted. Keeping both means the landlord can accept
+  -- into a different room without erasing the fact that a different one was asked
+  -- for, and the applicant's own list can honestly say "you asked for 101".
+  --
+  -- ON DELETE SET NULL for the same reason as unit_id: deleting a room later must not
+  -- erase the record of the request.
+  `requested_unit_id` int(11) DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   -- NULL for as long as the request is Pending, which is what makes "how long has
   -- this been waiting" answerable without a separate event log.
