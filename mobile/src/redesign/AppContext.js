@@ -286,6 +286,10 @@ const INITIAL_STATE = {
   // matched nothing and the screen said "no property matches that code" about a
   // code that was perfectly valid.
   look: { code: '', loading: false, error: '', place: null },
+  // The room the tenant has picked while looking at a property, as a unit id, or null
+  // for "no preference". Kept out of `look` so re-running the lookup does not have to
+  // remember to clear it, and so closing the sheet can reset it in one place.
+  askRoom: null,
 
   // ── ID documents ──
   // `docs` is whichever person's documents the landlord currently has open; it is
@@ -2612,7 +2616,10 @@ function deriveVm(s, api) {
           // 'asked' resets the stay choice to whatever THIS applicant asked for.
           // Without the reset the sheet kept the previous request's answer, so a
           // landlord who set 12 months for one person silently set 12 for the next.
-          open: () => setState({ overlay: 'joindecide', join: j.id, joinStay: 'asked' }),
+          // `unit: null` matters as much as the stay reset: it is what lets the room
+          // the applicant asked for be the default. Left set, the previous request's
+          // room stayed selected for the next person.
+          open: () => setState({ overlay: 'joindecide', join: j.id, joinStay: 'asked', unit: null }),
           decline: () => api.decideJoin({ id: j.id, decision: 'reject', name: j.name }),
           // Whether this stranger has put an ID up, and a way straight to it. The
           // whole point of showing it here is that it answers "should I accept
@@ -2649,9 +2656,24 @@ function deriveVm(s, api) {
         age: j.age,
         pending: j.pending,
         status: String(j.status).toUpperCase(),
+        // Which room the applicant asked for, when they could see the rooms before
+        // asking. Stated as a fact above the chips, and the matching chip is
+        // preselected — same shape as the stay dates: they propose, the landlord
+        // decides.
+        askedUnit: j.askedUnit || null,
+        askedUnitLabel: j.askedUnitLabel || '',
+        hasAskedUnit: !!j.askedUnit && rooms.some((u) => String(u.id) === String(j.askedUnit)),
+        askedRoomLine: !j.askedUnit
+          ? 'They did not ask for a particular room.'
+          : rooms.some((u) => String(u.id) === String(j.askedUnit))
+            ? `They asked for room ${j.askedUnitLabel}.`
+            : `They asked for room ${j.askedUnitLabel}, which has no free bed now. Pick another, or accept them and place them later.`,
         rooms: rooms.map((u) => ({
           label: `${u.no} · ${u.rent}`,
-          on: s.unit === u.no,
+          // A room the applicant named is selected unless the landlord has moved off
+          // it. `s.unit` is null until they touch a chip, which is what lets the ask
+          // be the default without overwriting a real choice.
+          on: s.unit != null ? s.unit === u.no : String(u.id) === String(j.askedUnit),
           go: () => set('unit', u.no)
         })),
         hasRooms: rooms.length > 0,
@@ -2662,7 +2684,12 @@ function deriveVm(s, api) {
         // label and an id, and passing the internal unit object let a caller reach
         // for a `.label` that only the chip rows have — which crashed the sheet.
         chosen: (() => {
-          const u = rooms.find((x) => x.no === s.unit);
+          // Falls back to the room they asked for, so Accept sends what the sheet shows
+          // as selected. Without this the chip read as chosen while the accept posted
+          // no room at all.
+          const u = s.unit != null
+            ? rooms.find((x) => x.no === s.unit)
+            : rooms.find((x) => String(x.id) === String(j.askedUnit));
           return u ? { id: u.id, no: u.no, label: `${u.no} · ${u.rent}` } : null;
         })(),
         noRoomsLine: 'Every room in this property is full. You can still accept them and assign a room once one frees up.',
@@ -2724,7 +2751,9 @@ function deriveVm(s, api) {
           ? messageNumber(j.phone, j.name, `Hi ${String(j.name).split(' ')[0]}, about your request to join ${j.property} on TenantPro — `)
           : flash(`No number on file for ${j.name}`)),
         accept: () => {
-          const room = rooms.find((u) => u.no === s.unit) || null;
+          const room = (s.unit != null
+            ? rooms.find((u) => u.no === s.unit)
+            : rooms.find((u) => String(u.id) === String(j.askedUnit))) || null;
           setState({ overlay: null });
           api.decideJoin({
             id: j.id,
@@ -4017,7 +4046,14 @@ function deriveVm(s, api) {
         short: '',
         free,
         landlord: pl.owner_first_name || '',
-        rooms: Number(pl.unit_count) || 0
+        rooms: Number(pl.unit_count) || 0,
+        // The real rooms, straight from the lookup. Only a LIVE result has these — a
+        // demo row has no server behind it — which is why `roomList` is read with a
+        // fallback everywhere below rather than assumed.
+        roomList: Array.isArray(pl.rooms) ? pl.rooms : [],
+        address: pl.address || '',
+        ownerName: pl.owner_name || pl.owner_first_name || '',
+        ownerPhone: pl.owner_phone || ''
       };
     })()] : []) : joinMatches).map((p) => {
       // A looked-up property carries its own free-bed count from the server; a demo
@@ -4055,14 +4091,104 @@ function deriveVm(s, api) {
         // Asking is a real request now: it goes to the landlord's inbox and they
         // decide. The prototype moved you in on the spot, which is not a thing a
         // tenant gets to do to somebody else's property.
+        //
+        // Straight-to-request is kept for the demo rows, which have no server behind
+        // them and therefore no rooms to look at. A live result opens the property
+        // first — see `view` below.
         join: () => {
           if (isCurrent) { flash(`You already live at ${p.name}`); return; }
           if (!TLIVE) { flash('Sign in to your tenancy to ask to join'); return; }
           api.requestToJoin({ code: p.code, name: p.name });
         },
+        // Look at the place before asking to live in it. Only a live result has
+        // anything to show, so a demo row reports that rather than opening an empty
+        // sheet. Resets the room choice on the way in: the previous property's room
+        // ids mean nothing here.
+        hasView: TLIVE && !!(p.roomList || p.address || p.ownerPhone),
+        view: () => {
+          if (!TLIVE) { flash('Sign in to your tenancy to see a property'); return; }
+          setState({ overlay: 'propview', askRoom: null });
+        },
         joining: !!s.joining
       };
     }),
+
+    // ── Looking at a property before asking to join it ────────────────────────
+    // Asking used to be blind: a name, a locality, and the landlord's first name.
+    // Somebody was being asked to photograph their government ID for a property whose
+    // rooms, prices and landlord they could not see. This is that screen.
+    //
+    // Built off the lookup payload rather than the local unit list, because a tenant
+    // never loads anybody's units — reading UNITS here would show every property as
+    // having no rooms.
+    isPropView: s.overlay === 'propview',
+    propView: (() => {
+      const pl = (s.look && s.look.place) || null;
+      const rooms = (pl && Array.isArray(pl.rooms) ? pl.rooms : []);
+      const chosen = rooms.find((r) => String(r.id) === String(s.askRoom)) || null;
+      const phone = (pl && pl.owner_phone) || '';
+      const ownerName = (pl && (pl.owner_name || pl.owner_first_name)) || '';
+      return {
+        has: !!pl,
+        name: (pl && pl.name) || '',
+        code: (pl && pl.code) || '',
+        type: String((pl && pl.property_type) || 'PROPERTY').toUpperCase(),
+        img: pl ? mediaUrl(pl.image_url) : null,
+        // The full address when the landlord filled one in, falling back to the
+        // locality line rather than showing an empty row.
+        where: (pl && (pl.address || [pl.locality, pl.city].filter(Boolean).join(', '))) || '',
+        locLine: pl ? [pl.locality, pl.city].filter(Boolean).join(', ').toUpperCase() : '',
+
+        // ── The landlord ──
+        ownerName,
+        ownerLabel: ownerName || 'Your landlord',
+        phone,
+        phoneLabel: fmtPhone(phone),
+        hasPhone: !!phone,
+        call: () => (phone ? callNumber(phone, ownerName || 'the landlord') : flash('No number on file for this landlord')),
+        message: () => (phone
+          ? messageNumber(phone, ownerName, `Hi, I saw ${(pl && pl.name) || 'your property'} on TenantPro and would like to ask about a room — `)
+          : flash('No number on file for this landlord')),
+
+        // ── The rooms ──
+        hasRooms: rooms.length > 0,
+        noRoomsLine: 'This landlord has not added any rooms yet. You can still ask to join, and they will place you.',
+        rooms: rooms.map((r) => ({
+          id: r.id,
+          label: String(r.unit_number || ''),
+          type: String(r.room_type || '').toUpperCase(),
+          // Per BED, which is what the server sends and what they will be charged.
+          price: `₹${inr(r.rent)}`,
+          priceNote: 'per bed / month',
+          free: Number(r.free) || 0,
+          freeLine: Number(r.free) > 0
+            ? `${r.free} of ${r.capacity} free`
+            : 'Full right now',
+          full: Number(r.free) <= 0,
+          on: String(r.id) === String(s.askRoom),
+          // A full room can still be asked for — the landlord may be about to free a
+          // bed, and they decide either way. It is labelled full rather than disabled
+          // so the choice is informed instead of removed.
+          go: () => set('askRoom', r.id)
+        })),
+        chosenLabel: chosen ? String(chosen.unit_number) : '',
+        hasChosen: !!chosen,
+        clearRoom: () => set('askRoom', null),
+
+        // What the request will say, in words, before it is sent.
+        askLine: chosen
+          ? `You will ask for room ${chosen.unit_number} at ₹${inr(chosen.rent)} per bed. Your landlord confirms the room when they accept.`
+          : 'You have not picked a room. Your landlord will place you when they accept — or pick one above to ask for it.',
+        cta: chosen ? `Request room ${chosen.unit_number}` : 'Send a request',
+        busy: !!s.joining,
+        send: () => {
+          if (!pl) return;
+          setState({ overlay: null });
+          api.requestToJoin({ code: pl.code, propertyId: pl.id, name: pl.name, requestedUnitId: s.askRoom });
+        },
+        close: () => setState({ overlay: null, askRoom: null })
+      };
+    })(),
     // On a live tenancy "nothing found" must not be claimed before a code has been
     // looked up, or the screen accuses a perfectly good code of not existing while
     // the request is still in flight.
@@ -4678,10 +4804,17 @@ export function AppProvider({ children }) {
   ), [ownerWrite]);
 
   // Ask a landlord to be let into a property. The tenant side of the same table.
-  const requestToJoin = useCallback(async ({ code, propertyId, name }) => {
+  const requestToJoin = useCallback(async ({ code, propertyId, name, requestedUnitId = null }) => {
     setState({ joining: true });
     try {
-      await apiPortal.requestJoin({ ...(code ? { code } : {}), ...(propertyId ? { property_id: propertyId } : {}) });
+      // requested_unit_id is omitted rather than sent as null when no room was picked.
+      // The server treats an absent room as "no preference" and an invalid one as an
+      // error, so sending an empty value would turn "I don't mind" into a 400.
+      await apiPortal.requestJoin({
+        ...(code ? { code } : {}),
+        ...(propertyId ? { property_id: propertyId } : {}),
+        ...(requestedUnitId != null ? { requested_unit_id: requestedUnitId } : {})
+      });
       // Re-read so the tenant sees their own request listed as Pending rather than
       // having to trust a toast.
       await loadTenantData({ refresh: true });

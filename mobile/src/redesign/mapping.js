@@ -311,6 +311,11 @@ export function mapJoinRequest(r, now) {
         // outlives the date it asked for, and offering the landlord a chip that the
         // server will refuse is worse than not offering it.
         askedStayStale: !!wants && !!now && wants < new Date(new Date(now).setHours(0, 0, 0, 0)),
+        // The room they asked for. Separate from `unit` above, which is where the
+        // landlord actually put them — the two differ whenever an accept overrides the
+        // ask, and both are worth showing.
+        askedUnit: r.requested_unit_id != null ? String(r.requested_unit_id) : null,
+        askedUnitLabel: r.requested_unit_number ? String(r.requested_unit_number) : '',
         // Whether this stranger has put an ID up at all — the first thing worth
         // knowing before letting them into a building. NOT called `id`: that is
         // already this request's primary key.

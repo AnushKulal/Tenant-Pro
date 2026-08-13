@@ -138,6 +138,20 @@ export default function FindScreen() {
                         </Row>
                         <T mono w={600} s={9} lh={1} ls={0.06} c={t.fg3}>{jr.code}</T>
                         <View style={{ flex: 1 }} />
+                        {/* Look before you ask. A tenant used to send a request off a
+                            name and a locality alone, having never seen the rooms, the
+                            prices or the landlord — so this is the primary action now
+                            and "Request to join" is the shortcut for anyone who already
+                            knows the place. Only a live lookup has anything to show. */}
+                        {jr.hasView && !jr.isCurrent ? (
+                            <Press
+                                onPress={jr.view}
+                                style={{ flexDirection: 'row', alignItems: 'center', columnGap: 5, paddingVertical: 9, paddingHorizontal: 13, borderRadius: 999, borderWidth: 1, borderColor: t.line, backgroundColor: t.ink3 }}
+                            >
+                                <Glyph name="eye-outline" size={12} color={t.fg2} />
+                                <T w={600} s={11} lh={1} c={t.fg}>View rooms</T>
+                            </Press>
+                        ) : null}
                         {/* Where you already live reads as a state, not a button. */}
                         <Press
                             onPress={jr.join}

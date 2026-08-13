@@ -956,6 +956,115 @@ export default function Sheets() {
                     </View>
                 )}
 
+                {/* ── Looking at a property before asking to join it ──── */}
+                {/* Asking used to be blind — a name and a locality. Somebody was being
+                    asked to photograph their government ID for a place whose rooms,
+                    prices and landlord they had never seen. */}
+                {vm.isPropView && vm.propView.has && (
+                    <View>
+                        {vm.propView.img ? (
+                            <Image
+                                source={{ uri: vm.propView.img }}
+                                style={{ width: '100%', height: 150, borderRadius: 20, marginBottom: 14, backgroundColor: t.ink3 }}
+                                resizeMode="cover"
+                            />
+                        ) : null}
+
+                        <Eyebrow s={9} ls={0.12} c={t.fg3}>{vm.propView.type}</Eyebrow>
+                        <T w={700} s={24} lh={1.1} style={{ letterSpacing: -1, marginTop: 7 }}>{vm.propView.name}</T>
+                        <T w={400} s={13} lh={1.5} c={t.fg2} style={{ marginTop: 7 }}>{vm.propView.where}</T>
+                        <T mono w={600} s={9} lh={1} ls={0.1} c={t.fg3} style={{ marginTop: 9 }}>{vm.propView.code}</T>
+
+                        {/* The landlord, with a way to reach them. A stranger being asked
+                            to hand over an ID has a fair claim to a phone number first. */}
+                        <View style={{ marginTop: 16, paddingVertical: 13, paddingHorizontal: 14, borderRadius: 16, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line }}>
+                            <Eyebrow s={9} ls={0.12} c={t.fg3}>LANDLORD</Eyebrow>
+                            <Row justify="space-between" style={{ marginTop: 9 }}>
+                                <View style={{ flex: 1, minWidth: 0 }}>
+                                    <T w={600} s={14.5} lh={1.2} numberOfLines={1}>{vm.propView.ownerLabel}</T>
+                                    {vm.propView.hasPhone ? (
+                                        <T mono w={600} s={10} lh={1.4} ls={0.06} c={t.fg2} style={{ marginTop: 4 }}>{vm.propView.phoneLabel}</T>
+                                    ) : (
+                                        <T w={400} s={12} lh={1.4} c={t.fg3} style={{ marginTop: 4 }}>No number on file</T>
+                                    )}
+                                </View>
+                                {vm.propView.hasPhone ? (
+                                    <Row gap={7}>
+                                        <Press onPress={vm.propView.message} style={{ width: 40, height: 40, borderRadius: 13, backgroundColor: t.ink2, borderWidth: 1, borderColor: t.line, alignItems: 'center', justifyContent: 'center' }}>
+                                            <Glyph name="chatbubble-outline" size={16} color={t.fg2} />
+                                        </Press>
+                                        <Press onPress={vm.propView.call} style={{ width: 40, height: 40, borderRadius: 13, backgroundColor: t.lsoft, borderWidth: 1, borderColor: t.line, alignItems: 'center', justifyContent: 'center' }}>
+                                            <Glyph name="call" size={16} color={t.pos} />
+                                        </Press>
+                                    </Row>
+                                ) : null}
+                            </Row>
+                        </View>
+
+                        {/* The rooms, with what ONE BED costs — the figure they will
+                            actually be charged, not the whole-room rent. */}
+                        <Eyebrow s={9} ls={0.12} c={t.fg3} style={{ marginTop: 20, marginBottom: 10 }}>ROOMS · PICK ONE TO ASK FOR</Eyebrow>
+
+                        {vm.propView.hasRooms ? (
+                            <View style={{ rowGap: 8 }}>
+                                {vm.propView.rooms.map((r) => (
+                                    <Press
+                                        key={r.id}
+                                        onPress={r.go}
+                                        style={{ paddingVertical: 13, paddingHorizontal: 14, borderRadius: 16, backgroundColor: r.on ? t.lsoft : t.ink3, borderWidth: 1, borderColor: r.on ? t.lime : t.line }}
+                                    >
+                                        <Row justify="space-between">
+                                            <View style={{ flex: 1, minWidth: 0 }}>
+                                                <Row gap={8}>
+                                                    <T w={700} s={15} lh={1.1}>{r.label}</T>
+                                                    {r.type ? <T mono w={600} s={8.5} lh={1} ls={0.08} c={t.fg3}>{r.type}</T> : null}
+                                                </Row>
+                                                {/* Full is stated, not hidden: the landlord may be
+                                                    about to free a bed and they decide either way,
+                                                    so the choice is informed rather than removed. */}
+                                                <T w={400} s={11.5} lh={1.4} c={r.full ? t.amber : t.pos} style={{ marginTop: 5 }}>{r.freeLine}</T>
+                                            </View>
+                                            <View style={{ alignItems: 'flex-end' }}>
+                                                <T w={700} s={16} lh={1.1} c={r.on ? t.lime : t.fg}>{r.price}</T>
+                                                <T mono w={600} s={8} lh={1} ls={0.06} c={t.fg3} style={{ marginTop: 4 }}>{r.priceNote.toUpperCase()}</T>
+                                            </View>
+                                        </Row>
+                                    </Press>
+                                ))}
+                            </View>
+                        ) : (
+                            <Row gap={9} align="flex-start" style={{ paddingVertical: 12, paddingHorizontal: 13, borderRadius: 14, backgroundColor: t.asoft }}>
+                                <Glyph name="information-circle-outline" size={15} color={t.amber} />
+                                <T w={500} s={12} lh={1.45} c={t.amber} style={{ flex: 1 }}>{vm.propView.noRoomsLine}</T>
+                            </Row>
+                        )}
+
+                        {vm.propView.hasChosen ? (
+                            <Press onPress={vm.propView.clearRoom} style={{ alignSelf: 'flex-start', marginTop: 10, paddingVertical: 7, paddingHorizontal: 12, borderRadius: 999, borderWidth: 1, borderColor: t.line }}>
+                                <T w={600} s={11.5} c={t.fg2}>No preference</T>
+                            </Press>
+                        ) : null}
+
+                        {/* Said in words before they commit, because a chip is not a
+                            sentence and "ask for" is not "reserve". */}
+                        <Row gap={8} align="flex-start" style={{ marginTop: 14 }}>
+                            <Glyph name="information-circle-outline" size={14} color={t.fg3} style={{ marginTop: 1 }} />
+                            <T w={400} s={11.5} lh={1.45} c={t.fg3} style={{ flex: 1 }}>{vm.propView.askLine}</T>
+                        </Row>
+
+                        <Press
+                            onPress={vm.propView.send}
+                            disabled={vm.propView.busy}
+                            style={{ width: '100%', marginTop: 16, paddingVertical: 16, borderRadius: 999, backgroundColor: t.lime, alignItems: 'center', opacity: vm.propView.busy ? 0.7 : 1 }}
+                        >
+                            <T w={700} s={15} lh={1} c={t.on}>{vm.propView.busy ? 'Sending…' : vm.propView.cta}</T>
+                        </Press>
+                        <Press onPress={vm.propView.close} style={{ marginTop: 9, paddingVertical: 15, borderRadius: 999, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line, alignItems: 'center' }}>
+                            <T w={600} s={14} c={t.fg}>Close</T>
+                        </Press>
+                    </View>
+                )}
+
                 {/* ── ID documents (landlord's view) ──────────────────── */}
                 {vm.isDocs && vm.docs && (
                     <View>
@@ -1239,6 +1348,13 @@ export default function Sheets() {
                         </Press>
 
                         <Eyebrow s={9} ls={0.12} c={t.fg3} style={{ marginBottom: 9 }}>PUT THEM IN A ROOM — OPTIONAL</Eyebrow>
+                        {/* Which room they asked for, above the chips rather than inside
+                            them: it is a fact about the request, and the chip that
+                            matches it is already selected below. */}
+                        <Row gap={8} align="flex-start" style={{ marginBottom: 10, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 13, backgroundColor: vm.joinDecide.hasAskedUnit ? t.lsoft : t.ink3 }}>
+                            <Glyph name="bed-outline" size={14} color={vm.joinDecide.hasAskedUnit ? t.lime : t.fg3} style={{ marginTop: 1 }} />
+                            <T w={500} s={11.5} lh={1.45} c={vm.joinDecide.hasAskedUnit ? t.fg : t.fg3} style={{ flex: 1 }}>{vm.joinDecide.askedRoomLine}</T>
+                        </Row>
                         {vm.joinDecide.hasRooms ? (
                             <Chips items={vm.joinDecide.rooms} t={t} />
                         ) : (
