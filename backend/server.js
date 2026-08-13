@@ -71,6 +71,12 @@ const { initCronJobs, checkAndSendRentReminders } = require('./services/cronServ
 const initDb = require('./config/initDb');
 const { ensureDemoAccount } = require('./config/seedDemo');
 const { mailProvider, isMailConfigured, verifyMail } = require('./config/mailer');
+// Which storage the uploader chose. Reported by /healthz because the difference is
+// otherwise invisible until it hurts: in disk mode every uploaded photo and ID lives on
+// the host's ephemeral filesystem and is DELETED by the next deploy, and there is no
+// symptom until somebody opens an image that used to work. Only the mode is exposed,
+// never the Cloudinary credential.
+const { useCloudinary } = require('./middleware/uploadMiddleware');
 
 // --- Mount Routes ---
 app.use('/api/auth', authRoutes);
@@ -118,6 +124,7 @@ app.get('/healthz', async (req, res) => {
             status: 'ok',
             db: 'up',
             mail: isMailConfigured ? mailProvider : 'not-configured',
+            uploads: useCloudinary ? 'cloudinary' : 'ephemeral-disk',
             time: new Date().toISOString()
         });
     } catch (e) {
@@ -129,6 +136,7 @@ app.get('/healthz', async (req, res) => {
             status: 'degraded',
             db: 'down',
             mail: isMailConfigured ? mailProvider : 'not-configured',
+            uploads: useCloudinary ? 'cloudinary' : 'ephemeral-disk',
             code: e.code,
             errno: e.errno
         });
