@@ -100,24 +100,6 @@ export default function TenantLoginScreen() {
                     {!vm.authBusy ? <Glyph name="arrow-forward" size={17} color={t.on} /> : null}
                 </Press>
 
-                <Row gap={12} style={{ marginVertical: 20 }}>
-                    <Divider style={{ flex: 1 }} />
-                    <Eyebrow s={9} w={600} ls={0.1} c={t.fg3}>OR</Eyebrow>
-                    <Divider style={{ flex: 1 }} />
-                </Row>
-
-                {/* One entry point, which then offers scanning OR typing the code.
-                    "Join with an invite QR" promised a camera — a dead end on a build
-                    without one, and a dead end for anyone with no account, since the
-                    scan was thrown away at the sign-in wall. */}
-                <Press
-                    onPress={vm.goGuest}
-                    style={{ width: '100%', borderRadius: 999, backgroundColor: t.ink2, borderWidth: 1, borderColor: t.line, paddingVertical: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', columnGap: 8 }}
-                >
-                    <Glyph name="enter-outline" size={17} color={t.accent} />
-                    <T w={600} s={14} c={t.fg}>Join as a guest</T>
-                </Press>
-
                 <Row gap={12} style={{ marginVertical: 18 }}>
                     <Divider style={{ flex: 1 }} />
                     <Eyebrow s={9} w={600} ls={0.1} c={t.fg3}>OR CONTINUE WITH</Eyebrow>

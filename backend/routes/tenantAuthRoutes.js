@@ -5,6 +5,7 @@ const { registerTenant, loginTenant } = require('../controllers/tenantAuthContro
 const { joinAsGuest, guestLogin } = require('../controllers/guestController');
 const upload = require('../middleware/uploadMiddleware');
 const { rateLimit } = require('../middleware/rateLimit');
+const { requireGuestJoin, requireGuestLogin } = require('../middleware/featureFlags');
 
 // Separate scope from the landlord login so one portal cannot exhaust the other's
 // budget for the same IP.
@@ -37,7 +38,32 @@ router.post('/login', loginLimit, loginTenant);
 // circular requirement that made the old "join as a guest" button a dead end.
 // `document` is the multipart field carrying the government ID — required, and the
 // entire basis on which a landlord is being asked to accept a stranger.
-router.post('/guest', guestJoinLimit, upload.single('document'), joinAsGuest);
-router.post('/guest-login', guestLoginLimit, guestLogin);
+//
+// Both routes sit behind one environment variable, GUEST_ACCESS_ENABLED, so the whole
+// feature can be withdrawn for a client without a deploy or a rebuild. Nothing an
+// existing guest already holds is touched by switching it: their token keeps working
+// and their tenancy is untouched — and 'login-only' exists precisely so new joins can
+// stop without stranding the people already inside, who have no password and no reset.
+//
+// The guard's POSITION is load-bearing twice over, not stylistic:
+//
+//   * BEFORE upload.single('document') — otherwise a refused request first streams a
+//     stranger's government ID to storage and leaves it attached to nothing. That costs
+//     money and, worse, retains exactly the data this flow is most careful with.
+//   * BEFORE the rate limiter — otherwise a switched-off feature burns the shared
+//     'guest-join' budget that real users need once it is switched back on.
+router.post(
+    '/guest',
+    requireGuestJoin('Joining as a guest is turned off at the moment. Ask your landlord to invite you, or create an account and ask to join.'),
+    guestJoinLimit,
+    upload.single('document'),
+    joinAsGuest
+);
+router.post(
+    '/guest-login',
+    requireGuestLogin('Guest IDs are not being accepted at the moment. Ask your landlord to invite you.'),
+    guestLoginLimit,
+    guestLogin
+);
 
 module.exports = router;
