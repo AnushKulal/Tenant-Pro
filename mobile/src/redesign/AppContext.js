@@ -42,6 +42,26 @@ const errText = (e, fallback) =>
   || (e && e.message === 'Network Error' ? 'Cannot reach the server. Check your connection.' : null)
   || fallback;
 
+// "The app is newer than the server."
+//
+// An OTA update reaches a phone in two minutes; a backend deploy has to succeed
+// first, and today three of them did not. In between, the app calls an endpoint that
+// does not exist yet and Express answers 404 with an HTML page — no JSON `message` —
+// so errText falls through to whatever generic fallback the caller passed. That is
+// how "the backend is not deployed" reached a user as "Could not give notice. Please
+// try again.", sending them to press a button that could not work.
+//
+// Detected on the SHAPE of the answer, not on the status alone: a legitimate 404 from
+// our own code (a tenancy that does not exist) carries a JSON message and is a real
+// answer, so it must not be reported as a deployment lag.
+const notDeployed = (e) => {
+  const r = e && e.response;
+  if (!r || r.status !== 404) return false;
+  const data = r.data;
+  if (data && typeof data === 'object' && (data.message || data.error)) return false;
+  return true;
+};
+
 const evStr = (e) => (e && e.target && typeof e.target.value === 'string' ? e.target.value : (typeof e === 'string' ? e : ''));
 
 // "1 Feb 2026" — how the design writes a date in prose.
@@ -2035,6 +2055,15 @@ function deriveVm(s, api) {
         // The server can refuse outright — no tenancy, or already moved out.
         blocked: !!(L.plan && L.plan.can_leave === false),
         blockedWhy: (L.plan && L.plan.reason) || '',
+        // NO PLAN AND NOT LOADING means the preview never arrived. This was a real bug
+        // and it hid a worse one: the sheet fell through to its normal branch, drew a
+        // confirm button over an EMPTY date, and pressing it failed — so a backend that
+        // had not been deployed looked exactly like a broken button. A screen must never
+        // offer an action it already knows cannot work.
+        unavailable: !L.loading && !L.plan,
+        // The single gate on the confirm button, so it cannot be shown without a plan.
+        canConfirm: !!p && !already && !L.busy,
+        retry: () => api.openLeave(),
         // Notice already given: the sheet becomes "you are leaving on X" with a way
         // to change your mind, not a second chance to give notice.
         already,
@@ -5932,7 +5961,14 @@ export function AppProvider({ children }) {
       setState({
         leave: {
           loading: false, plan: null, busy: false,
-          error: errText(e, 'Could not work out your notice period.')
+          // A 404 here is not a fault the person can retry away: it means the app has
+          // been updated over the air but the SERVER has not caught up, so the route
+          // does not exist yet. Saying "try again" would have them pressing a button
+          // that cannot work until a deploy lands. Distinguished because it already
+          // cost a bug report.
+          error: notDeployed(e)
+            ? 'This needs a newer version of the server than is running right now. Please try again a little later.'
+            : errText(e, 'Could not work out your notice period.')
         }
       });
     }
@@ -5952,7 +5988,9 @@ export function AppProvider({ children }) {
       flash('Notice given. Your landlord has been told.');
     } catch (e) {
       setState({
-        leave: { ...stateRef.current.leave, busy: false, error: errText(e, 'Could not give notice. Please try again.') }
+        leave: { ...stateRef.current.leave, busy: false, error: notDeployed(e)
+            ? 'This needs a newer version of the server than is running right now. Please try again a little later.'
+            : errText(e, 'Could not give notice. Please try again.') }
       });
     }
   }, [setState, flash, loadTenantData]);
@@ -5968,7 +6006,9 @@ export function AppProvider({ children }) {
       flash('Notice withdrawn. You are staying.');
     } catch (e) {
       setState({
-        leave: { ...stateRef.current.leave, busy: false, error: errText(e, 'Could not withdraw your notice.') }
+        leave: { ...stateRef.current.leave, busy: false, error: notDeployed(e)
+            ? 'This needs a newer version of the server than is running right now. Please try again a little later.'
+            : errText(e, 'Could not withdraw your notice.') }
       });
     }
   }, [setState, flash, loadTenantData]);

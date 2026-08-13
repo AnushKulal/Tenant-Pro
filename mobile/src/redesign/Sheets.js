@@ -1426,6 +1426,24 @@ export default function Sheets() {
 
                         {vm.leaveSheet.loading ? (
                             <T w={400} s={13} lh={1.5} c={t.fg2}>Working out your notice period…</T>
+                        ) : vm.leaveSheet.unavailable ? (
+                            /* The preview never arrived, so there is no date and no
+                               terms. This used to fall through to the branch below and
+                               draw a confirm button over an empty date — pressing it
+                               failed, which made an undeployed backend look like a
+                               broken button and cost a bug report. Now it says what
+                               happened and offers the only thing that can help. */
+                            <View>
+                                <Row gap={9} align="flex-start" style={{ padding: 13, borderRadius: 16, backgroundColor: t.csoft }}>
+                                    <Glyph name="alert-circle-outline" size={16} color={t.coral} style={{ marginTop: 1 }} />
+                                    <T w={500} s={13} lh={1.5} c={t.coral} style={{ flex: 1 }}>
+                                        {vm.leaveSheet.error || 'Could not work out your notice period.'}
+                                    </T>
+                                </Row>
+                                <Press onPress={vm.leaveSheet.retry} style={{ marginTop: 14, paddingVertical: 14, borderRadius: 999, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line, alignItems: 'center' }}>
+                                    <T w={600} s={13.5} c={t.fg}>Try again</T>
+                                </Press>
+                            </View>
                         ) : vm.leaveSheet.blocked ? (
                             <Row gap={9} align="flex-start" style={{ padding: 13, borderRadius: 16, backgroundColor: t.ink3 }}>
                                 <Glyph name="information-circle-outline" size={16} color={t.fg2} style={{ marginTop: 1 }} />
@@ -1477,7 +1495,7 @@ export default function Sheets() {
                                     >
                                         <T w={700} s={14} c={t.on}>{vm.leaveSheet.withdrawLabel}</T>
                                     </Press>
-                                ) : (
+                                ) : vm.leaveSheet.canConfirm || vm.leaveSheet.busy ? (
                                     <Press
                                         onPress={vm.leaveSheet.confirm}
                                         disabled={vm.leaveSheet.busy}
@@ -1485,7 +1503,7 @@ export default function Sheets() {
                                     >
                                         <T w={700} s={14} c={t.coral}>{vm.leaveSheet.confirmLabel}</T>
                                     </Press>
-                                )}
+                                ) : null}
                             </>
                         )}
 

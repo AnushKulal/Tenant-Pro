@@ -83,6 +83,22 @@ const { uploadMode } = require('./middleware/uploadMiddleware');
 // until somebody presses it. Reports only which variables are missing, never a value.
 const { googleConfigured, googleMissing } = require('./config/googleAuth');
 
+// WHICH COMMIT IS ACTUALLY RUNNING.
+//
+// Three times today the answer to "why is this broken" was "that code is not deployed",
+// and each time it took a round of guessing to establish. An OTA update reaches a phone
+// in two minutes while a backend deploy has to succeed first, so app and server drift
+// apart routinely — and from the outside a missing endpoint is indistinguishable from a
+// broken feature. Render sets RENDER_GIT_COMMIT on every deploy; reporting it turns that
+// question into one HTTP request.
+//
+// A commit hash is not a secret: the repository is public, and knowing which commit is
+// running is exactly what a deploy log already tells anyone who can see the dashboard.
+const runningCommit = () => {
+    const sha = process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || process.env.SOURCE_VERSION || '';
+    return sha ? sha.slice(0, 7) : 'unknown';
+};
+
 // --- Mount Routes ---
 app.use('/api/auth', authRoutes);
 app.use('/api/tenant-auth', tenantAuthRoutes);
@@ -129,6 +145,7 @@ app.get('/healthz', async (req, res) => {
             status: 'ok',
             db: 'up',
             mail: isMailConfigured ? mailProvider : 'not-configured',
+            commit: runningCommit(),
             uploads: uploadMode(),
             google: googleConfigured() ? 'ready' : `not-configured (missing ${googleMissing().join(', ')})`,
             time: new Date().toISOString()
@@ -142,6 +159,7 @@ app.get('/healthz', async (req, res) => {
             status: 'degraded',
             db: 'down',
             mail: isMailConfigured ? mailProvider : 'not-configured',
+            commit: runningCommit(),
             uploads: uploadMode(),
             google: googleConfigured() ? 'ready' : `not-configured (missing ${googleMissing().join(', ')})`,
             code: e.code,
