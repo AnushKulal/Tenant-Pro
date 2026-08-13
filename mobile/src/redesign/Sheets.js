@@ -1097,6 +1097,26 @@ export default function Sheets() {
                             </Row>
                         ) : null}
 
+                        {/* The ID is hidden because the tenancy ended. Stated up front
+                            rather than left for the landlord to infer from a smudged
+                            thumbnail — an unexplained blur reads as a bug, and this is
+                            a deliberate limit worth understanding. The record itself
+                            (what was checked, by whom, when) is still below. */}
+                        {vm.docs.idHidden ? (
+                            <Row gap={10} align="flex-start" style={{ marginBottom: 14, padding: 13, borderRadius: 16, backgroundColor: t.asoft, borderWidth: 1, borderColor: t.amber }}>
+                                <Glyph name="lock-closed" size={16} color={t.amber} style={{ marginTop: 1 }} />
+                                <View style={{ flex: 1, minWidth: 0 }}>
+                                    <T w={600} s={13} lh={1.4} c={t.amber}>{vm.docs.idHiddenWhy}</T>
+                                    {vm.docs.idHiddenNoPreview ? (
+                                        <T w={400} s={12} lh={1.45} c={t.fg2} style={{ marginTop: 5 }}>
+                                            These were uploaded before secure storage was switched on, so there is no
+                                            safe copy to show you — not even a blurred one.
+                                        </T>
+                                    ) : null}
+                                </View>
+                            </Row>
+                        ) : null}
+
                         {vm.docs.noAccount ? (
                             <View style={{ paddingVertical: 18, paddingHorizontal: 14, borderRadius: 16, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line, marginBottom: 14 }}>
                                 <Glyph name="person-outline" size={20} color={t.fg3} />
@@ -1131,9 +1151,16 @@ export default function Sheets() {
                                                 not, so a missing file was indistinguishable
                                                 from one nobody had opened yet — DocThumb draws
                                                 a failed fetch as a failure. */}
-                                            <DocThumb uri={d.thumb} isPdf={d.isPdf} size={42} radius={14} />
+                                            <DocThumb uri={d.thumb} isPdf={d.isPdf || !d.canPreview} size={42} radius={14} />
                                             <View style={{ flex: 1, minWidth: 0 }}>
-                                                <T w={600} s={14.5} lh={1.2} numberOfLines={1}>{d.label}</T>
+                                                <Row gap={6} align="center">
+                                                    <T w={600} s={14.5} lh={1.2} numberOfLines={1} style={{ flexShrink: 1 }}>{d.label}</T>
+                                                    {/* The lock, on the row itself. The banner
+                                                        above explains the rule once; this says
+                                                        which rows it applies to, so a blurred
+                                                        thumbnail never reads as a bad upload. */}
+                                                    {d.blurred ? <Glyph name="lock-closed" size={12} color={t.amber} /> : null}
+                                                </Row>
                                                 {d.hasNumber ? (
                                                     <T mono w={600} s={9} lh={1.4} ls={0.08} c={t.fg2} numberOfLines={1} style={{ marginTop: 4 }}>{d.number}</T>
                                                 ) : null}
@@ -1152,10 +1179,18 @@ export default function Sheets() {
                                     ) : (
                                         <Row gap={7} style={{ marginTop: 11 }}>
                                             <Press onPress={d.open} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', columnGap: 6, paddingVertical: 11, borderRadius: 13, backgroundColor: t.ink2, borderWidth: 1, borderColor: t.line }}>
-                                                <Glyph name="eye-outline" size={14} color={t.accent} />
-                                                <T w={600} s={12} c={t.fg}>Open</T>
+                                                <Glyph name={d.blurred ? 'lock-closed-outline' : 'eye-outline'} size={14} color={d.blurred ? t.fg3 : t.accent} />
+                                                <T w={600} s={12} c={d.blurred ? t.fg2 : t.fg}>{d.blurred ? 'Hidden' : 'Open'}</T>
                                             </Press>
-                                            {d.verified || d.rejected ? (
+                                            {!d.canDecide ? (
+                                                /* No Verify/Reject/Undo on a hidden ID. A
+                                                   verdict is a statement that you looked at
+                                                   the document, and there is nothing to look
+                                                   at — the server refuses these too, so
+                                                   showing them would be offering an action
+                                                   already known to fail. */
+                                                null
+                                            ) : d.verified || d.rejected ? (
                                                 <Press onPress={d.reopen} style={{ paddingVertical: 11, paddingHorizontal: 15, borderRadius: 13, backgroundColor: t.ink2, borderWidth: 1, borderColor: t.line }}>
                                                     <T w={600} s={12} c={t.fg2}>Undo</T>
                                                 </Press>

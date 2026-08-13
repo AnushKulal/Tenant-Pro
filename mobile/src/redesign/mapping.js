@@ -276,7 +276,16 @@ export function mapDocument(d, now) {
         note: d.note || '',
         by: d.verified_by_name || '',
         age: ageLabel(made, now),
-        decidedAge: decided ? ageLabel(decided, now) : ''
+        decidedAge: decided ? ageLabel(decided, now) : '',
+        // Whether the server blurred this before sending it. The URL above is ALREADY
+        // the blurred one when this is true — the app never receives the original and
+        // has nothing to un-blur, which is the point. This flag only decides what to
+        // SAY about the image, never whether to obscure it.
+        blurred: !!d.blurred,
+        // False when no blurred copy could be produced at all (a file stored before
+        // Cloudinary was switched on), so the row shows a locked placeholder rather
+        // than an <Image> pointed at null.
+        canPreview: d.blurred ? !!d.can_preview : true
     };
 }
 

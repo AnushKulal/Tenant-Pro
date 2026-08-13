@@ -318,7 +318,7 @@ const INITIAL_STATE = {
   // client that has not asked to look at one.
   // `key` identifies the open view ('tenant:7' / 'join:3') so a late response for
   // a person the landlord has navigated away from is discarded, not rendered.
-  docs: { key: '', from: null, list: [], summary: null, person: null, noAccount: false, loading: false, error: '', deciding: 0 },
+  docs: { key: '', from: null, list: [], summary: null, person: null, noAccount: false, visibility: 'full', visibilityReason: '', blurAvailable: true, loading: false, error: '', deciding: 0 },
   // The document currently open full-screen, or null. Deliberately NOT part of
   // `docs`: it sits above whichever sheet opened it — the landlord's list or the
   // tenant's own — and closing it must leave that sheet exactly as it was, with the
@@ -2984,6 +2984,18 @@ function deriveVm(s, api) {
             const where = who.unit_number ? `room ${who.unit_number}` : 'your property';
             return `Nothing uploaded yet. They are in ${where} and can add a government ID from their own profile — Aadhaar, PAN, voter ID, licence or passport.`;
         })(),
+        // ── ID hidden after the tenancy ends ──────────────────────────────────
+        // A landlord's tenants row survives a move-out (it is a soft delete), so the
+        // old code returned the ID of somebody who left months ago exactly as it did
+        // for a current tenant. Now the server blurs it and says why; this only
+        // renders that verdict — the app has no unblurred copy to reveal, which is
+        // what makes it a restriction rather than a decoration.
+        idHidden: d.visibility === 'blurred',
+        idHiddenWhy: d.visibilityReason || '',
+        // Files stored before Cloudinary was switched on cannot be blurred at all, so
+        // they are withheld outright. Worth distinguishing: "we are hiding this" and
+        // "there is no safe copy of this to show you" are different sentences.
+        idHiddenNoPreview: d.visibility === 'blurred' && !d.blurAvailable,
         // So the sheet can label a former tenant rather than implying they are resident.
         movedOut: !!who.moved_out,
         tenancyLine: who.moved_out
@@ -3014,11 +3026,27 @@ function deriveVm(s, api) {
           // used to show a generic glyph, which looks identical whether the file
           // loaded or not — the landlord could not tell a missing upload from one they
           // had not opened yet.
-          thumb: x.isPdf ? null : x.url,
+          thumb: x.isPdf || !x.canPreview ? null : x.url,
+          // Whether this particular row is the blurred version. Per row rather than
+          // per sheet because the answer comes back on the row, and a future rule
+          // (one document withdrawn by the tenant, say) would be per row too.
+          blurred: !!x.blurred,
+          canPreview: x.canPreview !== false,
           // Opens in the app now. It used to go out to Linking.openURL, which threw
           // the landlord into a browser — away from the Verify and Reject buttons they
           // were about to use, and into a cache this app does not control.
-          open: () => (x.url ? viewDoc(x) : flash('That file is missing.')),
+          open: () => {
+            if (!x.url) {
+              return flash(x.blurred
+                ? 'This ID is hidden now that they have moved out.'
+                : 'That file is missing.');
+            }
+            return viewDoc(x);
+          },
+          // A verdict says "I looked at this". Once it is blurred there is nothing to
+          // look at, so the server refuses — and offering the buttons anyway would be
+          // the leave-property mistake again: an action the screen knows cannot work.
+          canDecide: !x.blurred,
           verify: () => api.decideDoc(x.id, 'verified'),
           reject: () => api.decideDoc(x.id, 'rejected'),
           // Undo, for the landlord who tapped the wrong one.
@@ -5162,6 +5190,12 @@ export function AppProvider({ children }) {
           summary: res.summary || null,
           person: res.person || null,
           noAccount: !!res.no_account,
+          // Why the landlord is or is not allowed to read these, in the server's own
+          // words. Carried rather than re-derived: the app deciding for itself when an
+          // ID is readable would be a second, disagreeing copy of an access rule.
+          visibility: res.visibility || 'full',
+          visibilityReason: res.visibility_reason || '',
+          blurAvailable: res.blur_available !== false,
           loading: false,
           error: '',
           deciding: 0

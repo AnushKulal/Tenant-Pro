@@ -17,6 +17,37 @@
 // owner never sees a document belonging to somebody with no relationship to them.
 const db = require('../config/db');
 const { getFileUrl } = require('../middleware/uploadMiddleware');
+// Whether the landlord may READ the ID or only see that one exists. The two
+// relationships above open the door; this decides what is behind it, because a
+// tenancy that has ENDED should not leave a readable copy of somebody's Aadhaar in
+// a former landlord's app for ever.
+const { decideVisibility, applyVisibility, blurredUrl, canBlurAtAll, FULL, NONE } = require('../utils/idVisibility');
+const jwt = require('jsonwebtoken');
+const { Readable } = require('stream');
+
+// ── Serving a blurred ID without disclosing where the original lives ───────────
+//
+// A Cloudinary transformation URL is a path prefix on a PUBLIC asset: strip
+// `e_blur:2000/` out of it and the original is right there, no token required. So a
+// blurred URL cannot be handed to the app — it is the unblurred ID with extra steps.
+//
+// Instead the app gets a short-lived link back to this server. The token names one
+// document and one owner, expires in fifteen minutes, and the handler re-checks the
+// relationship before streaming anything — so a link that outlives the tenancy stops
+// working, and a link shared with somebody else is useless to them.
+const PREVIEW_TTL = '15m';
+
+const previewToken = (docId, ownerId) => jwt.sign(
+    { d: docId, o: ownerId, k: 'idprev' },
+    process.env.JWT_SECRET,
+    { expiresIn: PREVIEW_TTL }
+);
+
+// Where the app should fetch a blurred document from. Relative, so it works on any
+// host without BASE_URL being right.
+// NOT under /api/owner: that mount requires a Bearer header, and a React Native
+// <Image> cannot send one. The token in the query string is what guards this.
+const previewSigner = (ownerId) => (docId) => `/api/id-preview/${docId}?t=${previewToken(docId, ownerId)}`;
 
 // The three landlord handlers below read req.user.id as an owners.id. server.js mounts
 // requireOwner on the router they hang off, and this is the same check at the handler,
@@ -94,22 +125,35 @@ const summarise = (docs) => ({
 
 // Can this owner see this tenant_users account's documents? Returns the reason
 // they can, or null. See the header for why these are the only two paths.
+// Returns { via, tenancyStatus } or null.
+//
+// `tenancyStatus` rides along because the relationship EXISTING and the relationship
+// being LIVE are different questions, and only the first was being asked. A landlord
+// keeps their tenants row for ever — a move-out is a soft delete — so `via: 'tenant'`
+// came back identically for somebody in room 101 and somebody who left in March.
+// The status is what tells them apart, and decideVisibility needs it.
 const ownerMaySee = async (ownerId, tenantUserId) => {
     const [linked] = await db.query(
-        `SELECT t.id
+        `SELECT t.id, t.status
          FROM tenant_users tu
          JOIN tenants t ON tu.tenant_id = t.id
-         WHERE tu.id = ? AND t.owner_id = ?`,
+         WHERE tu.id = ? AND t.owner_id = ?
+         ORDER BY (t.status = 'Active') DESC, t.id
+         LIMIT 1`,
         [tenantUserId, ownerId]
     );
-    if (linked.length) return 'tenant';
+    // Ordered so a LIVE tenancy wins over a lapsed one. One person can have been this
+    // landlord's tenant twice — left, came back — and picking whichever row MySQL
+    // returned first would blur a current tenant's ID because of an old tenancy.
+    if (linked.length) return { via: 'tenant', tenancyStatus: linked[0].status || 'Active' };
 
     const [applying] = await db.query(
         `SELECT id FROM join_requests
          WHERE tenant_user_id = ? AND owner_id = ? AND status = 'Pending'`,
         [tenantUserId, ownerId]
     );
-    if (applying.length) return 'applicant';
+    // No tenancy yet, which is the point of the applicant path.
+    if (applying.length) return { via: 'applicant', tenancyStatus: null };
 
     return null;
 };
@@ -207,14 +251,31 @@ const deleteMyDocument = async (req, res) => {
 
 // Shared tail for both owner read paths: check, fetch, answer.
 const respondWithDocuments = async (res, ownerId, tenantUserId, person) => {
-    const via = await ownerMaySee(ownerId, tenantUserId);
-    if (!via) {
+    const rel = await ownerMaySee(ownerId, tenantUserId);
+    if (!rel) {
         // Deliberately the same answer as "no such person": whether a given
         // account exists is not something an unrelated owner should learn.
         return res.status(404).json({ message: 'No documents you can see for this person.' });
     }
+    const { via } = rel;
     const documents = await fetchDocuments(tenantUserId);
-    res.status(200).json({ documents, summary: summarise(documents), via, person, types: DOC_TYPES });
+    // The status comes from the RELATIONSHIP query, not from whatever `person` the
+    // caller happened to assemble — one source, so a caller that forgets to include
+    // it cannot accidentally unlock a lapsed tenancy.
+    const seen = decideVisibility({ relationship: via, tenancyStatus: rel.tenancyStatus });
+    res.status(200).json({
+        documents: applyVisibility(documents, seen.level, previewSigner(ownerId)),
+        summary: summarise(documents),
+        via,
+        visibility: seen.level,
+        visibility_reason: seen.reason,
+        // In disk mode no blurred copy can be produced, so a hidden document has no
+        // image at all. That is a deployment fact, not a permission one, and the app
+        // says something different about it.
+        blur_available: canBlurAtAll(),
+        person,
+        types: DOC_TYPES
+    });
 };
 
 // GET /api/owner/tenants/:id/documents — from the tenant's detail screen.
@@ -264,12 +325,23 @@ const getTenantDocuments = async (req, res) => {
         // ID only works if they have an app to upload it from — but it is reported as a
         // fact ALONGSIDE the tenancy, not instead of it. The app phrases it from
         // person.tenancy_status, so a tenant in room 101 reads as a tenant in room 101.
+        // Whether the ID is readable, decided BEFORE anything is fetched so a moved-out
+        // tenant's document cannot leave this function unblurred. This path proves
+        // ownership through the tenants row rather than ownerMaySee, which is why it
+        // needs the check spelled out here — it was the hole: `via: 'tenant'` was
+        // returned for an Inactive tenancy exactly as for a live one, so a landlord kept
+        // a readable copy of the ID of somebody who had moved out months ago.
+        const seen = decideVisibility({ relationship: 'tenant', tenancyStatus: person.tenancy_status });
+
         if (!accounts.length) {
             return res.status(200).json({
                 documents: [],
                 summary: summarise([]),
                 via: 'tenant',
                 no_account: true,
+                visibility: seen.level,
+                visibility_reason: seen.reason,
+                blur_available: canBlurAtAll(),
                 person,
                 types: DOC_TYPES
             });
@@ -281,9 +353,15 @@ const getTenantDocuments = async (req, res) => {
         // depend on which account happened to be checked first.
         const documents = await fetchDocumentsForAccounts(accounts.map((a) => a.id));
         return res.status(200).json({
-            documents,
+            // The summary counts the REAL rows — how many exist and how many were
+            // verified is the landlord's own record and stays true either way. Only
+            // the documents themselves are blurred.
+            documents: applyVisibility(documents, seen.level, previewSigner(req.user.id)),
             summary: summarise(documents),
             via: 'tenant',
+            visibility: seen.level,
+            visibility_reason: seen.reason,
+            blur_available: canBlurAtAll(),
             person,
             types: DOC_TYPES
         });
@@ -315,6 +393,63 @@ const getApplicantDocuments = async (req, res) => {
     }
 };
 
+// GET /api/id-preview/:id?t=<token>
+//
+// Streams the BLURRED copy of a hidden ID. The only way a landlord ever sees one,
+// because the Cloudinary address of the original is never disclosed.
+//
+// Deliberately outside the normal auth mount: an <Image> cannot send an
+// Authorization header without the app threading one through every render, so the
+// token is in the query string instead. That is safe here because the token names one
+// document, expires in fifteen minutes, and proves nothing on its own — the
+// relationship is re-checked below, so a leaked link stops working the moment the
+// tenancy changes, and gives an unrelated person nothing at all.
+const previewDocument = async (req, res) => {
+    try {
+        let claims;
+        try {
+            claims = jwt.verify(String(req.query.t || ''), process.env.JWT_SECRET);
+        } catch (e) {
+            return res.status(403).json({ message: 'That preview link has expired.' });
+        }
+        // A token minted for something else must not work here. Without the `k`
+        // check, any valid session token would open any document.
+        if (!claims || claims.k !== 'idprev') {
+            return res.status(403).json({ message: 'That preview link is not valid.' });
+        }
+        if (String(claims.d) !== String(req.params.id)) {
+            return res.status(403).json({ message: 'That preview link is for a different document.' });
+        }
+
+        const [rows] = await db.query('SELECT id, tenant_user_id, file_url FROM tenant_documents WHERE id = ?', [claims.d]);
+        if (!rows.length) return res.status(404).json({ message: 'Document not found.' });
+
+        // Re-checked at FETCH time, not just when the link was made. A link handed out
+        // while somebody was a tenant must stop working when they are not — otherwise
+        // the fifteen-minute window is a fifteen-minute hole.
+        const rel = await ownerMaySee(claims.o, rows[0].tenant_user_id);
+        if (!rel) return res.status(404).json({ message: 'Document not found.' });
+
+        // And only ever the blurred copy. If this document has become fully visible
+        // again the app will have a direct URL for it; this endpoint has exactly one
+        // job and must not become a second way to fetch an original.
+        const target = blurredUrl(rows[0].file_url);
+        if (!target) return res.status(404).json({ message: 'No preview available.' });
+
+        const upstream = await fetch(target);
+        if (!upstream.ok) return res.status(502).json({ message: 'Could not load the preview.' });
+
+        res.setHeader('Content-Type', upstream.headers.get('content-type') || 'image/jpeg');
+        // Private and short-lived: a blurred ID is still somebody's ID, and it should
+        // not sit in a shared cache after the relationship it depended on has ended.
+        res.setHeader('Cache-Control', 'private, max-age=300');
+        Readable.fromWeb(upstream.body).pipe(res);
+    } catch (error) {
+        console.error('Error streaming document preview:', error.message);
+        res.status(500).json({ message: 'Could not load the preview.' });
+    }
+};
+
 // PUT /api/owner/documents/:id  { decision: 'verified' | 'rejected', note }
 // The manual check: the landlord has looked at the file and is recording what they
 // concluded. Re-derives access from the document's own owner rather than trusting
@@ -336,8 +471,20 @@ const decideDocument = async (req, res) => {
         if (!rows.length) return res.status(404).json({ message: 'Document not found.' });
 
         const doc = rows[0];
-        const via = await ownerMaySee(req.user.id, doc.tenant_user_id);
-        if (!via) return res.status(404).json({ message: 'Document not found.' });
+        const rel = await ownerMaySee(req.user.id, doc.tenant_user_id);
+        if (!rel) return res.status(404).json({ message: 'Document not found.' });
+
+        // A verdict is a statement that you LOOKED at the document. Once the tenancy
+        // has ended the image is blurred, so there is nothing to look at and a fresh
+        // "verified" would be a claim about something the landlord cannot see. Existing
+        // verdicts stand — this refuses new ones, it does not erase the old record.
+        const seen = decideVisibility({ relationship: rel.via, tenancyStatus: rel.tenancyStatus });
+        if (seen.level !== FULL) {
+            return res.status(403).json({
+                code: 'ID_HIDDEN',
+                message: 'Their ID is hidden now that they have moved out, so it cannot be checked again.'
+            });
+        }
 
         if (doc.status === status) {
             // Nothing to write, and re-stamping verified_at would rewrite history.
@@ -345,7 +492,7 @@ const decideDocument = async (req, res) => {
             return res.status(200).json({
                 message: `Already ${status.toLowerCase()}.`,
                 unchanged: true,
-                documents,
+                documents: applyVisibility(documents, seen.level, previewSigner(req.user.id)),
                 summary: summarise(documents)
             });
         }
@@ -369,7 +516,11 @@ const decideDocument = async (req, res) => {
             message: status === 'Verified'
                 ? `${DOC_TYPES[doc.doc_type] || 'Document'} marked verified.`
                 : `${DOC_TYPES[doc.doc_type] || 'Document'} rejected.`,
-            documents,
+            // Through applyVisibility like every other landlord-facing response. Only
+            // FULL can reach here, so nothing is blurred in practice — it goes through
+            // the same door so a future change to who may decide cannot turn this into
+            // the one endpoint that hands back raw URLs.
+            documents: applyVisibility(documents, seen.level, previewSigner(req.user.id)),
             summary: summarise(documents)
         });
     } catch (error) {
@@ -385,6 +536,7 @@ module.exports = {
     getTenantDocuments,
     getApplicantDocuments,
     decideDocument,
+    previewDocument,
     // Shared with the portal and the tenant list so "verified" means one thing.
     fetchDocuments,
     summarise,

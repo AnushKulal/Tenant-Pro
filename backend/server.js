@@ -126,6 +126,17 @@ app.use('/api/tenant-portal', tenantPortalRoutes);
 // why webhookController refuses anything it cannot verify.
 app.use('/api/webhooks', webhookRoutes);
 
+// A blurred ID proof, streamed for a landlord whose tenant has moved out.
+//
+// Mounted OUTSIDE the owner guard on purpose: a React Native <Image> cannot send an
+// Authorization header, so this carries its own short-lived token in the query string
+// and re-checks the landlord/tenant relationship on every fetch. It exists because a
+// Cloudinary transformation URL is not a restriction — strip the transform out of it
+// and the original is public — so the address of the original is never disclosed to
+// the app at all.
+const { previewDocument } = require('./controllers/documentController');
+app.get('/api/id-preview/:id', previewDocument);
+
 // --- Basic Health Check ---
 app.get('/', (req, res) => {
     res.send('TenantPro Backend is running!');
