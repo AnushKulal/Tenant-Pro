@@ -57,7 +57,22 @@ export const auth = {
     joinAsGuest: (form) => body(http.post('/tenant-auth/guest', form, MULTIPART)),
     // A guest has no password, so the guest ID and the phone number are the
     // credential. Only useful while the stay lasts: the ID is retired with it.
-    guestLogin: (code, phone) => body(http.post('/tenant-auth/guest-login', { code, phone }))
+    guestLogin: (code, phone) => body(http.post('/tenant-auth/guest-login', { code, phone })),
+    // ── Google ────────────────────────────────────────────────────────────────
+    // The whole OAuth handshake happens on the server; the app only opens a URL and
+    // then asks whether it worked. See backend/config/googleAuth.js for why — the
+    // short version is that the in-app alternative needs a native module AND a URL
+    // scheme, so it could not reach an installed build over the air.
+    //
+    // `claim` comes back from start and is the ONLY thing that can collect the
+    // result. It is never put in a URL, which is what makes it safe when the state
+    // that went to Google is sitting in browser history.
+    googleStart: (role) => body(http.post('/auth/google/start', { role })),
+    googlePoll: (claim) => body(http.post('/auth/google/poll', { claim })),
+    // First-ever Google sign-in: the account does not exist yet and Google has no
+    // phone number. Only the number is sent — the email and name are re-read
+    // server-side from the verified session, never trusted from here.
+    googleComplete: (claim, phone) => body(http.post('/auth/google/complete', { claim, phone }))
 };
 
 // ── Owner ─────────────────────────────────────────────────────────────────────

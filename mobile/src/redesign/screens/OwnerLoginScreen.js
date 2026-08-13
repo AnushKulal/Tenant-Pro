@@ -4,6 +4,7 @@ import { useVm } from '../AppContext';
 import { useT } from '../ThemeContext';
 import { T, Eyebrow, Row, Press, Glyph, Monogram, Divider, Field, IdToggle } from '../ui';
 import { KeyboardScroll } from '../keyboard';
+import { GoogleButton, GoogleFinish } from '../google';
 
 export default function OwnerLoginScreen() {
     const vm = useVm();
@@ -31,6 +32,13 @@ export default function OwnerLoginScreen() {
                     when they have just signed out — claims to know something the app
                     does not. Signed out is signed out. */}
                 <T w={700} s={36} lh={1.02} style={{ letterSpacing: -1.8, marginBottom: 26 }}>Hello{'\n'}there.</T>
+
+                {/* Google vouched for somebody who has no account here yet. The
+                    password form is REPLACED rather than joined by a phone field: at
+                    this point they have already proved who they are, and leaving a
+                    password box on screen would suggest they still need to invent one.
+                    They do not — this account signs in with Google. */}
+                {vm.gauth.needsPhone ? <GoogleFinish vm={vm} t={t} /> : (<>
 
                 {/* Same EMAIL / MOBILE switch the tenant screen has: /auth/login
                     accepts either identifier, so one field with a mode beats a
@@ -106,18 +114,7 @@ export default function OwnerLoginScreen() {
                     <Divider style={{ flex: 1 }} />
                 </Row>
 
-                <Row gap={8} align="stretch">
-                    {vm.socials.map((so, i) => (
-                        <Press
-                            key={i}
-                            onPress={so.go}
-                            style={{ flex: 1, paddingVertical: 14, borderRadius: 16, backgroundColor: t.ink2, borderWidth: 1, borderColor: t.line, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', columnGap: 7 }}
-                        >
-                            <Glyph name={so.icon} size={17} color={t.fg} />
-                            <T w={600} s={11} c={t.fg}>{so.label}</T>
-                        </Press>
-                    ))}
-                </Row>
+                <GoogleButton vm={vm} t={t} />
 
                 <Row justify="space-between" style={{ marginTop: 18 }}>
                     <Press onPress={vm.goForgot} hitSlop={8}>
@@ -133,6 +130,7 @@ export default function OwnerLoginScreen() {
                         </T>
                     </Press>
                 </Row>
+                </>)}
             </View>
         </KeyboardScroll>
     );

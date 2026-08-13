@@ -346,6 +346,16 @@ const INITIAL_STATE = {
   // Consecutive failed sign-ins for this screen. Three wrong passwords is the
   // point at which "I have forgotten it" becomes likelier than a typo.
   authFails: 0,
+  // "Continue with Google", which runs in the phone's browser rather than in here.
+  // While it is open this app is in the background with nothing to show, so the
+  // state has to survive being backgrounded — hence a slice rather than local
+  // component state.
+  //
+  //   phase 'idle'    nothing happening
+  //         'waiting' the browser is open; we are polling the server
+  //         'profile' Google vouched for somebody with no account yet; we need a
+  //                   phone number, because Google has none and this app needs one
+  gauth: { phase: 'idle', role: 'owner', claim: '', error: '', email: '', name: '', busy: false },
   signupRole: 'owner',  // which login screen 'Create account' was tapped from
   // "Join as a guest": the code someone carries in from the sign-in screen before
   // they have an account. Held until registration finishes, then the join request
@@ -1617,11 +1627,54 @@ function deriveVm(s, api) {
     setMobileMode: () => setState({ idmode: 'mobile', authId: '', authError: '', authCode: '', authFails: 0 }),
     emailFg: s.idmode === 'email' ? 'ink' : 'fg2',
     mobileFg: s.idmode === 'mobile' ? 'ink' : 'fg2',
+    // ── "Or continue with" ────────────────────────────────────────────────────
+    // Was three buttons that flashed "not wired in this prototype". Now one that
+    // works.
+    //
+    // Facebook and X are GONE rather than left in place as decoration. Each would
+    // be its own OAuth app, its own review process and its own set of credentials
+    // to keep alive, for a rent-collection app whose users all have a Google
+    // account on the Android phone they installed it from. Two dead buttons next to
+    // a live one also make the live one look untrustworthy.
     socials: [
-      { label: 'Google', icon: 'logo-google' },
-      { label: 'Facebook', icon: 'logo-facebook' },
-      { label: 'X', icon: 'logo-twitter' }
-    ].map((x) => ({ ...x, go: () => flash(`${x.label} sign-in — not wired in this prototype`) })),
+      {
+        label: 'Google',
+        icon: 'logo-google',
+        // The role comes from WHICH login screen this is, the same way signIn and
+        // goSignup resolve it. It decides which table the account lives in, so it is
+        // captured now and never re-derived later.
+        go: () => api.startGoogleSignIn(s.route === 'tlogin' ? 'tenant' : 'owner')
+      }
+    ],
+    // The state of a Google sign-in that is happening in the browser right now.
+    // Surfaced so the login screen can say what it is waiting for instead of looking
+    // frozen — the app has no other way to explain a blank two seconds after the
+    // browser closed.
+    gauth: (() => {
+      const g = s.gauth || INITIAL_STATE.gauth;
+      return {
+        waiting: g.phase === 'waiting',
+        needsPhone: g.phase === 'profile',
+        busy: !!g.busy,
+        error: g.error || '',
+        hasError: !!g.error,
+        email: g.email || '',
+        // Whose account is about to be created, said plainly. Somebody with two
+        // Google accounts on one phone needs to see which one came back.
+        line: g.email
+          ? `Google confirmed ${g.email}. One more thing before your account is ready.`
+          : '',
+        // A tenant needs the number so their landlord can reach them; a landlord
+        // needs it so their tenants can. Same field, different reason, so the reason
+        // is stated rather than left as a bare label.
+        why: g.role === 'tenant'
+          ? 'Your landlord needs a number to reach you on, and rent reminders are sent by SMS.'
+          : 'Your tenants see this number, and it is how you sign in if you ever lose access to Google.',
+        cancel: () => api.cancelGoogleSignIn(),
+        submit: () => api.finishGoogleSignUp(),
+        canSubmit: String(s.authPhone || '').replace(/[^0-9]/g, '').length >= 10
+      };
+    })(),
 
     // ── Auth form + submission (Phase 2) ──────────────────────────────────────
     // The login/register screens bind these instead of showing placeholder text.
@@ -5770,12 +5823,165 @@ export function AppProvider({ children }) {
         authError: errText(e, 'Sign in failed. Check your details and try again.'),
         authCode: code,
         // Only a wrong password counts toward the forgot-password nudge. An
-        // unregistered address is a different problem with a different answer, and
-        // a network failure is nobody's fault.
-        authFails: code === 'NOT_REGISTERED' ? 0 : stateRef.current.authFails + 1
+        // unregistered address is a different problem with a different answer, a
+        // network failure is nobody's fault, and USE_GOOGLE means the account has no
+        // password at all — pushing a reset at somebody whose answer is the button
+        // just below would be the app arguing with itself.
+        authFails: (code === 'NOT_REGISTERED' || code === 'USE_GOOGLE') ? 0 : stateRef.current.authFails + 1
       });
     }
   }, [setState, flash, loadOwnerData, loadTenantData]);
+
+  // ── Continue with Google ────────────────────────────────────────────────────
+  // The handshake runs on the server (see backend/config/googleAuth.js). This side
+  // does three things: ask for a URL, open it, and poll until the server says what
+  // happened.
+  //
+  // Linking.openURL rather than an in-app browser deliberately. expo-web-browser
+  // would look better and would also be a native module, which cannot reach an
+  // installed build over the air — so the button would not exist for anybody until
+  // the next APK. Linking is part of React Native and is already compiled in.
+  //
+  // The cost is that the browser tab does not close itself, so the person taps back.
+  // The polling is what makes that work: whenever they return, the answer is already
+  // waiting.
+  const gpollRef = useRef(0);
+
+  // Both paths end the same way, so this is shared rather than written twice — a
+  // sign-in that saved the session slightly differently from the password path would
+  // break somewhere unrelated weeks later.
+  const adoptSession = useCallback(async (role, token, user) => {
+    if (role === 'tenant') await saveTenantSession(token, user);
+    else await saveOwnerSession(token, user);
+    setToken(token);
+    setState({
+      session: { role, token, user },
+      gauth: { ...INITIAL_STATE.gauth },
+      authBusy: false, authPw: '', authError: '', authCode: '', authFails: 0,
+      route: role === 'tenant' ? 'portal' : 'home'
+    });
+    flash(`Welcome${user && user.name ? `, ${String(user.name).split(' ')[0]}` : ''}`);
+    if (role === 'tenant') loadTenantData();
+    else loadOwnerData();
+  }, [setState, flash, loadOwnerData, loadTenantData]);
+
+  const startGoogleSignIn = useCallback(async (role) => {
+    const want = role === 'tenant' ? 'tenant' : 'owner';
+    // A second tap while the first attempt is still live would mint a second session
+    // and orphan the first, so the run id both de-duplicates and cancels.
+    const run = gpollRef.current + 1;
+    gpollRef.current = run;
+    setState({ gauth: { phase: 'waiting', role: want, claim: '', error: '', email: '', name: '', busy: true } });
+
+    let claim = '';
+    try {
+      const res = await apiAuth.googleStart(want);
+      claim = res.claim;
+      if (!claim || !res.auth_url) throw new Error('bad start');
+      setState({ gauth: { ...stateRef.current.gauth, claim, busy: false } });
+      await Linking.openURL(res.auth_url);
+    } catch (e) {
+      const code = (e && e.response && e.response.data && e.response.data.code) || '';
+      setState({
+        gauth: {
+          ...INITIAL_STATE.gauth,
+          phase: 'idle',
+          // The server names which variables are missing, which is exactly what
+          // somebody debugging their own deployment needs to read.
+          error: code === 'GOOGLE_NOT_CONFIGURED'
+            ? errText(e, 'Google sign-in is not set up on the server yet.')
+            : errText(e, 'Could not open Google sign-in.')
+        }
+      });
+      return;
+    }
+
+    // Poll until the server has an answer. Bounded by the same ten minutes the
+    // server gives the session, so this can never spin forever in the background.
+    const deadline = Date.now() + 10 * 60 * 1000;
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    while (gpollRef.current === run && Date.now() < deadline) {
+      await wait(2500);
+      if (gpollRef.current !== run) return;   // cancelled, or another attempt started
+      let res;
+      try {
+        res = await apiAuth.googlePoll(claim);
+      } catch (e) {
+        // 410 is the server saying the attempt is gone — a real answer, so stop.
+        // Anything else is very likely the phone having no signal while the browser
+        // is in front, so keep waiting rather than throwing the sign-in away.
+        if (e && e.response && e.response.status === 410) {
+          setState({ gauth: { ...INITIAL_STATE.gauth, error: 'That sign-in attempt expired. Please try again.' } });
+          return;
+        }
+        continue;
+      }
+      if (gpollRef.current !== run) return;
+
+      if (res.status === 'ready') {
+        await adoptSession(want, res.token, res.owner || res.tenant || null);
+        return;
+      }
+      if (res.status === 'profile') {
+        // Google vouched for them, but there is no account yet and no phone number
+        // to make one with. The claim stays valid so /complete can re-read the
+        // verified email server-side.
+        setState({
+          gauth: {
+            phase: 'profile', role: want, claim, error: '', busy: false,
+            email: (res.google && res.google.email) || '',
+            name: (res.google && res.google.name) || ''
+          },
+          // Prefilled so the create-account step shows who it is about to create.
+          authName: (res.google && res.google.name) || '',
+          authId: (res.google && res.google.email) || '',
+          authPhone: ''
+        });
+        return;
+      }
+      if (res.status === 'failed' || res.status === 'expired') {
+        setState({ gauth: { ...INITIAL_STATE.gauth, error: res.message || 'Google sign-in did not complete.' } });
+        return;
+      }
+      // 'pending' — the person is still on Google's consent screen.
+    }
+    if (gpollRef.current === run) {
+      setState({ gauth: { ...INITIAL_STATE.gauth, error: 'Google sign-in timed out. Please try again.' } });
+    }
+  }, [setState, adoptSession]);
+
+  // Finish a first-ever Google sign-in. Only the phone number is sent: the name and
+  // email are re-read from the verified session on the server, because trusting them
+  // from here would let anyone create an account bound to somebody else's identity.
+  const finishGoogleSignUp = useCallback(async () => {
+    const { gauth, authPhone } = stateRef.current;
+    if (!gauth.claim) return;
+    // Counted in digits, not characters, so "+91 98765 43210" is accepted as typed
+    // rather than rejected for containing a plus and two spaces.
+    const phone = String(authPhone || '').trim();
+    if (phone.replace(/[^0-9]/g, '').length < 10) {
+      setState({ gauth: { ...gauth, error: 'A mobile number is 10 digits.' } });
+      return;
+    }
+    setState({ gauth: { ...gauth, busy: true, error: '' } });
+    try {
+      const res = await apiAuth.googleComplete(gauth.claim, phone);
+      await adoptSession(gauth.role, res.token, res.owner || res.tenant || null);
+    } catch (e) {
+      setState({
+        gauth: {
+          ...stateRef.current.gauth, busy: false,
+          error: errText(e, 'Could not finish creating your account.')
+        }
+      });
+    }
+  }, [setState, adoptSession]);
+
+  // Abandon the attempt. Stops the polling loop by moving the run id past it.
+  const cancelGoogleSignIn = useCallback(() => {
+    gpollRef.current += 1;
+    setState({ gauth: { ...INITIAL_STATE.gauth } });
+  }, [setState]);
 
   const register = useCallback(async () => {
     const { authId, authPw, authName, authPhone, signupRole } = stateRef.current;
@@ -5852,6 +6058,7 @@ export function AppProvider({ children }) {
       decideJoin, decidePayment, requestToJoin, holdJoinCode, askPermission, finishPermits,
       loadDocs, decideDoc, loadMyDocs, pickDocPhoto, addMyDoc, removeMyDoc,
       lookupProperty, scanQrFromImage, resetDemo, openUpiPayment, declareMyPayment,
+      startGoogleSignIn, finishGoogleSignUp, cancelGoogleSignIn,
       pickGuestPhoto, guestCheckCode, submitGuestJoin, submitGuestSignIn, submitClaim,
       searchPlaces, describePin, useMyLocation
     }),
@@ -5864,6 +6071,7 @@ export function AppProvider({ children }) {
       decideJoin, decidePayment, requestToJoin, holdJoinCode, askPermission, finishPermits,
       loadDocs, decideDoc, loadMyDocs, pickDocPhoto, addMyDoc, removeMyDoc,
       lookupProperty, scanQrFromImage, resetDemo, openUpiPayment, declareMyPayment,
+      startGoogleSignIn, finishGoogleSignUp, cancelGoogleSignIn,
       pickGuestPhoto, guestCheckCode, submitGuestJoin, submitGuestSignIn, submitClaim,
       searchPlaces, describePin, useMyLocation
     ]
