@@ -17,9 +17,77 @@ const fs = require('fs');
 //
 // The Cloudinary packages are only require()d when Cloudinary is configured, so
 // local development keeps working even if those packages aren't installed.
+//
+// ── A BAD CREDENTIAL MUST NOT TAKE THE SERVER DOWN ────────────────────────────
+// The cloudinary SDK parses CLOUDINARY_URL when it is first required, and THROWS
+// if the value does not begin with "cloudinary://" — the exact mistake somebody
+// makes when they paste the API base URL from the dashboard, or paste the cloud
+// name on its own, or leave the "CLOUDINARY_URL=" prefix on the value.
+//
+// That throw happened at module load, inside a require chain reached from
+// server.js, so the process exited 1 BEFORE app.listen. On a host that decides a
+// deploy succeeded by whether the service answers, that is a failed deploy and a
+// total outage — every endpoint gone because a photo destination was misspelled.
+// One misconfigured optional feature took down login, rent and everything else.
+//
+// So the whole handshake is wrapped, and anything that goes wrong DEGRADES to disk
+// storage with a loud line in the log. Uploads on an ephemeral host will not
+// survive the next deploy in that state, which is bad — but it is recoverable at
+// leisure, whereas a server that will not boot is not. /healthz reports which mode
+// actually took effect so this is visible from outside without reading the log.
 // -----------------------------------------------------------------------------
 
-const useCloudinary = !!(process.env.CLOUDINARY_URL || process.env.CLOUDINARY_CLOUD_NAME);
+const cloudinaryWanted = !!(process.env.CLOUDINARY_URL || process.env.CLOUDINARY_CLOUD_NAME);
+
+// Resolve the SDK and prove the credential parses. Returns the configured client,
+// or null when Cloudinary cannot be used — never throws.
+const resolveCloudinary = () => {
+    if (!cloudinaryWanted) return null;
+    try {
+        // eslint-disable-next-line global-require
+        const { v2: cloudinary } = require('cloudinary');
+
+        // cloudinary auto-reads CLOUDINARY_URL. If the separate vars are used, wire
+        // them up.
+        if (process.env.CLOUDINARY_CLOUD_NAME) {
+            cloudinary.config({
+                cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+                api_key: process.env.CLOUDINARY_API_KEY,
+                api_secret: process.env.CLOUDINARY_API_SECRET
+            });
+        }
+
+        // A URL can parse and still be unusable: "cloudinary://mycloud" is accepted
+        // by the SDK and leaves no key or secret, so every upload would fail at
+        // runtime with an auth error and no clue why. Checked here, once, at boot.
+        const cfg = cloudinary.config();
+        const missing = ['cloud_name', 'api_key', 'api_secret'].filter((k) => !cfg[k]);
+        if (missing.length) {
+            console.error(
+                `⚠️  Uploads: CLOUDINARY_URL is set but incomplete (missing ${missing.join(', ')}). ` +
+                'Falling back to local disk — uploaded files will NOT survive the next deploy. ' +
+                'Expected form: cloudinary://<api_key>:<api_secret>@<cloud_name>'
+            );
+            return null;
+        }
+        console.log('🖼️  Uploads: Cloudinary mode');
+        return cloudinary;
+    } catch (e) {
+        // Never log `e` with the raw value in it — CLOUDINARY_URL contains an API
+        // secret, and a stack trace from a hosted log viewer is not a safe place
+        // for it. The message alone says what is wrong.
+        console.error(
+            `⚠️  Uploads: Cloudinary could not be configured (${e.message}). ` +
+            'Falling back to local disk — uploaded files will NOT survive the next deploy. ' +
+            'Expected form: cloudinary://<api_key>:<api_secret>@<cloud_name>'
+        );
+        return null;
+    }
+};
+
+const cloudinaryClient = resolveCloudinary();
+// What actually took effect, which is not always what was asked for.
+const useCloudinary = !!cloudinaryClient;
 
 // Map an upload field name to a storage folder.
 const folderFor = (fieldname) => {
@@ -48,16 +116,9 @@ let storage;
 
 if (useCloudinary) {
     // ---- Cloudinary storage (custom multer engine — only needs the `cloudinary` pkg) ----
-    const { v2: cloudinary } = require('cloudinary');
-
-    // cloudinary auto-reads CLOUDINARY_URL. If the separate vars are used, wire them up.
-    if (process.env.CLOUDINARY_CLOUD_NAME) {
-        cloudinary.config({
-            cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-            api_key: process.env.CLOUDINARY_API_KEY,
-            api_secret: process.env.CLOUDINARY_API_SECRET
-        });
-    }
+    // Already required and verified by resolveCloudinary() above, so nothing here can
+    // throw on a bad credential.
+    const cloudinary = cloudinaryClient;
 
     // Minimal multer StorageEngine that streams the upload straight to Cloudinary.
     storage = {
@@ -83,7 +144,8 @@ if (useCloudinary) {
             cb(null);
         }
     };
-    console.log('🖼️  Uploads: Cloudinary mode');
+    // The mode is announced by resolveCloudinary(), which is the only place that
+    // knows whether the credential actually parsed.
 } else {
     // ---- Local disk storage (default) ----
     storage = multer.diskStorage({
