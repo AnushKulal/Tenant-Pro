@@ -214,6 +214,17 @@ CREATE TABLE IF NOT EXISTS `payments` (
   `tenant_id` int(11) NOT NULL,
   `amount_paid` decimal(10,2) NOT NULL,
   `payment_date` date NOT NULL,
+  -- WHICH rent this payment settled: the tenant's next_rent_due at the moment the
+  -- payment was entered. Without it a payment is just a date and an amount, and
+  -- "was this on time?" is unanswerable after the fact — next_rent_due lives on the
+  -- tenant and moves forward on every confirmation, overwriting the only evidence.
+  -- That is why the tenant score showed "None missed" for everybody: the data to say
+  -- otherwise was never kept.
+  --
+  -- NULL for every payment recorded before this column existed. Those stay
+  -- deliberately unscored rather than back-filled from a guess — a made-up due date
+  -- would produce a confident score built on fiction.
+  `due_date` date DEFAULT NULL,
   `payment_method` varchar(50) NOT NULL,
   `reference_id` varchar(100) DEFAULT NULL,
   `status` enum('Declared','Confirmed','Rejected') NOT NULL DEFAULT 'Confirmed',
