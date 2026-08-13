@@ -59,6 +59,7 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 // --- Route Imports ---
 const authRoutes = require('./routes/authRoutes');
 const tenantAuthRoutes = require('./routes/tenantAuthRoutes');
+const { logFeatures } = require('./config/features');
 const ownerRoutes = require('./routes/ownerRoutes');
 const propertyRoutes = require('./routes/propertyRoutes');
 const unitRoutes = require('./routes/unitRoutes');
@@ -169,6 +170,8 @@ const PORT = process.env.PORT || 5000;
 // requests don't need to wait for init; we run it in the background instead.
 app.listen(PORT, () => {
     console.log(`✅ Server is running on port ${PORT}`);
+    // A kill switch nobody can see is the one left on by accident.
+    logFeatures();
     // Say at boot whether reset emails can actually be sent. Credentials that are
     // present but wrong look exactly like no credentials from the outside — the
     // request succeeds and the email never arrives — so this is the one place that

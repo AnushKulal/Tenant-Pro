@@ -248,6 +248,18 @@ const initDb = async () => {
         await ensureColumn(conn, 'properties', 'latitude', 'decimal(10,7) DEFAULT NULL');
         await ensureColumn(conn, 'properties', 'longitude', 'decimal(10,7) DEFAULT NULL');
 
+        // ── Leaving a property ────────────────────────────────────────────────
+        // Notice to vacate. Both NULL for a tenant who has given none, which is every
+        // row that predates this — nothing to backfill, and guessing a leave date for
+        // somebody who never asked to leave would be worse than a blank.
+        //
+        // The notice lives on `tenants` rather than on `leases` because NOTHING has
+        // ever written a leases row: its status enum already contains 'Notice Period',
+        // which was designed and never built. Hanging this off a table that is empty in
+        // production would make the feature work in theory only.
+        await ensureColumn(conn, 'tenants', 'notice_given_on', 'date DEFAULT NULL');
+        await ensureColumn(conn, 'tenants', 'leave_on', 'date DEFAULT NULL');
+
         // ── Google sign-in ────────────────────────────────────────────────────
         // The Google account's `sub`, which is the ONLY stable identifier it has:
         // a person can change the email address on their Google account, and

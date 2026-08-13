@@ -31,10 +31,19 @@ const addMonths = (date, months, anchorDay) => {
 // UTC first, which in India (UTC+5:30) turns any date into the previous day for
 // times before 05:30 — a due date silently one day early.
 const toSqlDate = (date) => {
-    const y = date.getFullYear();
-    const m = String(date.getMonth() + 1).padStart(2, '0');
-    const d = String(date.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
+    // NULL in, null out. This used to assume a Date and threw
+    // "Cannot read properties of null (reading 'getFullYear')" the first time it was
+    // handed a nullable column — tenants.notice_given_on, which is NULL for everyone
+    // who has not given notice, i.e. almost every row. A whole endpoint 500'd on the
+    // common case. Every caller that passes a real Date is unaffected, and the next
+    // nullable column to reach this is no longer a landmine.
+    if (!date) return null;
+    const d = date instanceof Date ? date : new Date(date);
+    if (Number.isNaN(d.getTime())) return null;
+    const y = d.getFullYear();
+    const mo = String(d.getMonth() + 1).padStart(2, '0');
+    const da = String(d.getDate()).padStart(2, '0');
+    return `${y}-${mo}-${da}`;
 };
 
 // Advance a tenant's due date by one month, given whatever their due date currently

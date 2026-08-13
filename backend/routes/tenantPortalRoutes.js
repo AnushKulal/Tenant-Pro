@@ -8,6 +8,9 @@ const { protect, requireLiveStay } = require('../middleware/authMiddleware');
 const upload = require('../middleware/uploadMiddleware');
 const {
     getMe,
+    getLeavePlan,
+    giveNotice,
+    withdrawNotice,
     getPulse,
     getPayments,
     declarePayment,
@@ -57,6 +60,14 @@ router.get('/payments', getPayments);
 // "I have paid this." Records a CLAIM, not money received -- the landlord confirms it
 // at PUT /api/payments/declared/:id, and only that advances the due date.
 router.post('/payments', declarePayment);
+// ── Leaving a property ────────────────────────────────────────────────────────
+// Below requireLiveStay: an expired guest has no live tenancy to give notice on.
+// GET is separate from POST so the confirmation screen can state the real dates
+// before anything is written — the old button had no preview and no write either.
+router.get('/leave', getLeavePlan);
+router.post('/leave', giveNotice);
+// Withdrawable. A mis-tap on something this consequential must not be a one-way door.
+router.delete('/leave', withdrawNotice);
 router.get('/requests', getRequests);
 // `request_image` is optional — multer's .single() passes a request with no file
 // straight through, so a JSON body still works exactly as before.
