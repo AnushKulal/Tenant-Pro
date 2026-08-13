@@ -1072,8 +1072,12 @@ export default function Sheets() {
                             <Avatar initials={vm.docs.initials} size={46} radius={16} />
                             <View style={{ flex: 1, minWidth: 0 }}>
                                 <T w={700} s={19} lh={1.15} style={{ letterSpacing: -0.7 }} numberOfLines={1}>{vm.docs.name}</T>
-                                <Eyebrow s={9} ls={0.08} c={t.fg3} style={{ marginTop: 5 }}>
-                                    {vm.docs.summaryLine || 'ID DOCUMENTS'}
+                                {/* Where they actually are, first. A landlord opening this
+                                    wants "room 101" or "no longer here" before anything
+                                    about documents — the sheet used to lead with the app's
+                                    state instead of the tenancy's. */}
+                                <Eyebrow s={9} ls={0.08} c={vm.docs.movedOut ? t.amber : t.fg3} style={{ marginTop: 5 }}>
+                                    {vm.docs.tenancyLine}{vm.docs.summaryLine ? ` · ${vm.docs.summaryLine.toUpperCase()}` : ''}
                                 </Eyebrow>
                             </View>
                             {vm.docs.verified ? <Glyph name="shield-checkmark" size={20} color={t.pos} /> : null}

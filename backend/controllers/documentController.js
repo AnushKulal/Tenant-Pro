@@ -226,12 +226,30 @@ const getTenantDocuments = async (req, res) => {
         // tenant_users and then read rows[0], which silently picked ONE account out of
         // however many the tenant has — with no ORDER BY, so which one was up to
         // MySQL. See fetchDocumentsForAccounts for what that cost.
+        // Tenancy status and room come back too, because the landlord's question is
+        // never "has this person installed my app" — it is "who is living in my
+        // building, and have I checked them". The sheet used to answer the first,
+        // telling a landlord "they have not signed in to TenantPro yet" about a tenant
+        // sitting in room 101, which is both true and useless.
         const [rows] = await db.query(
-            'SELECT id, name, phone, email FROM tenants WHERE id = ? AND owner_id = ?',
+            `SELECT t.id, t.name, t.phone, t.email, t.status, u.unit_number
+             FROM tenants t
+             LEFT JOIN units u ON t.unit_id = u.id
+             WHERE t.id = ? AND t.owner_id = ?`,
             [req.params.id, req.user.id]
         );
         if (!rows.length) return res.status(404).json({ message: 'Tenant not found.' });
-        const person = { name: rows[0].name, phone: rows[0].phone, email: rows[0].email };
+        const person = {
+            name: rows[0].name,
+            phone: rows[0].phone,
+            email: rows[0].email,
+            // 'Active' or 'Inactive'. A moved-out tenant is kept, not deleted, so their
+            // documents remain a record of who was checked — the sheet needs to say
+            // which of the two it is rather than implying they are still resident.
+            tenancy_status: rows[0].status || 'Active',
+            moved_out: String(rows[0].status || 'Active') === 'Inactive',
+            unit_number: rows[0].unit_number || null
+        };
 
         // EVERY portal account linked to this tenant, because that is what the
         // landlord's own badge counts.
@@ -241,8 +259,11 @@ const getTenantDocuments = async (req, res) => {
         );
 
         // A tenant the landlord typed in by hand has no portal account, so there is
-        // nowhere for documents to have come from. Say that rather than 404ing, so
-        // the app can offer to invite them instead.
+        // nowhere for a document to have come FROM. That is still worth reporting —
+        // it changes what the landlord can do next, since asking somebody to upload an
+        // ID only works if they have an app to upload it from — but it is reported as a
+        // fact ALONGSIDE the tenancy, not instead of it. The app phrases it from
+        // person.tenancy_status, so a tenant in room 101 reads as a tenant in room 101.
         if (!accounts.length) {
             return res.status(200).json({
                 documents: [],

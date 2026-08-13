@@ -2786,9 +2786,32 @@ function deriveVm(s, api) {
         // is nowhere a document could have come from. Say that, rather than showing
         // an empty list that reads as "they ignored the request".
         noAccount: !!d.noAccount,
-        noAccountLine: 'They have not signed in to TenantPro yet, so there is nothing for them to have uploaded. Share your property code and they can add an ID from their own profile.',
+        // Phrased around the TENANCY, not around the app. The old line told a landlord
+        // "they have not signed in to TenantPro yet" about a tenant sitting in room 101
+        // — true, useless, and read as though the person were not really there. What the
+        // landlord is asking is "who is in my building and have I checked them", so that
+        // is what these answer; whether an app is installed only appears where it
+        // changes what they can do next.
+        noAccountLine: (() => {
+            if (who.moved_out) {
+                return `${(who.name || 'This tenant').split(' ')[0]} is no longer in your property, and no ID was ever uploaded. The record is kept so you can see who was checked.`;
+            }
+            const where = who.unit_number ? `room ${who.unit_number}` : 'your property';
+            return `${(who.name || 'This tenant').split(' ')[0]} is in ${where}. No ID on file — they have not set up the app yet, so ask them to install it and add one, or add it yourself from their details.`;
+        })(),
         empty: !d.loading && !d.error && !d.noAccount && d.list.length === 0,
-        emptyLine: 'Nothing uploaded yet. Ask them to add a government ID from their profile — Aadhaar, PAN, voter ID, licence or passport.',
+        emptyLine: (() => {
+            if (who.moved_out) {
+                return 'This tenant has moved out and never uploaded an ID. The record is kept as a note of what was checked.';
+            }
+            const where = who.unit_number ? `room ${who.unit_number}` : 'your property';
+            return `Nothing uploaded yet. They are in ${where} and can add a government ID from their own profile — Aadhaar, PAN, voter ID, licence or passport.`;
+        })(),
+        // So the sheet can label a former tenant rather than implying they are resident.
+        movedOut: !!who.moved_out,
+        tenancyLine: who.moved_out
+            ? 'NO LONGER IN YOUR PROPERTY'
+            : who.unit_number ? `IN ROOM ${String(who.unit_number).toUpperCase()}` : 'IN YOUR PROPERTY',
         summaryLine: sum.total
           ? `${sum.total} ${sum.total === 1 ? 'document' : 'documents'} · ${sum.verified} verified`
           : '',
