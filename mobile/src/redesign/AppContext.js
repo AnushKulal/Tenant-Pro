@@ -3923,6 +3923,10 @@ function deriveVm(s, api) {
         // de-duplicates so this only lands once.
         found: (value) => find(codeOf(value)),
         typeInstead: () => flash('Type the code in the box below the camera'),
+        // The QR usually arrives as a WhatsApp image, not as a code held up in
+        // front of you. Reading it out of the gallery is the same code path from
+        // `find` onwards — only the way the string was obtained differs.
+        fromGallery: () => api.scanQrFromImage(),
         close: () => api.goBackOneStep() || go('guest')
       };
     })(),
@@ -4894,6 +4898,74 @@ export function AppProvider({ children }) {
     flash(`We will ask to join ${wanted} once your account is ready`);
   }, [setState, flash, lookupProperty]);
 
+  // ── Reading an invite QR out of a saved picture ────────────────────────────
+  // A landlord shows the QR from their own phone, which works only if both people
+  // are in the same room. In practice they send it on WhatsApp, and the tenant then
+  // has a PICTURE of a QR — which the live scanner cannot help with: pointing one
+  // phone's camera at another phone's screen is a glare-and-focus fight, and the
+  // image may have arrived on the only phone there is.
+  //
+  // expo-camera can decode a still image. It is the same native module the live
+  // scanner uses, so this needs no new permission and no new dependency — but it IS
+  // native, so it is required lazily and its absence is a state to report rather
+  // than a crash, exactly as ScanQrScreen does with the viewfinder.
+  //
+  // Every failure gets its OWN message. "Could not read that" covers four different
+  // situations — no scanner in this build, no QR in the picture, a QR that belongs
+  // to something else, or a cancelled pick — and a tenant who cannot tell them apart
+  // cannot fix any of them.
+  const scanQrFromImage = useCallback(async () => {
+    // Resolve the decoder BEFORE opening the picker. Sending somebody through a
+    // gallery to choose a photo and only then admitting the app cannot read it is a
+    // worse experience than saying so up front.
+    const decode = (() => {
+      try {
+        // eslint-disable-next-line global-require
+        const mod = require('expo-camera');
+        if (!mod) return null;
+        // Both shapes, because the module has moved this once already: a top-level
+        // export in current SDKs, a static on CameraView in others.
+        if (typeof mod.scanFromURLAsync === 'function') return mod.scanFromURLAsync;
+        if (mod.CameraView && typeof mod.CameraView.scanFromURLAsync === 'function') {
+          return mod.CameraView.scanFromURLAsync.bind(mod.CameraView);
+        }
+        return null;
+      } catch (e) {
+        return null;
+      }
+    })();
+
+    if (!decode) {
+      flash('Reading a QR from a picture needs a newer version of the app. Type the code instead.');
+      return;
+    }
+
+    const asset = await captureOrPick('library');
+    // Cancelled, or permission refused — captureOrPick has already said which.
+    if (!asset || !asset.uri) return;
+
+    let results = null;
+    try {
+      results = await decode(asset.uri, ['qr']);
+    } catch (e) {
+      flash('Could not open that picture');
+      return;
+    }
+
+    const first = (results || []).find((r) => r && (r.data || r.raw));
+    if (!first) {
+      flash('No QR code in that picture. Try a clearer screenshot of the whole code.');
+      return;
+    }
+
+    const code = codeOf(first.data || first.raw);
+    if (!code) {
+      flash('That QR is not a TenantPro invite');
+      return;
+    }
+    holdJoinCode(code);
+  }, [captureOrPick, flash, holdJoinCode]);
+
   // ── ID documents ───────────────────────────────────────────────────────────
   // Read on demand, never bundled into the dashboard: a government ID is the most
   // sensitive thing here, so it travels only when somebody has opened the screen
@@ -5779,7 +5851,7 @@ export function AppProvider({ children }) {
       pickPhotoFor, createProperty, saveProperty, deleteProperty, createUnit, createTenantRecord, goBackOneStep,
       decideJoin, decidePayment, requestToJoin, holdJoinCode, askPermission, finishPermits,
       loadDocs, decideDoc, loadMyDocs, pickDocPhoto, addMyDoc, removeMyDoc,
-      lookupProperty, resetDemo, openUpiPayment, declareMyPayment,
+      lookupProperty, scanQrFromImage, resetDemo, openUpiPayment, declareMyPayment,
       pickGuestPhoto, guestCheckCode, submitGuestJoin, submitGuestSignIn, submitClaim,
       searchPlaces, describePin, useMyLocation
     }),
@@ -5791,7 +5863,7 @@ export function AppProvider({ children }) {
       pickPhotoFor, createProperty, saveProperty, deleteProperty, createUnit, createTenantRecord, goBackOneStep,
       decideJoin, decidePayment, requestToJoin, holdJoinCode, askPermission, finishPermits,
       loadDocs, decideDoc, loadMyDocs, pickDocPhoto, addMyDoc, removeMyDoc,
-      lookupProperty, resetDemo, openUpiPayment, declareMyPayment,
+      lookupProperty, scanQrFromImage, resetDemo, openUpiPayment, declareMyPayment,
       pickGuestPhoto, guestCheckCode, submitGuestJoin, submitGuestSignIn, submitClaim,
       searchPlaces, describePin, useMyLocation
     ]

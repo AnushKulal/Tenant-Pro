@@ -36,6 +36,19 @@ export default function FindScreen() {
                     <T w={700} s={14} lh={1} c={t.on}>Scan invite QR</T>
                 </Press>
 
+                {/* The QR almost always arrives as a WhatsApp image, and the live
+                    scanner is no help then: pointing one phone at another phone's
+                    screen is a glare fight, and often there is only one phone. Second
+                    button rather than buried in the scanner, because this is the
+                    common case, not the fallback. */}
+                <Press
+                    onPress={vm.scan.fromGallery}
+                    style={{ marginTop: 9, paddingVertical: 14, borderRadius: 16, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', columnGap: 9 }}
+                >
+                    <Glyph name="image-outline" size={17} color={t.accent} />
+                    <T w={600} s={13.5} lh={1} c={t.fg}>Upload QR from photos</T>
+                </Press>
+
                 <Row gap={12} style={{ marginVertical: 14 }}>
                     <View style={{ flex: 1, height: 1, backgroundColor: t.line }} />
                     <T mono w={600} s={9} lh={1} ls={0.1} c={t.fg3}>OR ENTER MANUALLY</T>

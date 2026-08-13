@@ -138,6 +138,17 @@ export default function ScanQrScreen() {
             {/* Typing the code always works, whatever the camera is doing. */}
             <View style={{ paddingBottom: 26 }}>
                 {note}
+                {/* Offered on every no-camera path — module missing, permission
+                    refused, still asking — because in all three the tenant is holding
+                    a phone with the QR already saved on it, and reading it from the
+                    gallery is a decode, not a camera. */}
+                <Press
+                    onPress={scan.fromGallery}
+                    style={{ marginBottom: 14, paddingVertical: 14, borderRadius: 16, backgroundColor: t.ink2, borderWidth: 1, borderColor: t.line, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', columnGap: 9 }}
+                >
+                    <Glyph name="image-outline" size={17} color={t.accent} />
+                    <T w={600} s={13.5} lh={1} c={t.fg}>Upload QR from photos</T>
+                </Press>
                 <Eyebrow s={9} ls={0.12} c={t.fg3} style={{ marginBottom: 9 }}>OR ENTER THE CODE</Eyebrow>
                 <Field
                     label="PROPERTY CODE"
@@ -250,6 +261,17 @@ export default function ScanQrScreen() {
                         Your landlord can show it from their app, under Invite a tenant.
                     </T>
                 </View>
+
+                {/* Also offered WITH a working camera: a tenant who came here to scan
+                    and then remembers the QR is sitting in their WhatsApp should not
+                    have to back out and find another button. */}
+                <Press
+                    onPress={scan.fromGallery}
+                    style={{ marginBottom: 9, paddingVertical: 15, borderRadius: 999, backgroundColor: 'rgba(6,6,8,0.6)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.22)', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', columnGap: 9 }}
+                >
+                    <Glyph name="image-outline" size={16} color="#F4F3F7" />
+                    <T w={600} s={14} c="#F4F3F7">Upload QR from photos</T>
+                </Press>
 
                 <Press
                     onPress={scan.typeInstead}
