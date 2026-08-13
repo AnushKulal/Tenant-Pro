@@ -76,7 +76,7 @@ const { mailProvider, isMailConfigured, verifyMail } = require('./config/mailer'
 // the host's ephemeral filesystem and is DELETED by the next deploy, and there is no
 // symptom until somebody opens an image that used to work. Only the mode is exposed,
 // never the Cloudinary credential.
-const { useCloudinary } = require('./middleware/uploadMiddleware');
+const { uploadMode } = require('./middleware/uploadMiddleware');
 
 // --- Mount Routes ---
 app.use('/api/auth', authRoutes);
@@ -124,7 +124,7 @@ app.get('/healthz', async (req, res) => {
             status: 'ok',
             db: 'up',
             mail: isMailConfigured ? mailProvider : 'not-configured',
-            uploads: useCloudinary ? 'cloudinary' : 'ephemeral-disk',
+            uploads: uploadMode(),
             time: new Date().toISOString()
         });
     } catch (e) {
@@ -136,7 +136,7 @@ app.get('/healthz', async (req, res) => {
             status: 'degraded',
             db: 'down',
             mail: isMailConfigured ? mailProvider : 'not-configured',
-            uploads: useCloudinary ? 'cloudinary' : 'ephemeral-disk',
+            uploads: uploadMode(),
             code: e.code,
             errno: e.errno
         });

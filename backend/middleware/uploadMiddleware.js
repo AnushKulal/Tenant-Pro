@@ -89,6 +89,17 @@ const cloudinaryClient = resolveCloudinary();
 // What actually took effect, which is not always what was asked for.
 const useCloudinary = !!cloudinaryClient;
 
+// WHY disk storage is in use, for /healthz. "ephemeral-disk" on its own is
+// ambiguous in the one way that matters: it means either "no Cloudinary credential
+// was provided" or "one was provided and it is wrong", and those need opposite
+// actions. Distinguishing them from outside turns "go and read the deploy log" into
+// refreshing a URL. Never includes the value — only the diagnosis.
+const uploadMode = () => {
+    if (useCloudinary) return 'cloudinary';
+    if (cloudinaryWanted) return 'ephemeral-disk (CLOUDINARY_URL set but unusable — see deploy log)';
+    return 'ephemeral-disk (no CLOUDINARY_URL set on this service)';
+};
+
 // Map an upload field name to a storage folder.
 const folderFor = (fieldname) => {
     if (fieldname === 'profile_pic' || fieldname === 'tenant_image') return 'profiles';
@@ -195,3 +206,4 @@ const getFileUrl = (file) => {
 module.exports = upload;
 module.exports.getFileUrl = getFileUrl;
 module.exports.useCloudinary = useCloudinary;
+module.exports.uploadMode = uploadMode;
