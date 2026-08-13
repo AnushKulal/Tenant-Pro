@@ -17,6 +17,10 @@ const { fetchThread, insertMessage, cleanBody } = require('./requestController')
 // The ID-proof summary rides along with /me so the portal knows on its first call
 // whether this account still owes a document — one source of that answer, not two.
 const { fetchDocuments, summarise } = require('./documentController');
+// The tenant's own payment record, scored by the same code the landlord's copy uses.
+// Sharing it is the point: a tenant who is shown a different number from the one their
+// landlord is looking at has no way to argue with either.
+const { scoreForTenant } = require('../services/scoreService');
 // Date formatting shared with the confirmation side, so a declared payment and the
 // due date it eventually moves are written by the same code.
 const { toSqlDate } = require('../utils/rentDates');
@@ -132,6 +136,11 @@ const getMe = async (req, res) => {
         const days = daysUntilDue(ctx.next_rent_due);
         const dueState = days === null ? 'none' : days < 0 ? 'overdue' : days === 0 ? 'due_today' : 'upcoming';
 
+        const score = await scoreForTenant(ctx.tenant_id, {
+            nextRentDue: ctx.next_rent_due,
+            moveInDate: ctx.move_in_date
+        });
+
         res.status(200).json({
             linked: true,
             profile: {
@@ -141,6 +150,11 @@ const getMe = async (req, res) => {
                 company: ctx.company,
                 image_url: ctx.image_url,
                 credit_score: ctx.credit_score,
+                // What the landlord sees, sent to the tenant unchanged — including
+                // `known: false` and the reason for it, so "we have not got enough of
+                // your history to say" is a thing the app can say out loud instead of
+                // drawing a dial over nothing.
+                score,
                 move_in_date: ctx.move_in_date,
                 billing_cycle: ctx.billing_cycle
             },

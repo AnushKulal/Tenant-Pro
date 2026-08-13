@@ -2,6 +2,7 @@ const db = require('../config/db');
 const { getFileUrl } = require('../middleware/uploadMiddleware');
 const { endGuestIdentity } = require('./guestController');
 const { parseStayUntil, toSqlDate } = require('../utils/guestStay');
+const { attachScores } = require('../services/scoreService');
 
 // --- 1. ADD TENANT ---
 const addTenant = async (req, res) => {
@@ -187,6 +188,14 @@ const getAllTenants = async (req, res) => {
         `;
 
         const [tenants] = await db.query(query, [ownerId]);
+
+        // The payment record, scored, for every tenant in one extra query. It replaces
+        // `credit_score` — an int column defaulting to 100 that nothing has ever
+        // written, so every real tenant scored exactly 100 for ever. The column is
+        // still selected by `t.*` and still ignored by the app; dropping it is a
+        // separate migration, and leaving it costs nothing until then.
+        await attachScores(tenants);
+
         res.status(200).json({ tenants });
     } catch (error) {
         console.error("Error fetching all tenants:", error);
