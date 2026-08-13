@@ -248,6 +248,56 @@ const initDb = async () => {
         await ensureColumn(conn, 'properties', 'latitude', 'decimal(10,7) DEFAULT NULL');
         await ensureColumn(conn, 'properties', 'longitude', 'decimal(10,7) DEFAULT NULL');
 
+        // ── Google sign-in ────────────────────────────────────────────────────
+        // The Google account's `sub`, which is the ONLY stable identifier it has:
+        // a person can change the email address on their Google account, and
+        // matching on address alone would then either lock them out or, worse,
+        // hand their TenantPro account to whoever picks up the freed address.
+        // Bound once, on first sign-in, and matched on from then on.
+        //
+        // UNIQUE, because two accounts carrying one Google identity is an
+        // authentication bug: signing in would resolve to whichever row came back
+        // first.
+        await ensureColumn(conn, 'owners', 'google_sub', 'varchar(64) DEFAULT NULL');
+        await ensureColumn(conn, 'tenant_users', 'google_sub', 'varchar(64) DEFAULT NULL');
+        await ensureUniqueIndex(conn, 'owners', 'google_sub', '(`google_sub`)');
+        await ensureUniqueIndex(conn, 'tenant_users', 'google_sub', '(`google_sub`)');
+
+        // An account created through Google has no password, so the column can no
+        // longer be NOT NULL. Widening a constraint is safe on live data — every
+        // existing row has a hash and nothing is being removed. The login paths
+        // refuse a NULL hash explicitly rather than passing it to bcrypt, so this
+        // does not become "any password works".
+        await ensureNullable(conn, 'owners', 'password_hash', 'varchar(255) DEFAULT NULL');
+
+        // The in-flight half of a sign-in. Rows live for ten minutes and are deleted
+        // the moment they are used, so this table is normally empty or nearly so.
+        //
+        // `state` goes to Google and comes back in a browser URL, so it leaks into
+        // history and logs. `claim` never leaves the app until it is sent straight
+        // here over HTTPS, which is why collecting a session requires the claim and
+        // not the state.
+        await conn.query(`
+            CREATE TABLE IF NOT EXISTS oauth_sessions (
+                id int(11) NOT NULL AUTO_INCREMENT,
+                state varchar(64) NOT NULL,
+                claim varchar(64) NOT NULL,
+                role varchar(10) NOT NULL DEFAULT 'owner',
+                status enum('pending','ready','profile','failed') NOT NULL DEFAULT 'pending',
+                -- The verified identity, written by the callback and read back by
+                -- the poll. Kept server-side so /complete never has to trust an
+                -- email address supplied by the client.
+                identity text DEFAULT NULL,
+                detail varchar(300) DEFAULT NULL,
+                expires_at datetime NOT NULL,
+                created_at timestamp NOT NULL DEFAULT current_timestamp(),
+                PRIMARY KEY (id),
+                UNIQUE KEY state (state),
+                UNIQUE KEY claim (claim),
+                KEY expires_at (expires_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+        `);
+
         console.log('✅ Database schema is up to date.');
     } finally {
         await conn.end();

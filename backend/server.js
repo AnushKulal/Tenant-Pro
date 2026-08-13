@@ -77,6 +77,10 @@ const { mailProvider, isMailConfigured, verifyMail } = require('./config/mailer'
 // symptom until somebody opens an image that used to work. Only the mode is exposed,
 // never the Cloudinary credential.
 const { uploadMode } = require('./middleware/uploadMiddleware');
+// Whether "Continue with Google" can work. Same reasoning as `uploads`: the button
+// either does something or dead-ends, and from the outside those look identical
+// until somebody presses it. Reports only which variables are missing, never a value.
+const { googleConfigured, googleMissing } = require('./config/googleAuth');
 
 // --- Mount Routes ---
 app.use('/api/auth', authRoutes);
@@ -125,6 +129,7 @@ app.get('/healthz', async (req, res) => {
             db: 'up',
             mail: isMailConfigured ? mailProvider : 'not-configured',
             uploads: uploadMode(),
+            google: googleConfigured() ? 'ready' : `not-configured (missing ${googleMissing().join(', ')})`,
             time: new Date().toISOString()
         });
     } catch (e) {
@@ -137,6 +142,7 @@ app.get('/healthz', async (req, res) => {
             db: 'down',
             mail: isMailConfigured ? mailProvider : 'not-configured',
             uploads: uploadMode(),
+            google: googleConfigured() ? 'ready' : `not-configured (missing ${googleMissing().join(', ')})`,
             code: e.code,
             errno: e.errno
         });

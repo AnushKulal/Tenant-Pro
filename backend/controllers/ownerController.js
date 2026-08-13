@@ -23,6 +23,17 @@ const updateProfile = async (req, res) => {
         let hashedPassword = owner.password_hash; 
         
         if (newPassword && currentPassword) {
+            // A Google-created account has no hash to compare against. It is
+            // reasonable for such a person to want a password — but they cannot
+            // prove the CURRENT one, because there isn't one, so this is not the
+            // route. "Forgot password" sends a code to their verified address,
+            // which is a real proof of ownership.
+            if (!owner.password_hash) {
+                return res.status(409).json({
+                    code: 'USE_GOOGLE',
+                    message: 'This account signs in with Google and has no password yet. Use "Forgot password" to set one.'
+                });
+            }
             const isMatch = await bcrypt.compare(currentPassword, owner.password_hash);
             if (!isMatch) {
                 return res.status(400).json({ message: 'Incorrect current password' });

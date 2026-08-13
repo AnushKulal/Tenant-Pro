@@ -107,6 +107,18 @@ const loginOwner = async (req, res) => {
             });
         }
 
+        // An account created through Google sign-in has NO password hash. bcrypt
+        // would refuse the null and the person would be told their password is
+        // wrong — sending them to a reset flow for a password that never existed.
+        // Name the actual situation instead; the app turns this code into a nudge
+        // towards the Google button.
+        if (!owner.password_hash) {
+            return res.status(409).json({
+                code: 'USE_GOOGLE',
+                message: 'This account signs in with Google. Use "Continue with Google" instead.'
+            });
+        }
+
         const isMatch = await bcrypt.compare(password, owner.password_hash);
         if (!isMatch) {
             return res.status(401).json({
