@@ -104,6 +104,16 @@ const loginTenant = async (req, res) => {
             });
         }
 
+        // No password hash means this account signs in with Google (or is a guest
+        // identity that never had one). Telling them the password is wrong sends
+        // them to reset a password that does not exist.
+        if (!user.password_hash) {
+            return res.status(409).json({
+                code: 'USE_GOOGLE',
+                message: 'This account signs in with Google. Use "Continue with Google" instead.'
+            });
+        }
+
         const isMatch = await bcrypt.compare(password, user.password_hash);
         if (!isMatch) {
             return res.status(401).json({
