@@ -1405,6 +1405,96 @@ export default function Sheets() {
                     </View>
                 )}
 
+                {/* ── Leaving a property ───────────────────────────────── */}
+                {/* The confirmation the old button never had. It flashed "You have
+                    left this property" on ONE tap, changed nothing on the server, and
+                    sat under a caption promising a 30-day notice period that did not
+                    exist. Everything here comes from the server, including the wording
+                    of the terms — so the tenant's copy of the rules and the landlord's
+                    cannot drift apart. */}
+                {vm.leaveSheet.open && (
+                    <View>
+                        <Row justify="space-between" align="flex-start" style={{ marginBottom: 14 }}>
+                            <View style={{ flex: 1 }}>
+                                <T w={700} s={20} lh={1.15} style={{ letterSpacing: -0.8 }}>{vm.leaveSheet.title}</T>
+                                {vm.leaveSheet.place ? (
+                                    <Eyebrow s={10} ls={0.08} style={{ marginTop: 7 }}>{vm.leaveSheet.place.toUpperCase()}</Eyebrow>
+                                ) : null}
+                            </View>
+                            <Glyph name="exit-outline" size={20} color={t.amber} />
+                        </Row>
+
+                        {vm.leaveSheet.loading ? (
+                            <T w={400} s={13} lh={1.5} c={t.fg2}>Working out your notice period…</T>
+                        ) : vm.leaveSheet.blocked ? (
+                            <Row gap={9} align="flex-start" style={{ padding: 13, borderRadius: 16, backgroundColor: t.ink3 }}>
+                                <Glyph name="information-circle-outline" size={16} color={t.fg2} style={{ marginTop: 1 }} />
+                                <T w={500} s={13} lh={1.5} c={t.fg2} style={{ flex: 1 }}>{vm.leaveSheet.blockedWhy}</T>
+                            </Row>
+                        ) : (
+                            <>
+                                {/* The date, big, because it is the single fact that
+                                    matters and the old flow never produced one. */}
+                                <View style={{ padding: 15, borderRadius: 18, backgroundColor: vm.leaveSheet.earlyExit ? t.asoft : t.ink3, borderWidth: 1, borderColor: vm.leaveSheet.earlyExit ? t.amber : t.line, marginBottom: 14 }}>
+                                    <Eyebrow s={9} ls={0.12} c={t.fg3}>YOUR LAST DAY</Eyebrow>
+                                    <T w={700} s={26} lh={1.1} style={{ letterSpacing: -1, marginTop: 7 }}>{vm.leaveSheet.leavingOn}</T>
+                                    {vm.leaveSheet.noticeDays > 0 ? (
+                                        <Eyebrow s={9} ls={0.08} c={t.fg3} style={{ marginTop: 7 }}>
+                                            {`${vm.leaveSheet.noticeDays} DAYS FROM TODAY`}
+                                        </Eyebrow>
+                                    ) : null}
+                                </View>
+
+                                {/* Every disclosure, in the server's words. */}
+                                {vm.leaveSheet.terms.map((term, i) => (
+                                    <Row key={i} gap={10} align="flex-start" style={{ paddingVertical: 8, borderTopWidth: i ? 1 : 0, borderTopColor: t.line }}>
+                                        <Glyph name="ellipse" size={6} color={t.fg3} style={{ marginTop: 6 }} />
+                                        <T w={400} s={13} lh={1.5} c={t.fg} style={{ flex: 1 }}>{term}</T>
+                                    </Row>
+                                ))}
+
+                                {vm.leaveSheet.tellsWho ? (
+                                    <Eyebrow s={9} ls={0.08} c={t.fg3} style={{ marginTop: 12 }}>
+                                        {`WE TELL ${vm.leaveSheet.tellsWho.toUpperCase()}`}
+                                    </Eyebrow>
+                                ) : null}
+
+                                {vm.leaveSheet.hasError ? (
+                                    <Row gap={8} align="flex-start" style={{ marginTop: 13, padding: 11, borderRadius: 13, backgroundColor: t.csoft }}>
+                                        <Glyph name="alert-circle-outline" size={15} color={t.coral} style={{ marginTop: 1 }} />
+                                        <T w={500} s={12} lh={1.45} c={t.coral} style={{ flex: 1 }}>{vm.leaveSheet.error}</T>
+                                    </Row>
+                                ) : null}
+
+                                {/* Notice already given → the only action is undoing
+                                    it. Offering "give notice" twice would be a second
+                                    chance to do something already done. */}
+                                {vm.leaveSheet.already ? (
+                                    <Press
+                                        onPress={vm.leaveSheet.withdraw}
+                                        disabled={vm.leaveSheet.busy}
+                                        style={{ marginTop: 18, paddingVertical: 15, borderRadius: 999, backgroundColor: t.lime, alignItems: 'center', opacity: vm.leaveSheet.busy ? 0.7 : 1 }}
+                                    >
+                                        <T w={700} s={14} c={t.on}>{vm.leaveSheet.withdrawLabel}</T>
+                                    </Press>
+                                ) : (
+                                    <Press
+                                        onPress={vm.leaveSheet.confirm}
+                                        disabled={vm.leaveSheet.busy}
+                                        style={{ marginTop: 18, paddingVertical: 15, borderRadius: 999, backgroundColor: t.csoft, borderWidth: 1, borderColor: t.coral, alignItems: 'center', opacity: vm.leaveSheet.busy ? 0.7 : 1 }}
+                                    >
+                                        <T w={700} s={14} c={t.coral}>{vm.leaveSheet.confirmLabel}</T>
+                                    </Press>
+                                )}
+                            </>
+                        )}
+
+                        <Press onPress={vm.leaveSheet.close} hitSlop={8} style={{ marginTop: 13, alignSelf: 'center' }}>
+                            <T w={600} s={13} c={t.fg2}>{vm.leaveSheet.already ? 'Close' : 'Never mind, I am staying'}</T>
+                        </Press>
+                    </View>
+                )}
+
                 {/* ── Payments a tenant says they made ─────────────────── */}
                 {/* The queue. These arrive in batches — rent week produces several in
                     a day — so deciding them should not mean six trips through the

@@ -356,6 +356,10 @@ const INITIAL_STATE = {
   //         'profile' Google vouched for somebody with no account yet; we need a
   //                   phone number, because Google has none and this app needs one
   gauth: { phase: 'idle', role: 'owner', claim: '', error: '', email: '', name: '', busy: false },
+  // The leave-property confirmation sheet. `plan` is the server's, never computed
+  // here — the app inventing the rules locally is how it came to promise "30 DAYS
+  // NOTICE APPLIES" under a button that did nothing.
+  leave: { loading: false, error: '', plan: null, busy: false },
   signupRole: 'owner',  // which login screen 'Create account' was tapped from
   // "Join as a guest": the code someone carries in from the sign-in screen before
   // they have an account. Held until registration finishes, then the join request
@@ -982,6 +986,28 @@ function deriveVm(s, api) {
             ? `${oldest.method} · claimed ${String(oldest.age).toLowerCase()} · confirm or reject`
             : `${money(total)} claimed · oldest ${String(oldest.age).toLowerCase()}`,
           go: () => setState({ overlay: 'declared' })
+        });
+      }
+      // Somebody has given notice. Leads over money because it has a deadline that
+      // does not move and a room to re-let, and because the tenant's app has been
+      // telling them "your landlord is notified" — this is where that becomes true.
+      const leaving = inScope
+        .filter((t) => t.leaveOn)
+        .sort((a, b) => a.leaveOn - b.leaveOn);
+      if (leaving.length) {
+        const soonest = leaving[0];
+        const days = Math.round((soonest.leaveOn - new Date(now.getFullYear(), now.getMonth(), now.getDate())) / 86400000);
+        rows.push({
+          icon: 'exit-outline',
+          tone: 'amber',
+          title: leaving.length === 1
+            ? `${soonest.name} is leaving`
+            : `${leaving.length} tenants are leaving`,
+          // The date, not just "soon". A landlord re-letting a room needs the day.
+          sub: leaving.length === 1
+            ? `${soonest.unit ? `Unit ${soonest.unit} · ` : ''}last day ${fmtDay(soonest.leaveOn)}${days >= 0 ? ` · in ${days}d` : ' · date passed'}`
+            : `Soonest ${soonest.name}, ${fmtDay(soonest.leaveOn)}`,
+          go: () => setState({ route: 'people', overlay: null })
         });
       }
       const late = inScope.filter((t) => t.state === 'overdue');
@@ -1988,10 +2014,65 @@ function deriveVm(s, api) {
         go: () => set('jfilter', k)
       };
     }),
-    leaveProperty: () => {
-      setState({ roster: { ...s.roster, rahul: null }, route: 'portal', overlay: null });
-      flash('You have left this property');
-    },
+    // ── Leaving a property ────────────────────────────────────────────────────
+    // Opens the confirmation sheet. It does NOT leave anything — that needs a second,
+    // explicit tap on a screen that states the date and what it costs. The previous
+    // version leaked a lie on the first tap: it flashed "You have left this property",
+    // mutated the walk-through roster, and left a real tenancy untouched.
+    leaveProperty: () => api.openLeave(),
+    // Everything the confirmation sheet renders. All of it comes from the server
+    // except the walk-through case, which has no server and says so.
+    leaveSheet: (() => {
+      const L = s.leave || { loading: false, error: '', plan: null, busy: false };
+      const p = (L.plan && L.plan.plan) || null;
+      const already = !!(L.plan && L.plan.leaving_on);
+      return {
+        open: s.overlay === 'leave',
+        loading: !!L.loading,
+        busy: !!L.busy,
+        error: L.error || '',
+        hasError: !!L.error,
+        // The server can refuse outright — no tenancy, or already moved out.
+        blocked: !!(L.plan && L.plan.can_leave === false),
+        blockedWhy: (L.plan && L.plan.reason) || '',
+        // Notice already given: the sheet becomes "you are leaving on X" with a way
+        // to change your mind, not a second chance to give notice.
+        already,
+        title: already ? 'You are leaving' : 'Leave this property?',
+        place: (L.plan && L.plan.property_name)
+          ? `${L.plan.property_name}${L.plan.unit_number ? ` · Unit ${L.plan.unit_number}` : ''}`
+          : '',
+        leavingOn: (L.plan && L.plan.leaving_on) ? fmtDay(new Date(L.plan.leaving_on)) : (p ? fmtDay(new Date(p.leaveOn)) : ''),
+        noticeDays: p ? p.noticeDays : 0,
+        earlyExit: !!(p && p.earlyExit),
+        // The disclosures, in the server's own words so the tenant's copy and the
+        // landlord's copy cannot describe different rules.
+        terms: p ? p.terms : [],
+        // Who finds out, named, because the old caption promised this and no
+        // notification existed anywhere.
+        tellsWho: (L.plan && L.plan.owner_name)
+          ? `${L.plan.owner_name}${L.plan.owner_phone ? ` · ${L.plan.owner_phone}` : ''}`
+          : '',
+        confirmLabel: L.busy ? 'Giving notice…' : 'Give notice to leave',
+        confirm: () => api.confirmLeave(),
+        withdrawLabel: L.busy ? 'Withdrawing…' : 'I want to stay after all',
+        withdraw: () => api.withdrawLeave(),
+        close: () => setState({ overlay: null, leave: { loading: false, error: '', plan: null, busy: false } })
+      };
+    })(),
+    // Shown on the tenant's own place screen once notice is in. Sourced from /me so it
+    // survives a restart — a notice the app forgets on relaunch is not a notice.
+    myNotice: (() => {
+      const n = (TLIVE && TD && TD.me && TD.me.notice) || null;
+      if (!n || !n.given) return { given: false };
+      return {
+        given: true,
+        line: `You are leaving on ${fmtDay(new Date(n.leaving_on))}.`,
+        sub: 'Your landlord has been told. Rent runs until that day.',
+        changeLabel: 'I want to stay after all',
+        change: () => api.openLeave()
+      };
+    })(),
     noop: () => flash('Not wired in this prototype'),
 
     openSearch: () => setState({ overlay: 'search', q: '' }),
@@ -2399,10 +2480,13 @@ function deriveVm(s, api) {
         // Unassigned reads AMBER, the same tone a vacant room uses elsewhere —
         // it was grey, which made the one row actually needing attention the
         // faintest thing on the screen.
-        edge: free ? 'amber' : t.state === 'overdue' ? 'coral' : 'lime',
-        chip: free ? 'UNASSIGNED' : t.state === 'overdue' ? `${t.days}D LATE` : `IN ${t.days}D`,
-        chipBg: free ? 'asoft' : t.state === 'overdue' ? 'csoft' : 'lsoft',
-        chipFg: free ? 'amber' : t.state === 'overdue' ? 'coral' : 'pos',
+        // Notice takes the chip over the rent countdown. A tenant leaving in nine days
+        // is a room to re-let, which outranks when their next rent lands — and it is
+        // the thing a landlord would be angriest to learn late.
+        edge: t.leaveOn ? 'amber' : free ? 'amber' : t.state === 'overdue' ? 'coral' : 'lime',
+        chip: t.leaveOn ? `LEAVING ${fmtDay(t.leaveOn).toUpperCase()}` : free ? 'UNASSIGNED' : t.state === 'overdue' ? `${t.days}D LATE` : `IN ${t.days}D`,
+        chipBg: t.leaveOn ? 'asoft' : free ? 'asoft' : t.state === 'overdue' ? 'csoft' : 'lsoft',
+        chipFg: t.leaveOn ? 'amber' : free ? 'amber' : t.state === 'overdue' ? 'coral' : 'pos',
         // Tints the whole card, so an unassigned tenant is findable in a long list
         // without reading every row.
         cardBg: free ? 'asoft' : 'ink2',
@@ -5832,6 +5916,63 @@ export function AppProvider({ children }) {
     }
   }, [setState, flash, loadOwnerData, loadTenantData]);
 
+  // ── Leaving a property ──────────────────────────────────────────────────────
+  // The old `leaveProperty` called no endpoint. It set `roster.rahul` — a key on the
+  // WALK-THROUGH roster, named after a demo tenant — and flashed "You have left this
+  // property". On a real tenancy nothing happened at all, which is exactly what was
+  // reported: the message appears and you are still a member.
+  //
+  // Now: fetch the real plan, show it, and only write on an explicit second tap.
+  const openLeave = useCallback(async () => {
+    setState({ overlay: 'leave', leave: { loading: true, error: '', plan: null, busy: false } });
+    try {
+      const res = await apiPortal.leavePlan();
+      setState({ leave: { loading: false, error: '', plan: res, busy: false } });
+    } catch (e) {
+      setState({
+        leave: {
+          loading: false, plan: null, busy: false,
+          error: errText(e, 'Could not work out your notice period.')
+        }
+      });
+    }
+  }, [setState]);
+
+  const confirmLeave = useCallback(async () => {
+    const cur = stateRef.current.leave || {};
+    if (cur.busy) return;
+    setState({ leave: { ...cur, busy: true, error: '' } });
+    try {
+      await apiPortal.giveNotice();
+      // Reload rather than patch local state. The tenancy is still Active and the room
+      // is still theirs until the leave date — the previous version's whole failure was
+      // guessing at what changed instead of asking.
+      await loadTenantData();
+      setState({ overlay: null, leave: { loading: false, error: '', plan: null, busy: false } });
+      flash('Notice given. Your landlord has been told.');
+    } catch (e) {
+      setState({
+        leave: { ...stateRef.current.leave, busy: false, error: errText(e, 'Could not give notice. Please try again.') }
+      });
+    }
+  }, [setState, flash, loadTenantData]);
+
+  const withdrawLeave = useCallback(async () => {
+    const cur = stateRef.current.leave || {};
+    if (cur.busy) return;
+    setState({ leave: { ...cur, busy: true, error: '' } });
+    try {
+      await apiPortal.withdrawNotice();
+      await loadTenantData();
+      setState({ overlay: null, leave: { loading: false, error: '', plan: null, busy: false } });
+      flash('Notice withdrawn. You are staying.');
+    } catch (e) {
+      setState({
+        leave: { ...stateRef.current.leave, busy: false, error: errText(e, 'Could not withdraw your notice.') }
+      });
+    }
+  }, [setState, flash, loadTenantData]);
+
   // ── Continue with Google ────────────────────────────────────────────────────
   // The handshake runs on the server (see backend/config/googleAuth.js). This side
   // does three things: ask for a URL, open it, and poll until the server says what
@@ -6059,6 +6200,7 @@ export function AppProvider({ children }) {
       loadDocs, decideDoc, loadMyDocs, pickDocPhoto, addMyDoc, removeMyDoc,
       lookupProperty, scanQrFromImage, resetDemo, openUpiPayment, declareMyPayment,
       startGoogleSignIn, finishGoogleSignUp, cancelGoogleSignIn,
+      openLeave, confirmLeave, withdrawLeave,
       pickGuestPhoto, guestCheckCode, submitGuestJoin, submitGuestSignIn, submitClaim,
       searchPlaces, describePin, useMyLocation
     }),
@@ -6072,6 +6214,7 @@ export function AppProvider({ children }) {
       loadDocs, decideDoc, loadMyDocs, pickDocPhoto, addMyDoc, removeMyDoc,
       lookupProperty, scanQrFromImage, resetDemo, openUpiPayment, declareMyPayment,
       startGoogleSignIn, finishGoogleSignUp, cancelGoogleSignIn,
+      openLeave, confirmLeave, withdrawLeave,
       pickGuestPhoto, guestCheckCode, submitGuestJoin, submitGuestSignIn, submitClaim,
       searchPlaces, describePin, useMyLocation
     ]

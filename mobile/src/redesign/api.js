@@ -179,6 +179,15 @@ export const portal = {
     declarePayment: ({ amount, method, reference, date }) => body(
         http.post('/tenant-portal/payments', { amount, method, reference, date })
     ),
+    // ── Leaving a property ────────────────────────────────────────────────────
+    // Three calls, because giving notice is a decision. `leavePlan` is what the
+    // confirmation sheet prints — the real dates and disclosures, computed on the
+    // server. The old button had neither a preview nor a write: it flashed "You have
+    // left this property" and changed nothing.
+    leavePlan: () => body(http.get('/tenant-portal/leave')),
+    giveNotice: () => body(http.post('/tenant-portal/leave')),
+    // Withdrawable while the tenancy is still live.
+    withdrawNotice: () => body(http.delete('/tenant-portal/leave')),
     requests: () => body(http.get('/tenant-portal/requests')),
     // Accepts either a plain object or a FormData carrying `request_image`; axios
     // needs the multipart header set explicitly for the latter.

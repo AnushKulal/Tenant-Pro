@@ -21,6 +21,10 @@ const { fetchDocuments, summarise } = require('./documentController');
 // Sharing it is the point: a tenant who is shown a different number from the one their
 // landlord is looking at has no way to argue with either.
 const { scoreForTenant } = require('../services/scoreService');
+// Notice-period arithmetic. Pure and tested, because "the soonest you can leave" has
+// boundaries — the day the notice runs out, an agreed end one day either side of it —
+// that are impossible to test against live rows.
+const { planNotice, NOTICE_DAYS } = require('../utils/noticePeriod');
 // Date formatting shared with the confirmation side, so a declared payment and the
 // due date it eventually moves are written by the same code.
 const { toSqlDate } = require('../utils/rentDates');
@@ -43,6 +47,7 @@ const loadTenantContext = async (userId) => {
             t.name, t.phone, t.email, t.company, t.image_url,
             t.deposit, t.rent_share, t.credit_score, t.move_in_date,
             t.billing_cycle, t.next_rent_due, t.status AS tenancy_status, t.stay_until,
+            t.notice_given_on, t.leave_on,
             u.id AS unit_id, u.unit_number, u.room_type, u.base_rent,
             p.id AS property_id, p.name AS property_name, p.address, p.locality, p.city, p.image_url AS property_image,
             p.property_type, p.latitude AS property_lat, p.longitude AS property_lon,
@@ -141,6 +146,17 @@ const getMe = async (req, res) => {
             moveInDate: ctx.move_in_date
         });
 
+        // Notice to leave, if any has been given. On /me because the portal has to
+        // know on its FIRST paint: a tenant who has given notice must not be shown a
+        // "Leave this property" button, and must be told the date they settled on
+        // without having to go looking for it.
+        const notice = ctx.leave_on ? {
+            given: true,
+            given_on: toSqlDate(ctx.notice_given_on),
+            leaving_on: toSqlDate(ctx.leave_on),
+            notice_days: NOTICE_DAYS
+        } : { given: false, notice_days: NOTICE_DAYS };
+
         res.status(200).json({
             linked: true,
             profile: {
@@ -150,6 +166,8 @@ const getMe = async (req, res) => {
                 company: ctx.company,
                 image_url: ctx.image_url,
                 credit_score: ctx.credit_score,
+                // Whether they are on their way out, and when.
+                notice,
                 // What the landlord sees, sent to the tenant unchanged — including
                 // `known: false` and the reason for it, so "we have not got enough of
                 // your history to say" is a thing the app can say out loud instead of
@@ -547,8 +565,144 @@ const createRequestMessage = async (req, res) => {
     }
 };
 
+// ── Leaving a property ─────────────────────────────────────────────────────────
+// Three endpoints, because giving notice is a decision and a decision needs to be
+// previewable and reversible:
+//
+//   GET    /leave   what would happen — the dates and disclosures the confirmation
+//                   screen prints. Without this the app would have to invent the
+//                   rules locally, which is how it ended up promising "30 DAYS
+//                   NOTICE APPLIES" under a button that did nothing.
+//   POST   /leave   give notice.
+//   DELETE /leave   withdraw it. People change their minds, and a mis-tap on
+//                   something this consequential must not be a one-way door.
+
+// Load the caller's tenancy for a notice decision. Scoped through tenant_users ->
+// tenants like every other read here, so one tenant can never act on another's.
+const loadForNotice = async (userId) => {
+    const [rows] = await db.query(
+        `SELECT t.id, t.owner_id, t.unit_id, t.status, t.stay_until, t.next_rent_due,
+                t.rent_share, t.deposit, t.notice_given_on, t.leave_on,
+                u.unit_number, p.name AS property_name,
+                o.name AS owner_name, o.phone AS owner_phone
+           FROM tenant_users tu
+           JOIN tenants t ON tu.tenant_id = t.id
+           LEFT JOIN units u ON t.unit_id = u.id
+           LEFT JOIN properties p ON u.property_id = p.id
+           LEFT JOIN owners o ON t.owner_id = o.id
+          WHERE tu.id = ? LIMIT 1`,
+        [userId]
+    );
+    return rows[0] || null;
+};
+
+// Shared shape for all three, so the app reads one contract whichever call it made.
+const noticeState = (ctx) => {
+    const plan = planNotice({
+        stayUntil: ctx.stay_until,
+        nextRentDue: ctx.next_rent_due,
+        rentShare: ctx.rent_share,
+        deposit: ctx.deposit
+    });
+    return {
+        property_name: ctx.property_name || null,
+        unit_number: ctx.unit_number || null,
+        owner_name: ctx.owner_name || null,
+        owner_phone: ctx.owner_phone || null,
+        // Whether notice has ALREADY been given, and for when. The app needs this to
+        // stop offering "Leave this property" to somebody who already has.
+        notice_given_on: toSqlDate(ctx.notice_given_on),
+        leaving_on: toSqlDate(ctx.leave_on),
+        plan
+    };
+};
+
+const getLeavePlan = async (req, res) => {
+    try {
+        if (req.user?.role !== 'tenant') return res.status(403).json({ message: 'Tenant access only.' });
+        const ctx = await loadForNotice(req.user.id);
+        // No tenancy means nothing to leave. Reported as a state rather than an error:
+        // the app can legitimately ask this before a landlord has placed them.
+        if (!ctx) return res.status(200).json({ can_leave: false, reason: 'You are not in a property yet.' });
+        if (String(ctx.status) !== 'Active') {
+            return res.status(200).json({ can_leave: false, reason: 'You have already moved out of this property.' });
+        }
+        res.status(200).json({ can_leave: true, ...noticeState(ctx) });
+    } catch (error) {
+        console.error('Leave plan failed:', error.message);
+        res.status(500).json({ message: 'Could not work out your notice period.' });
+    }
+};
+
+const giveNotice = async (req, res) => {
+    try {
+        if (req.user?.role !== 'tenant') return res.status(403).json({ message: 'Tenant access only.' });
+        const ctx = await loadForNotice(req.user.id);
+        if (!ctx) return res.status(404).json({ message: 'You are not in a property yet.' });
+        if (String(ctx.status) !== 'Active') {
+            return res.status(409).json({ message: 'You have already moved out of this property.' });
+        }
+        // Already given. NOT an error — a retry on a flaky connection would otherwise
+        // look like a failure and tempt the person into pressing it again. Answer with
+        // the existing notice, which is what a second press should show anyway.
+        if (ctx.leave_on) {
+            return res.status(200).json({ already: true, ...noticeState(ctx) });
+        }
+
+        const plan = planNotice({
+            stayUntil: ctx.stay_until,
+            nextRentDue: ctx.next_rent_due,
+            rentShare: ctx.rent_share,
+            deposit: ctx.deposit
+        });
+
+        // The date is computed HERE, never accepted from the request. A client-chosen
+        // leave date would let a tenant serve one day's notice by editing a number.
+        await db.query(
+            'UPDATE tenants SET notice_given_on = CURDATE(), leave_on = ? WHERE id = ?',
+            [plan.leaveOn, ctx.id]
+        );
+
+        // The tenancy stays Active and the room stays occupied. Both are still true
+        // until the leave date, and flipping them now would free a room the landlord
+        // cannot let yet and erase who owed what while it mattered. The landlord
+        // completes the move-out on or after the date.
+        const after = await loadForNotice(req.user.id);
+        res.status(200).json({ ...noticeState(after || ctx) });
+    } catch (error) {
+        console.error('Give notice failed:', error.message);
+        res.status(500).json({ message: 'Could not give notice. Please try again.' });
+    }
+};
+
+const withdrawNotice = async (req, res) => {
+    try {
+        if (req.user?.role !== 'tenant') return res.status(403).json({ message: 'Tenant access only.' });
+        const ctx = await loadForNotice(req.user.id);
+        if (!ctx) return res.status(404).json({ message: 'You are not in a property yet.' });
+        if (!ctx.leave_on) {
+            return res.status(200).json({ ...noticeState(ctx) });
+        }
+        // Only while the tenancy is still live. Once the landlord has completed the
+        // move-out the room may already be re-let, so "changing your mind" is a
+        // conversation with them, not a button.
+        if (String(ctx.status) !== 'Active') {
+            return res.status(409).json({ message: 'You have already moved out. Speak to your landlord about coming back.' });
+        }
+        await db.query('UPDATE tenants SET notice_given_on = NULL, leave_on = NULL WHERE id = ?', [ctx.id]);
+        const after = await loadForNotice(req.user.id);
+        res.status(200).json({ withdrawn: true, ...noticeState(after || ctx) });
+    } catch (error) {
+        console.error('Withdraw notice failed:', error.message);
+        res.status(500).json({ message: 'Could not withdraw your notice. Please try again.' });
+    }
+};
+
 module.exports = {
     getMe,
+    getLeavePlan,
+    giveNotice,
+    withdrawNotice,
     getPulse,
     getPayments,
     declarePayment,

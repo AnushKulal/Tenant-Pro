@@ -377,7 +377,13 @@ export function mapTenant(t, payments, now) {
         // landlord can see it: they are the only way back in for a person who has
         // changed phones.
         guestCode: t.guest_code || null,
-        idProof: idBadge(t.doc_count, t.doc_verified)
+        idProof: idBadge(t.doc_count, t.doc_verified),
+        // Notice to leave. Rides along free because getAllTenants selects t.*, and it
+        // has to reach the landlord SOMEWHERE: the tenant's screen has been promising
+        // "your landlord is notified" under a button that notified nobody. A row the
+        // landlord cannot see is the same bug in a new place.
+        leaveOn: t.leave_on ? asDate(t.leave_on) : null,
+        noticeGivenOn: t.notice_given_on ? asDate(t.notice_given_on) : null
     };
 }
 

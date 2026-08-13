@@ -163,16 +163,41 @@ export default function MyPlaceScreen() {
                         </Press>
                     </View>
 
-                    {/* Leave property */}
-                    <Press
-                        onPress={vm.leaveProperty}
-                        style={{ width: '100%', marginTop: 8, padding: 15, borderRadius: 18, borderWidth: 1, borderColor: t.line, alignItems: 'center' }}
-                    >
-                        <T w={600} s={13} lh={1} c={t.coral}>Leave this property</T>
-                    </Press>
-                    <T mono w={600} s={9} lh={1.6} ls={0.06} c={t.fg3} style={{ textAlign: 'center', marginTop: 12 }}>
-                        YOUR LANDLORD IS NOTIFIED · 30 DAYS NOTICE APPLIES
-                    </T>
+                    {/* Leave property.
+                        Notice already given → this becomes a statement of the date
+                        rather than a button, because pressing "Leave this property"
+                        again should not be the way to find out you already have. */}
+                    {vm.myNotice.given ? (
+                        <View style={{ width: '100%', marginTop: 8, padding: 15, borderRadius: 18, borderWidth: 1, borderColor: t.amber, backgroundColor: t.asoft }}>
+                            <Row gap={9} align="flex-start">
+                                <Glyph name="exit-outline" size={16} color={t.amber} style={{ marginTop: 1 }} />
+                                <View style={{ flex: 1 }}>
+                                    <T w={600} s={13.5} lh={1.35} c={t.amber}>{vm.myNotice.line}</T>
+                                    <T w={400} s={12} lh={1.45} c={t.fg2} style={{ marginTop: 5 }}>{vm.myNotice.sub}</T>
+                                </View>
+                            </Row>
+                            <Press onPress={vm.myNotice.change} style={{ marginTop: 12, paddingVertical: 12, borderRadius: 14, backgroundColor: t.ink2, borderWidth: 1, borderColor: t.line, alignItems: 'center' }}>
+                                <T w={600} s={12.5} lh={1} c={t.fg}>{vm.myNotice.changeLabel}</T>
+                            </Press>
+                        </View>
+                    ) : (
+                        <Press
+                            onPress={vm.leaveProperty}
+                            style={{ width: '100%', marginTop: 8, padding: 15, borderRadius: 18, borderWidth: 1, borderColor: t.line, alignItems: 'center' }}
+                        >
+                            <T w={600} s={13} lh={1} c={t.coral}>Leave this property</T>
+                        </Press>
+                    )}
+                    {/* Was "YOUR LANDLORD IS NOTIFIED · 30 DAYS NOTICE APPLIES" — both
+                        halves fiction: no notification was sent and no notice period
+                        existed. Both are true now, but the exact dates depend on the
+                        agreed end of stay, so the caption stops asserting a number and
+                        the sheet states the real one. */}
+                    {!vm.myNotice.given ? (
+                        <T mono w={600} s={9} lh={1.6} ls={0.06} c={t.fg3} style={{ textAlign: 'center', marginTop: 12 }}>
+                            WE WILL SHOW YOUR LAST DAY BEFORE ANYTHING IS CONFIRMED
+                        </T>
+                    ) : null}
                 </View>
             )}
         </ScrollView>
