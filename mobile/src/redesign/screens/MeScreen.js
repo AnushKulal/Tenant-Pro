@@ -102,23 +102,32 @@ export default function MeScreen() {
                                     <T mono w={600} s={10} lh={1.3} ls={0.06} c={col(cr.fg)}>{cr.band}</T>
                                 </View>
                             </Row>
-                            <View style={{ position: 'relative', height: 6, borderRadius: 3, backgroundColor: t.line, marginTop: 18, marginBottom: 9 }}>
-                                <View style={{ position: 'absolute', left: '50%', top: -4, width: 1, height: 14, backgroundColor: t.line2 }} />
-                                <View style={{ position: 'absolute', top: -4, width: 14, height: 14, borderRadius: 7, borderWidth: 3, borderColor: t.ink2, backgroundColor: col(cr.fg), left: cr.marker, transform: [{ translateX: -7 }] }} />
-                            </View>
-                            <Row justify="space-between" style={{ marginBottom: 14 }}>
-                                <Eyebrow s={9} ls={0.06}>−100 NEGATIVE</Eyebrow>
-                                <Eyebrow s={9} ls={0.06}>POSITIVE +100</Eyebrow>
-                            </Row>
-                            {cr.factors.map((mf, i) => (
-                                <Row key={i} gap={12} style={{ paddingVertical: 9, borderTopWidth: 1, borderTopColor: t.line }}>
-                                    <View style={{ flex: 1, minWidth: 0 }}>
-                                        <T w={500} s={13} lh={1.2} c={t.fg}>{mf.label}</T>
-                                        <T mono w={600} s={9} lh={1.4} ls={0.06} c={t.fg3} style={{ marginTop: 4 }}>{mf.detail}</T>
+                            {/* Nothing to score yet says so, in a sentence, instead of
+                                parking a needle at zero — which would read to the tenant
+                                as a verdict they had earned. */}
+                            {cr.known === false ? (
+                                <T w={400} s={12.5} lh={1.5} c={t.fg2} style={{ marginTop: 10 }}>{cr.why}</T>
+                            ) : (
+                                <>
+                                    <View style={{ position: 'relative', height: 6, borderRadius: 3, backgroundColor: t.line, marginTop: 18, marginBottom: 9 }}>
+                                        <View style={{ position: 'absolute', left: '50%', top: -4, width: 1, height: 14, backgroundColor: t.line2 }} />
+                                        <View style={{ position: 'absolute', top: -4, width: 14, height: 14, borderRadius: 7, borderWidth: 3, borderColor: t.ink2, backgroundColor: col(cr.fg), left: cr.marker, transform: [{ translateX: -7 }] }} />
                                     </View>
-                                    <T w={700} s={14} lh={1} c={col(mf.fg)}>{mf.pts}</T>
-                                </Row>
-                            ))}
+                                    <Row justify="space-between" style={{ marginBottom: 14 }}>
+                                        <Eyebrow s={9} ls={0.06}>−100 NEGATIVE</Eyebrow>
+                                        <Eyebrow s={9} ls={0.06}>POSITIVE +100</Eyebrow>
+                                    </Row>
+                                    {cr.factors.map((mf, i) => (
+                                        <Row key={i} gap={12} style={{ paddingVertical: 9, borderTopWidth: 1, borderTopColor: t.line }}>
+                                            <View style={{ flex: 1, minWidth: 0 }}>
+                                                <T w={500} s={13} lh={1.2} c={t.fg}>{mf.label}</T>
+                                                <T mono w={600} s={9} lh={1.4} ls={0.06} c={t.fg3} style={{ marginTop: 4 }}>{mf.detail}</T>
+                                            </View>
+                                            <T w={700} s={14} lh={1} c={col(mf.fg)}>{mf.pts}</T>
+                                        </Row>
+                                    ))}
+                                </>
+                            )}
                             <T mono w={600} s={9} lh={1.6} ls={0.06} c={t.fg3} style={{ marginTop: 12 }}>PAY ON TIME TO KEEP THIS CLIMBING · LANDLORDS SEE IT WHEN YOU APPLY</T>
                         </Card>
                     )}

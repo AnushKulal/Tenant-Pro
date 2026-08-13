@@ -1147,6 +1147,10 @@ function deriveVm(s, api) {
       deposit: `₹${inr(home.deposit)}`,
       depositRaw: Number(home.deposit) || 0,
       credit: Number(pro.credit_score) || 0,
+      // The same scored record their landlord is looking at, computed once on the
+      // server. Two copies of the rules would eventually disagree, and a tenant shown
+      // a different number from their landlord's cannot argue with either.
+      score: pro.score || null,
       // The server already worked out whether rent is late and by how much; a
       // second opinion computed here could disagree with the tenant's own portal.
       state: rent.state === 'overdue' ? 'overdue' : 'paid',
@@ -2327,7 +2331,14 @@ function deriveVm(s, api) {
     peopleEmptyLine: s.pq ? `No one matches "${s.pq}".` : 'No tenants in this view.',
     people: filtered.map((t) => {
       const free = !t.unit;
+      // The payment record, on the row, because "who here pays on time" was a
+      // question the list could not answer — you had to open each tenant in turn.
+      // Omitted rather than zeroed when there is nothing to score: a grey "—" on
+      // every row is noise, and a "0" would be a verdict nobody earned.
+      const cr = creditOf(t);
       return {
+        score: cr.known ? `SCORE ${cr.label} · ${String(cr.band).toUpperCase()}` : null,
+        scoreFg: cr.fg,
         name: t.name,
         img: t.img,
         rent: free ? '—' : t.rent,

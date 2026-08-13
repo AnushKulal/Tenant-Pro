@@ -84,7 +84,57 @@ export const CREDIT_RULES = [
   { key: 'lateDays', label: 'Currently overdue', unit: -4, fmt: (n) => (n ? `${n} days late` : 'Nothing pending') }
 ];
 
+// The theme keys for a band, in one place, so the walk-through's arithmetic and the
+// server's scorer cannot drift into different colours for the same word.
+const TONE = {
+  positive: { fg: 'pos', bg: 'lsoft' },
+  neutral: { fg: 'amber', bg: 'asoft' },
+  negative: { fg: 'coral', bg: 'csoft' },
+  unknown: { fg: 'fg3', bg: 'ink3' }
+};
+
+// A score computed by the SERVER (backend/utils/tenantScore.js), dressed for the
+// screen. The arithmetic stays on the server: it is the same number the landlord and
+// the tenant are each shown, and a copy of the rules in the app would eventually
+// disagree with it — at which point neither party could tell which one was lying.
+//
+// `known: false` is a first-class answer, not an error. A tenant with no confirmed
+// payments carrying a due date has no record to score, so this returns `known: false`
+// and the reason, and the screens draw a sentence instead of a dial. The whole point of
+// replacing the old fake was to stop printing confident numbers built on nothing.
+export const creditView = (sc) => {
+  const known = !!sc.known;
+  const score = Number(sc.score) || 0;
+  const tone = TONE[known ? (sc.band || 'neutral') : 'unknown'] || TONE.neutral;
+  return {
+    known,
+    score: known ? score : null,
+    band: sc.bandLabel || 'No record yet',
+    // An em dash, not "+0": zero is a real score a real tenant can hold, and showing
+    // it for "we do not know" is the same lie in smaller type.
+    label: known ? `${score > 0 ? '+' : ''}${score}` : '—',
+    fg: tone.fg,
+    bg: tone.bg,
+    marker: `${(score + 100) / 2}%`,
+    // Why there is no number, in the server's words. Empty when there IS one.
+    why: known ? '' : (sc.why || 'No confirmed payments yet.'),
+    // How thin the picture is. Payments that exist but predate due-date tracking are
+    // counted here rather than quietly treated as on time.
+    unscored: Number(sc.unscored) || 0,
+    factors: (sc.factors || []).map((f) => ({
+      label: f.label,
+      detail: f.detail,
+      pts: `${f.points > 0 ? '+' : ''}${Math.round(f.points)}`,
+      fg: f.points > 0 ? 'pos' : f.points < 0 ? 'coral' : 'fg3'
+    }))
+  };
+};
+
 export const creditOf = (t) => {
+  // Live tenants carry the server's score. Only the walk-through falls through to the
+  // arithmetic below, which is why that arithmetic is allowed to keep its fake
+  // "Payments missed" row: on the walk-through every number is openly invented.
+  if (t && t.score) return creditView(t.score);
   const raw = {
     onTime: t.onTime, tenure: parseInt(t.since, 10),
     late: t.late, lateDays: t.state === 'overdue' ? t.days : 0
@@ -99,11 +149,12 @@ export const creditOf = (t) => {
   });
   const score = Math.max(-100, Math.min(100, CREDIT_RULES.reduce((a, r) => a + raw[r.key] * r.unit, 0)));
   const band = score >= 50 ? 'Positive' : score >= 0 ? 'Neutral' : 'Negative';
+  const tone = TONE[band.toLowerCase()] || TONE.neutral;
   return {
-    score, band, factors,
+    known: true, score, band, factors, why: '', unscored: 0,
     label: `${score > 0 ? '+' : ''}${score}`,
-    fg: band === 'Positive' ? 'pos' : band === 'Neutral' ? 'amber' : 'coral',
-    bg: band === 'Positive' ? 'lsoft' : band === 'Neutral' ? 'asoft' : 'csoft',
+    fg: tone.fg,
+    bg: tone.bg,
     // -100..100 mapped onto a 0..100% track, centred on zero
     marker: `${(score + 100) / 2}%`
   };

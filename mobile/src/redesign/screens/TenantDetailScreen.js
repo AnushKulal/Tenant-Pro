@@ -75,23 +75,42 @@ export default function TenantDetailScreen() {
                         <Eyebrow s={10} ls={0.06} c={col(credit.fg)}>{credit.band}</Eyebrow>
                     </View>
                 </Row>
-                <View style={{ position: 'relative', height: 6, borderRadius: 3, backgroundColor: t.line, marginTop: 18, marginBottom: 9 }}>
-                    <View style={{ position: 'absolute', left: '50%', top: -4, width: 1, height: 14, backgroundColor: t.line2 }} />
-                    <View style={{ position: 'absolute', top: -4, width: 14, height: 14, borderRadius: 7, borderWidth: 3, borderColor: t.ink2, backgroundColor: col(credit.fg), left: credit.marker, marginLeft: -7 }} />
-                </View>
-                <Row justify="space-between" style={{ marginBottom: 14 }}>
-                    <Eyebrow s={9} ls={0.06} c={t.fg3}>−100 NEGATIVE</Eyebrow>
-                    <Eyebrow s={9} ls={0.06} c={t.fg3}>POSITIVE +100</Eyebrow>
-                </Row>
-                {(credit.factors || []).map((cf, i) => (
-                    <Row key={i} gap={12} style={{ paddingVertical: 9, borderTopWidth: 1, borderTopColor: t.line }}>
-                        <View style={{ flex: 1, minWidth: 0 }}>
-                            <T w={500} s={13} lh={1.2} c={t.fg}>{cf.label}</T>
-                            <Eyebrow s={9} ls={0.06} c={t.fg3} style={{ marginTop: 4 }}>{cf.detail}</Eyebrow>
+                {/* No dial when there is nothing to point it at. A tenant whose
+                    payments were all recorded before the app tracked due dates has no
+                    scorable history, and a needle resting at zero would read as a
+                    judgement rather than an absence — which is precisely the fake this
+                    replaced. The server says why; this prints it. */}
+                {credit.known === false ? (
+                    <T w={400} s={12.5} lh={1.5} c={t.fg2} style={{ marginTop: 10 }}>{credit.why}</T>
+                ) : (
+                    <>
+                        <View style={{ position: 'relative', height: 6, borderRadius: 3, backgroundColor: t.line, marginTop: 18, marginBottom: 9 }}>
+                            <View style={{ position: 'absolute', left: '50%', top: -4, width: 1, height: 14, backgroundColor: t.line2 }} />
+                            <View style={{ position: 'absolute', top: -4, width: 14, height: 14, borderRadius: 7, borderWidth: 3, borderColor: t.ink2, backgroundColor: col(credit.fg), left: credit.marker, marginLeft: -7 }} />
                         </View>
-                        <T w={700} s={14} lh={1} c={col(cf.fg)}>{cf.pts}</T>
-                    </Row>
-                ))}
+                        <Row justify="space-between" style={{ marginBottom: 14 }}>
+                            <Eyebrow s={9} ls={0.06} c={t.fg3}>−100 NEGATIVE</Eyebrow>
+                            <Eyebrow s={9} ls={0.06} c={t.fg3}>POSITIVE +100</Eyebrow>
+                        </Row>
+                        {(credit.factors || []).map((cf, i) => (
+                            <Row key={i} gap={12} style={{ paddingVertical: 9, borderTopWidth: 1, borderTopColor: t.line }}>
+                                <View style={{ flex: 1, minWidth: 0 }}>
+                                    <T w={500} s={13} lh={1.2} c={t.fg}>{cf.label}</T>
+                                    <Eyebrow s={9} ls={0.06} c={t.fg3} style={{ marginTop: 4 }}>{cf.detail}</Eyebrow>
+                                </View>
+                                <T w={700} s={14} lh={1} c={col(cf.fg)}>{cf.pts}</T>
+                            </Row>
+                        ))}
+                        {/* A thin score should LOOK thin. Payments that exist but carry
+                            no due date cannot be judged, so they are named rather than
+                            folded into the number as if they were on time. */}
+                        {credit.unscored > 0 ? (
+                            <Eyebrow s={9} ls={0.06} c={t.fg3} style={{ marginTop: 12 }}>
+                                {`${credit.unscored} EARLIER ${credit.unscored === 1 ? 'PAYMENT' : 'PAYMENTS'} NOT SCORED — RECORDED BEFORE DUE DATES WERE TRACKED`}
+                            </Eyebrow>
+                        ) : null}
+                    </>
+                )}
             </Card>
 
             {/* Timeline */}

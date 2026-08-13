@@ -353,9 +353,15 @@ export function mapTenant(t, payments, now) {
         days: daysLate,
         credit: Number(t.credit_score) || 0,
         deposit: `₹${inr(t.deposit)}`,
-        // Credit inputs derived from real behaviour: payments actually recorded,
-        // tenure from move-in, and how late they are right now. The backend has no
-        // per-tenant missed-payment counter, so `late` stays 0 rather than guessed.
+        // The scored payment record, straight from the server. `credit_score` above is
+        // the dead column it replaces — an int defaulting to 100 that nothing ever
+        // wrote, so every real tenant scored 100 for ever. Still read only so nothing
+        // downstream breaks on the day the column is finally dropped.
+        score: t.score || null,
+        // These two fed the OLD arithmetic in creditOf and now only matter on the
+        // walk-through, where `score` is absent. `late` stayed 0 because the backend
+        // had no missed-payment counter — that is exactly the number the server now
+        // refuses to invent, reporting days overdue instead.
         onTime: paidCount,
         late: 0,
         since: `${movedIn ? monthDiff(movedIn, now) : 0} mo`,

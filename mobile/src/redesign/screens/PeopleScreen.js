@@ -98,6 +98,9 @@ export default function PeopleScreen() {
                             <View style={{ flex: 1, minWidth: 0 }}>
                                 <T w={600} s={15} lh={1.2} c={t.fg} numberOfLines={1}>{p.name}</T>
                                 <T mono w={600} s={10} lh={1.4} ls={0.08} c={col(p.subFg, t)} numberOfLines={1} style={{ marginTop: 4 }}>{p.sub}</T>
+                                {p.score ? (
+                                    <T mono w={600} s={9} lh={1.4} ls={0.08} c={col(p.scoreFg, t)} numberOfLines={1} style={{ marginTop: 3 }}>{p.score}</T>
+                                ) : null}
                             </View>
                             <View style={{ alignItems: 'flex-end' }}>
                                 <T w={700} s={15} lh={1} c={t.fg}>{p.rent}</T>
