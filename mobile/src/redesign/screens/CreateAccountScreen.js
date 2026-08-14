@@ -103,7 +103,7 @@ export default function CreateAccountScreen() {
       </Press>
 
       <View style={{ marginTop: 22 }}>
-        <T mono w={600} s={10} ls={0.14} c={t.violet2}>CREATE ACCOUNT</T>
+        <T mono w={600} s={10} ls={0.14} c={t.accent}>CREATE ACCOUNT</T>
         <T w={700} s={32} lh={1.04} c={t.fg} style={{ marginTop: 12, letterSpacing: -1.5 }}>
           A few details{'\n'}to get you in.
         </T>

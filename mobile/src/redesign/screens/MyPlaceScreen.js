@@ -53,7 +53,7 @@ export default function MyPlaceScreen() {
             {vm.portalUnlinked && (
                 <View style={{ alignItems: 'center', paddingVertical: 44, paddingHorizontal: 20, borderRadius: 22, backgroundColor: t.ink2, borderWidth: 1, borderStyle: 'dashed', borderColor: t.line2 }}>
                     <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: t.vsoft, alignItems: 'center', justifyContent: 'center' }}>
-                        <Glyph name="home-outline" size={20} color={t.violet2} />
+                        <Glyph name="home-outline" size={20} color={t.accent} />
                     </View>
                     <T w={600} s={15} lh={1.3} c={t.fg} style={{ marginTop: 14, textAlign: 'center' }}>No property yet</T>
                     <T w={400} s={13} lh={1.5} c={t.fg2} style={{ marginTop: 7, maxWidth: 230, textAlign: 'center' }}>
@@ -78,8 +78,8 @@ export default function MyPlaceScreen() {
                             <Row gap={7} wrap>
                                 <Eyebrow s={10} ls={0.1} c={t.fg3}>{me.unitLine}</Eyebrow>
                                 <Row gap={5} style={{ paddingVertical: 4, paddingHorizontal: 9, borderRadius: 999, backgroundColor: t.vsoft }}>
-                                    <Glyph name={me.policyIcon} size={12} color={t.violet2} />
-                                    <T mono w={600} s={9} lh={1} ls={0.06} c={t.violet2}>{me.policy}</T>
+                                    <Glyph name={me.policyIcon} size={12} color={t.accent} />
+                                    <T mono w={600} s={9} lh={1} ls={0.06} c={t.accent}>{me.policy}</T>
                                 </Row>
                             </Row>
                             <T w={700} s={24} lh={1.05} style={{ marginTop: 9, letterSpacing: -1 }}>{me.propName}</T>
@@ -133,7 +133,7 @@ export default function MyPlaceScreen() {
                             {vm.myAmenities.map((ma, i) => (
                                 <Row key={i} gap={10} style={{ flexBasis: '46%', flexGrow: 1, marginBottom: 4 }}>
                                     <View style={{ width: 30, height: 30, borderRadius: 10, backgroundColor: t.vsoft, alignItems: 'center', justifyContent: 'center' }}>
-                                        <Glyph name={ma.icon} size={15} color={t.violet2} />
+                                        <Glyph name={ma.icon} size={15} color={t.accent} />
                                     </View>
                                     <T w={500} s={13} lh={1.2} c={t.fg2} style={{ flex: 1 }}>{ma.label}</T>
                                 </Row>
@@ -174,7 +174,7 @@ export default function MyPlaceScreen() {
                             </View>
                             <View style={{ flex: 1, minWidth: 0 }}>
                                 <T w={600} s={14} lh={1.3} c={t.fg}>Share {me.propName} with someone</T>
-                                <T w={700} s={14} lh={1} c={t.violet2} style={{ marginTop: 8, letterSpacing: 0.5 }}>{me.propCode}</T>
+                                <T w={700} s={14} lh={1} c={t.accent} style={{ marginTop: 8, letterSpacing: 0.5 }}>{me.propCode}</T>
                                 <T mono w={600} s={9} lh={1.4} ls={0.06} c={t.fg3} style={{ marginTop: 5 }}>{vm.myInvite.beds}</T>
                             </View>
                         </Row>

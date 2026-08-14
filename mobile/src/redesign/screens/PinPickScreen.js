@@ -118,7 +118,14 @@ export default function PinPickScreen() {
                     pin, the search and the coordinates all still work. */}
                 {tileConfigError() ? (
                     <View style={{ position: 'absolute', left: 12, right: 12, top: 12, paddingVertical: 8, paddingHorizontal: 11, borderRadius: 12, backgroundColor: 'rgba(4,4,6,0.78)', flexDirection: 'row', alignItems: 'flex-start', columnGap: 8 }}>
-                        <Glyph name="warning-outline" size={13} color={t.red} />
+                        {/* A literal, not t.amber, and not the t.red this used to ask
+                            for — there is no such token, so the warning triangle was
+                            rendering in plain foreground and did not look like a
+                            warning at all. This banner is deliberately fixed-dark in
+                            both themes (see the hardcoded background and #FFFFFF text
+                            beside it), and t.amber goes to a dark brown in light mode
+                            that would disappear against it. */}
+                        <Glyph name="warning-outline" size={13} color="#FFB020" />
                         <T w={500} s={10.5} lh={1.4} c="#FFFFFF" style={{ flex: 1, opacity: 0.9 }}>
                             {tileConfigError()}
                         </T>
