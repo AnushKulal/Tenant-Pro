@@ -219,6 +219,10 @@ const initDb = async () => {
         // ...and which room they asked for, once the app could show them the rooms.
         // NULL on every existing request, which is correct: nobody was offered a choice.
         await ensureColumn(conn, 'join_requests', 'requested_unit_id', 'int(11) DEFAULT NULL');
+        // ...and how the request came about. Every existing row is somebody who typed
+        // in a property code, so the 'code' default backfills them correctly and the
+        // landlord's inbox reads exactly as it did before.
+        await ensureColumn(conn, 'join_requests', 'source', "enum('code','phone_match') NOT NULL DEFAULT 'code'");
         // Which rent a payment settled. NULL on every existing row, which is honest:
         // the information was never recorded, so those payments cannot be scored.
         await ensureColumn(conn, 'payments', 'due_date', 'date DEFAULT NULL');

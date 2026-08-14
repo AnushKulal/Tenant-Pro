@@ -398,6 +398,15 @@ CREATE TABLE IF NOT EXISTS `join_requests` (
   -- ON DELETE SET NULL for the same reason as unit_id: deleting a room later must not
   -- erase the record of the request.
   `requested_unit_id` int(11) DEFAULT NULL,
+  -- Who raised this. 'code' is the applicant typing in a property code -- a stranger
+  -- asking to be let in. 'phone_match' is the system noticing that the number on a
+  -- new account is already in this landlord's books, which is the opposite situation:
+  -- the landlord knows this person, they just were not linked.
+  --
+  -- Kept because the two need different words in the inbox. "Wants to join Sunrise
+  -- Residency" is wrong for somebody the landlord entered themselves last month, and
+  -- a landlord who reads it that way will reject their own tenant.
+  `source` enum('code','phone_match') NOT NULL DEFAULT 'code',
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   -- NULL for as long as the request is Pending, which is what makes "how long has
   -- this been waiting" answerable without a separate event log.

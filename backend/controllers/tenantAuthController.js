@@ -3,6 +3,7 @@
 const db = require('../config/db');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const { tryProposeLinks } = require('../services/tenantLinkService');
 
 // --- Tenant Registration ---
 const registerTenant = async (req, res) => {
@@ -59,10 +60,25 @@ const registerTenant = async (req, res) => {
             { expiresIn: '7d' }
         );
 
+        // The landlord may already have typed this person into a room. If so, put a
+        // request in front of them rather than linking on a phone number alone — a
+        // number is not proof of identity, and carriers recycle them.
+        //
+        // Awaited so the very first screen after signup can already say "waiting for
+        // your landlord", rather than showing "ask your landlord to link you" and
+        // correcting itself a second later.
+        const proposed = await tryProposeLinks({ id: result.insertId, phone });
+
         res.status(201).json({
             message: 'Registered successfully',
             token,
-            tenant: { id: result.insertId, name, email, phone, status: 'Unlinked' }
+            tenant: {
+                id: result.insertId, name, email, phone,
+                // 'Pending' only if a request was actually raised. Saying it otherwise
+                // would have the app claim somebody is waiting on a landlord who has
+                // never heard of them.
+                status: proposed.length ? 'Pending' : 'Unlinked'
+            }
         });
     } catch (error) {
         console.error('Tenant Registration Error:', error);
@@ -128,6 +144,15 @@ const loginTenant = async (req, res) => {
             { expiresIn: '7d' }
         );
 
+        // Also matched at LOGIN, not just registration. Two ordinary situations need
+        // it: accounts that registered before this existed, and — much more common —
+        // a tenant who installed the app first and whose landlord typed them into a
+        // room afterwards. Neither would ever link if signup were the only chance.
+        //
+        // Costs one indexed lookup for an already-linked tenant, which is nearly
+        // everybody, and cannot fail the login: tryProposeLinks swallows its errors.
+        const proposed = await tryProposeLinks({ id: user.id, phone: user.phone });
+
         res.status(200).json({
             message: 'Login successful',
             token,
@@ -136,7 +161,9 @@ const loginTenant = async (req, res) => {
                 name: user.name,
                 email: user.email,
                 phone: user.phone,
-                status: user.status,
+                // The row was read before the match ran, so `user.status` is stale by
+                // exactly one field when a request has just been raised.
+                status: proposed.length ? 'Pending' : user.status,
                 tenant_id: user.tenant_id
             }
         });
