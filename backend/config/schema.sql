@@ -96,6 +96,38 @@ CREATE TABLE IF NOT EXISTS `tenants` (
   CONSTRAINT `tenants_ibfk_1` FOREIGN KEY (`owner_id`) REFERENCES `owners` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+-- 4b. document_requests (-> owners, tenants)
+-- A landlord asking a tenant to upload an ID.
+--
+-- Keyed on `tenants`, not on a portal account, because the landlord is asking a
+-- PERSON. A tenant they typed in by hand can be asked before they have ever opened the
+-- app, and the ask is waiting the moment an account links to that tenancy.
+CREATE TABLE IF NOT EXISTS `document_requests` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `owner_id` int(11) NOT NULL,
+  `tenant_id` int(11) NOT NULL,
+  -- Which document, or NULL for "any government ID" -- which is what most landlords
+  -- actually want, and asking for a specific one they do not need is worse.
+  `doc_type` varchar(20) DEFAULT NULL,
+  -- What the landlord typed, shown to the tenant verbatim. The reason for the ask is
+  -- the difference between a demand and a request.
+  `note` varchar(300) DEFAULT NULL,
+  -- Fulfilled is set by the upload itself, never by hand: a landlord marking their own
+  -- request answered would let the nag stop without a document existing.
+  `status` enum('Pending','Fulfilled','Cancelled') NOT NULL DEFAULT 'Pending',
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `closed_at` timestamp NULL DEFAULT NULL,
+  -- Which upload answered it. Kept so "they sent this because you asked" is answerable
+  -- later, and so a deleted document does not silently leave the ask looking answered.
+  `document_id` int(11) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `owner_id` (`owner_id`),
+  KEY `tenant_id` (`tenant_id`),
+  KEY `status_tenant` (`status`, `tenant_id`),
+  CONSTRAINT `document_requests_ibfk_1` FOREIGN KEY (`owner_id`) REFERENCES `owners` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `document_requests_ibfk_2` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
 -- 5. leases (-> tenants, units)
 CREATE TABLE IF NOT EXISTS `leases` (
   `id` int(11) NOT NULL AUTO_INCREMENT,

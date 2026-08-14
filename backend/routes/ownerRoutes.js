@@ -17,6 +17,7 @@ const {
     getApplicantDocuments,
     decideDocument
 } = require('../controllers/documentController');
+const { createIdRequest, cancelIdRequest } = require('../controllers/idRequestController');
 const { getDemoStatus, resetDemo } = require('../controllers/demoController');
 const { protect } = require('../middleware/authMiddleware');
 const upload = require('../middleware/uploadMiddleware');
@@ -61,6 +62,13 @@ router.get('/tenants/:id/documents', protect, getTenantDocuments);
 router.get('/join-requests/:id/documents', protect, getApplicantDocuments);
 // The manual check itself: verified or rejected, with an optional note.
 router.put('/documents/:id', protect, decideDocument);
+// Asking for one that is not there yet. Scoped by tenant rather than by portal
+// account: the landlord is asking a PERSON, and a tenant they typed in by hand can be
+// asked before they have ever opened the app.
+router.post('/tenants/:id/id-request', protect, createIdRequest);
+// And withdrawing it — the only way to stop a prompt on somebody's home screen after
+// asking by mistake, or after getting the document another way.
+router.delete('/tenants/:id/id-request', protect, cancelIdRequest);
 
 // --- Demo account ---
 // The demo is a real account that KEEPS whatever a demo does to it, so restoring its

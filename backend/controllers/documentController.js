@@ -24,6 +24,10 @@ const { getFileUrl } = require('../middleware/uploadMiddleware');
 const { decideVisibility, applyVisibility, blurredUrl, canBlurAtAll, FULL, NONE } = require('../utils/idVisibility');
 const jwt = require('jsonwebtoken');
 const { Readable } = require('stream');
+// One-way: idRequestController requires nothing from this file, which is why it keeps
+// its own copy of the document labels rather than importing DOC_TYPES below. A test
+// pins the two lists together so they cannot drift apart in silence.
+const { askStateFor, promptsForAccount, closeRequestsFor } = require('./idRequestController');
 
 // ── Serving a blurred ID without disclosing where the original lives ───────────
 //
@@ -167,7 +171,12 @@ const getMyDocuments = async (req, res) => {
             return res.status(403).json({ message: 'Tenant access only.' });
         }
         const documents = await fetchDocuments(req.user.id);
-        res.status(200).json({ documents, summary: summarise(documents), types: DOC_TYPES });
+        // Who has asked them for one, and why. Loaded here rather than on its own
+        // endpoint so the prompt and the documents it is about can never be a refresh
+        // apart — a "your landlord asked for your ID" banner sitting above the ID they
+        // just uploaded is the kind of thing that makes an app feel broken.
+        const requests = await promptsForAccount(req.user.id);
+        res.status(200).json({ documents, summary: summarise(documents), requests, types: DOC_TYPES });
     } catch (error) {
         console.error('Error fetching tenant documents:', error);
         res.status(500).json({ message: 'Server error while fetching your documents.' });
@@ -205,12 +214,23 @@ const addMyDocument = async (req, res) => {
             [req.user.id, docType, number, fileUrl]
         );
 
+        // Close whatever ask this answers. Driven by the document that now exists,
+        // never by anybody saying it arrived — a landlord able to close their own
+        // request could silence the tenant's prompt without receiving anything.
+        const closed = await closeRequestsFor(req.user.id, { id: result.insertId, doc_type: docType });
+
         const documents = await fetchDocuments(req.user.id);
         res.status(201).json({
-            message: `${DOC_TYPES[docType]} added. Your landlord can now check it.`,
+            // Worth saying when it settles an ask: the tenant uploaded this BECAUSE
+            // they were asked, and "your landlord can now check it" leaves them
+            // wondering whether the request is still hanging over them.
+            message: closed
+                ? `${DOC_TYPES[docType]} sent. That answers your landlord's request.`
+                : `${DOC_TYPES[docType]} added. Your landlord can now check it.`,
             id: result.insertId,
             documents,
-            summary: summarise(documents)
+            summary: summarise(documents),
+            requests: await promptsForAccount(req.user.id)
         });
     } catch (error) {
         console.error('Error adding tenant document:', error);
@@ -342,6 +362,16 @@ const getTenantDocuments = async (req, res) => {
                 visibility: seen.level,
                 visibility_reason: seen.reason,
                 blur_available: canBlurAtAll(),
+                // Still offered, and honestly labelled. A tenant with no account can be
+                // asked — the ask waits for them — but the landlord is told nobody will
+                // see it today rather than being left to assume a notification went out.
+                ask: await askStateFor({
+                    ownerId: req.user.id,
+                    tenantId: rows[0].id,
+                    tenancyStatus: person.tenancy_status,
+                    hasAccount: false,
+                    summary: summarise([])
+                }),
                 person,
                 types: DOC_TYPES
             });
@@ -362,6 +392,16 @@ const getTenantDocuments = async (req, res) => {
             visibility: seen.level,
             visibility_reason: seen.reason,
             blur_available: canBlurAtAll(),
+            // Whether the landlord may ask, what the button should say, and the open
+            // ask if there is one. Assembled here, from the same summary the rows are
+            // drawn from, so the button and the list beneath it cannot disagree.
+            ask: await askStateFor({
+                ownerId: req.user.id,
+                tenantId: rows[0].id,
+                tenancyStatus: person.tenancy_status,
+                hasAccount: true,
+                summary: summarise(documents)
+            }),
             person,
             types: DOC_TYPES
         });
