@@ -227,38 +227,7 @@ const BLANK_PAY = {
     error: ''
 };
 
-// Which government IDs a guest may offer. The keys must match the server's
-// DOC_TYPES exactly — it refuses anything else — and the order is the order Indian
-// tenants actually reach for one.
-const GUEST_DOC_TYPES = [
-  { key: 'aadhaar', label: 'Aadhaar' },
-  { key: 'pan', label: 'PAN' },
-  { key: 'dl', label: 'Licence' },
-  { key: 'voter', label: 'Voter ID' },
-  { key: 'passport', label: 'Passport' }
-];
 
-// The guest join form's empty state. Declared BEFORE INITIAL_STATE, which spreads
-// it, and before submitGuestJoin, which resets to it -- a const referenced by
-// INITIAL_STATE but declared after it is a temporal-dead-zone crash at import, and
-// this file has produced that one four times now.
-const BLANK_GUEST_FORM = {
-  // Which half of the form is on screen. 'code' asks which property; 'you' asks for
-  // the phone number and the government ID.
-  step: 'code',
-  place: null,      // what the code resolved to, once it has
-  phone: '',
-  docType: 'aadhaar',
-  docNumber: '',
-  photo: null,      // { uri, name, type } from the camera or the library
-  // How long they say they are staying, in months, or null for "not sure yet".
-  // Undated is the honest default for somebody who genuinely does not know, but 3 is
-  // the answer most PG guests give, and a preselected chip is what makes the question
-  // read as answerable rather than as another required field.
-  stayMonths: 3,
-  busy: false,
-  error: ''
-};
 
 const INITIAL_STATE = {
   route: 'boot', overlay: null, filter: 'all', who: 'amit', method: 'UPI', toast: '',
@@ -387,7 +356,6 @@ const INITIAL_STATE = {
   // signing up, which is the whole point of letting them start without an account.
   pendingJoin: '',
   // The typed half of the guest chooser.
-  guestCode: '',
   req: null,            // index of the tenant request opened from Help
 
   // ── Data (Phase 3) ──
@@ -424,9 +392,6 @@ const INITIAL_STATE = {
   // Two steps rather than one long form because the first is often answered by
   // pointing a camera at a QR, and mixing that with typing is what made the old
   // screen feel like a wall.
-  gform: { ...BLANK_GUEST_FORM },
-  // Signing back in with a guest ID, for a guest on a new phone.
-  gsignin: { code: '', phone: '', busy: false, error: '' },
   // The form that turns a guest into a full account.
   claim: { name: '', email: '', password: '', busy: false, error: '' },
   // The demo account's own status: null for every real landlord, so the reset control
@@ -5077,13 +5042,12 @@ export function AppProvider({ children }) {
     const st = stateRef.current;
     const signedInTenant = !!(st.session && st.session.role === 'tenant');
     if (signedInTenant) {
-      setState({ jq: wanted, route: 'tfind', scanCode: '', guestCode: '' });
+      setState({ jq: wanted, route: 'tfind', scanCode: '' });
       lookupProperty(wanted);
       return;
     }
     setState({
       pendingJoin: wanted,
-      guestCode: '',
       scanCode: '',
       signupRole: 'tenant',
       route: 'signup',
@@ -5354,117 +5318,13 @@ export function AppProvider({ children }) {
   // account, filing the ID and sending the request as three separate steps would
   // leave an account with no ID behind whenever the second one failed.
 
-  // Photograph the ID, or choose an existing scan.
-  const pickGuestPhoto = useCallback(async (source) => {
-    const asset = await captureOrPick(source);
-    if (!asset) return;
-    setState({ gform: { ...stateRef.current.gform, photo: asset, error: '' } });
-  }, [setState, captureOrPick]);
 
   // Resolve the property code before asking for anything personal, so a mistyped
   // code is caught while it is still the only thing on screen — and so the second
   // step can name the place they are about to hand their ID to.
-  const guestCheckCode = useCallback(async () => {
-    const g = stateRef.current.gform;
-    const code = codeOf(stateRef.current.guestCode);
-    if (!code) return;
-    setState({ gform: { ...g, busy: true, error: '' } });
-    try {
-      const res = await apiPortal.lookupProperty(code);
-      setState({ gform: { ...stateRef.current.gform, busy: false, step: 'you', place: res.property || null, error: '' } });
-    } catch (e) {
-      // The lookup is tenant-only on the server, so a signed-out guest gets a 401
-      // here. That is not a reason to stop them: the join call resolves the code
-      // again itself and will refuse a bad one with a clear message. Only a real
-      // 404 — "no such property" — is worth blocking on.
-      const status = e && e.response && e.response.status;
-      if (status === 404) {
-        setState({ gform: { ...stateRef.current.gform, busy: false, error: 'No property matches that code. Check it with your landlord.' } });
-        return;
-      }
-      setState({ gform: { ...stateRef.current.gform, busy: false, step: 'you', place: null, error: '' } });
-    }
-  }, [setState]);
 
-  const submitGuestJoin = useCallback(async () => {
-    const g = stateRef.current.gform;
-    if (g.busy) return;
-    const code = codeOf(stateRef.current.guestCode);
-    const phone = String(g.phone || '').replace(/[^0-9]/g, '').slice(-10);
-    if (phone.length !== 10) {
-      setState({ gform: { ...g, error: 'Enter the 10-digit mobile number your landlord can reach you on.' } });
-      return;
-    }
-    if (!g.photo) {
-      setState({ gform: { ...g, error: 'Add a photo of a government ID — this is what your landlord checks.' } });
-      return;
-    }
-    setState({ gform: { ...g, busy: true, error: '' } });
-    try {
-      const form = new FormData();
-      form.append('code', code);
-      form.append('phone', phone);
-      form.append('doc_type', g.docType);
-      form.append('doc_number', g.docNumber || '');
-      form.append('document', filePart(g.photo, `guest-id-${Date.now()}.jpg`));
-      // Sent as the date rather than the month count, so the landlord sees exactly the
-      // day this screen showed them — and so a request that sits in the inbox for a
-      // week still means the day they asked for, not a week later. Omitted entirely
-      // for "not sure yet": an empty string would be a date the server has to guess at.
-      const wants = stayFromMonths(g.stayMonths);
-      if (wants) form.append('stay_until', wants.iso);
-      const res = await apiAuth.joinAsGuest(form);
-
-      // From here a guest is an ordinary signed-in tenant. Same session storage,
-      // same token header, same loader — which is exactly why no other screen needs
-      // to know that guests exist.
-      await saveTenantSession(res.token, res.tenant);
-      setToken(res.token);
-      setState({
-        session: { role: 'tenant', token: res.token, user: res.tenant },
-        gform: { ...BLANK_GUEST_FORM },
-        guestCode: '',
-        pendingJoin: '',
-        route: 'portal'
-      });
-      await loadTenantData();
-      flash(res.message || 'Request sent to the landlord');
-    } catch (e) {
-      // The server distinguishes "you already asked" and "that number has a real
-      // account" from a plain failure, and both need saying rather than swallowing:
-      // one tells them their guest ID, the other tells them to sign in instead.
-      const data = (e && e.response && e.response.data) || {};
-      setState({ gform: { ...stateRef.current.gform, busy: false, error: data.message || errText(e, 'Could not send that request.') } });
-    }
-  }, [setState, flash, loadTenantData]);
 
   // Signing back in with a guest ID, for a guest who reinstalled or changed phone.
-  const submitGuestSignIn = useCallback(async () => {
-    const g = stateRef.current.gsignin;
-    if (g.busy) return;
-    const code = String(g.code || '').trim().toUpperCase();
-    const phone = String(g.phone || '').replace(/[^0-9]/g, '').slice(-10);
-    if (code.length !== 6 || phone.length !== 10) {
-      setState({ gsignin: { ...g, error: 'Enter your 6-character guest ID and the number you joined with.' } });
-      return;
-    }
-    setState({ gsignin: { ...g, busy: true, error: '' } });
-    try {
-      const res = await apiAuth.guestLogin(code, phone);
-      await saveTenantSession(res.token, res.tenant);
-      setToken(res.token);
-      setState({
-        session: { role: 'tenant', token: res.token, user: res.tenant },
-        gsignin: { code: '', phone: '', busy: false, error: '' },
-        route: 'portal'
-      });
-      await loadTenantData();
-      flash('Signed in');
-    } catch (e) {
-      const data = (e && e.response && e.response.data) || {};
-      setState({ gsignin: { ...stateRef.current.gsignin, busy: false, error: data.message || errText(e, 'Could not sign you in.') } });
-    }
-  }, [setState, flash, loadTenantData]);
 
   // Turning a guest into a full account. The nudge that leads here is on the tenant
   // tab; this is what it buys.
@@ -6275,7 +6135,7 @@ export function AppProvider({ children }) {
       lookupProperty, scanQrFromImage, resetDemo, openUpiPayment, declareMyPayment,
       startGoogleSignIn, finishGoogleSignUp, cancelGoogleSignIn,
       openLeave, confirmLeave, withdrawLeave,
-      pickGuestPhoto, guestCheckCode, submitGuestJoin, submitGuestSignIn, submitClaim,
+      submitClaim,
       searchPlaces, describePin, useMyLocation
     }),
     [
@@ -6289,7 +6149,7 @@ export function AppProvider({ children }) {
       lookupProperty, scanQrFromImage, resetDemo, openUpiPayment, declareMyPayment,
       startGoogleSignIn, finishGoogleSignUp, cancelGoogleSignIn,
       openLeave, confirmLeave, withdrawLeave,
-      pickGuestPhoto, guestCheckCode, submitGuestJoin, submitGuestSignIn, submitClaim,
+      submitClaim,
       searchPlaces, describePin, useMyLocation
     ]
   );
