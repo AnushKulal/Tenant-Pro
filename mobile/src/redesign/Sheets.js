@@ -1269,6 +1269,17 @@ export default function Sheets() {
                                             </Row>
                                         </Press>
 
+                                        {/* Why this row is here at all. Only for a phone
+                                            match: a landlord who typed this person in
+                                            themselves did not ask for anything, and a
+                                            request with no explanation gets declined. */}
+                                        {j.matched ? (
+                                            <View style={{ marginTop: 11, padding: 11, borderRadius: 13, backgroundColor: t.vsoft, borderWidth: 1, borderColor: t.line }}>
+                                                <T w={600} s={12.5} lh={1.4} c={t.fg}>{j.lead}</T>
+                                                <T w={400} s={11.5} lh={1.45} c={t.fg2} style={{ marginTop: 3 }}>{j.why}</T>
+                                            </View>
+                                        ) : null}
+
                                         {j.hasNote ? (
                                             <T w={400} s={12.5} lh={1.5} c={t.fg2} style={{ marginTop: 11 }}>{`“${j.note}”`}</T>
                                         ) : null}
@@ -1300,10 +1311,10 @@ export default function Sheets() {
                                         {j.pending ? (
                                             <Row gap={7} style={{ marginTop: 7 }}>
                                                 <Press onPress={j.decline} style={{ paddingVertical: 11, paddingHorizontal: 16, borderRadius: 13, backgroundColor: t.ink2, borderWidth: 1, borderColor: t.line }}>
-                                                    <T w={600} s={12} c={t.fg2}>Decline</T>
+                                                    <T w={600} s={12} c={t.fg2}>{j.declineLabel}</T>
                                                 </Press>
                                                 <Press onPress={j.open} style={{ flex: 1, alignItems: 'center', paddingVertical: 11, borderRadius: 13, backgroundColor: t.lime }}>
-                                                    <T w={700} s={12.5} c={t.on}>Accept…</T>
+                                                    <T w={700} s={12.5} c={t.on}>{j.acceptLabel}</T>
                                                 </Press>
                                             </Row>
                                         ) : null}

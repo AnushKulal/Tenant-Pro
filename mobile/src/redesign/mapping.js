@@ -328,7 +328,20 @@ export function mapJoinRequest(r, now) {
         // Whether this stranger has put an ID up at all — the first thing worth
         // knowing before letting them into a building. NOT called `id`: that is
         // already this request's primary key.
-        idProof: idBadge(r.doc_count, r.doc_verified)
+        idProof: idBadge(r.doc_count, r.doc_verified),
+        // Whether this is a stranger asking to be let in, or somebody the landlord
+        // already entered themselves. The two need different sentences: "wants to
+        // join Sunrise Residency" is wrong for a tenant they typed into room 101 last
+        // month, and a landlord who reads it that way rejects their own tenant.
+        //
+        // Defaults to a code request, which is what every request was before matching
+        // existed and what an older server still reports by omission.
+        matched: r.source === 'phone_match',
+        // The line that says WHY this is in front of them. A request the landlord did
+        // not expect, with no explanation, is one they decline.
+        why: r.source === 'phone_match'
+            ? `Registered with ${r.requester_phone || 'a number'} — the number in your records${r.unit_number ? ` for room ${r.unit_number}` : ''}`
+            : ''
     };
 }
 

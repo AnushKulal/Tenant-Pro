@@ -519,6 +519,14 @@ function deriveVm(s, api) {
   // How to actually pay them: the owner's UPI details, joined into the same call.
   const PAYINFO = (TD && TD.me && TD.me.payment) || null;
 
+  // A request this tenant is waiting on. The one the app raised for them — because
+  // their number was already in a landlord's records — matters most: without it the
+  // portal tells somebody to go find a property while their landlord is being asked
+  // about them. Pending only; a decided request is not something to wait for.
+  const MY_PENDING_JOIN = TLIVE
+    ? ((TD.joins || []).find((j) => String(j.status || 'Pending') === 'Pending') || null)
+    : null;
+
   // Shape mirrors the tenant-portal /requests payload (category, title,
   // description, priority, status, created_at), mapped by mapping.js when live.
   const REQUESTS = TLIVE
@@ -946,11 +954,25 @@ function deriveVm(s, api) {
         rows.push({
           icon: 'person-add',
           tone: 'accent',
+          // A tenant the landlord entered themselves is not "wanting to join". Getting
+          // this sentence wrong is how a landlord dismisses their own tenant from the
+          // alert list without opening it.
           title: PENDING_JOINS.length === 1
-            ? `${first.name} wants to join ${first.property}`
-            : `${PENDING_JOINS.length} people want to join`,
+            ? (first.matched
+              ? `${first.name} registered — is this your tenant?`
+              : `${first.name} wants to join ${first.property}`)
+            // With several waiting, the honest sentence depends on the mix. All
+            // matches: nobody asked for anything. None: they all did. Mixed: neither
+            // sentence is true of everyone, so say the one thing that is.
+            : PENDING_JOINS.every((j) => j.matched)
+              ? `${PENDING_JOINS.length} of your tenants registered`
+              : PENDING_JOINS.some((j) => j.matched)
+                ? `${PENDING_JOINS.length} people are waiting on you`
+                : `${PENDING_JOINS.length} people want to join`,
           sub: PENDING_JOINS.length === 1
-            ? `Asked ${String(first.age).toLowerCase()} · accept or decline`
+            ? (first.matched
+              ? `${first.property}${first.unit ? ` · room ${first.unit}` : ''} · confirm to link them`
+              : `Asked ${String(first.age).toLowerCase()} · accept or decline`)
             : `${PENDING_JOINS.map((j) => String(j.name).split(' ')[0]).slice(0, 3).join(', ')}${PENDING_JOINS.length > 3 ? ' and more' : ''}`,
           go: () => setState({ overlay: 'joins' })
         });
@@ -2608,12 +2630,21 @@ function deriveVm(s, api) {
       // Pending first, then most recent: decided ones stay visible as a short
       // history rather than vanishing, so a landlord can see what they did.
       const ordered = [...PENDING_JOINS, ...JOINS.filter((j) => !j.pending)];
+      const matchedCount = PENDING_JOINS.filter((j) => j.matched).length;
       return {
         count: PENDING_JOINS.length,
-        title: PENDING_JOINS.length
-          ? `${PENDING_JOINS.length} ${PENDING_JOINS.length === 1 ? 'person wants' : 'people want'} to join`
-          : 'No one is waiting',
-        emptyLine: 'When someone enters one of your property codes, their request lands here for you to accept or decline.',
+        // When every waiting row is somebody the landlord already entered, "people
+        // want to join" is simply untrue — nobody asked for anything.
+        title: !PENDING_JOINS.length
+          ? 'No one is waiting'
+          : matchedCount === PENDING_JOINS.length
+            ? `${PENDING_JOINS.length} ${PENDING_JOINS.length === 1 ? 'tenant has' : 'tenants have'} registered`
+            // Mixed: some asked, some did not, so neither verb fits the whole list.
+            // The per-row wording carries the distinction from here.
+            : matchedCount > 0
+              ? `${PENDING_JOINS.length} people are waiting on you`
+              : `${PENDING_JOINS.length} ${PENDING_JOINS.length === 1 ? 'person wants' : 'people want'} to join`,
+        emptyLine: 'When someone enters one of your property codes — or one of your tenants registers with the number you have on file — their request lands here.',
         empty: ordered.length === 0,
         rows: ordered.map((j) => ({
           id: j.id,
@@ -2625,6 +2656,20 @@ function deriveVm(s, api) {
           property: j.property,
           note: j.note,
           hasNote: !!j.note,
+          // Somebody the landlord entered themselves, who has now registered — not a
+          // stranger at the door. Shown as its own line because the difference decides
+          // the answer: "wants to join" invites a decline, and declining here declines
+          // your own tenant.
+          matched: j.matched,
+          why: j.why,
+          lead: j.matched
+            ? `${String(j.name).split(' ')[0]} registered on TenantPro`
+            : '',
+          // The buttons say something different too. "Not them" is the honest opposite
+          // of "that's them" — whereas "Decline" reads as refusing a request that,
+          // from the landlord's side, nobody made.
+          declineLabel: j.matched ? 'Not them' : 'Decline',
+          acceptLabel: j.matched ? "That's them…" : 'Accept…',
           age: j.age,
           askedOn: j.askedOn,
           pending: j.pending,
@@ -4012,7 +4057,28 @@ function deriveVm(s, api) {
       { icon: 'ban-outline', label: 'Smoking', v: 'Not allowed indoors' }
     ],
     portalLinked: !!me.unit,
-    portalUnlinked: !me.unit,
+    // "No property yet — go find one" is the wrong screen for somebody whose landlord
+    // is already being asked about them. Split into three states rather than two: not
+    // linked and waiting, not linked and nobody asked, or linked.
+    portalUnlinked: !me.unit && !MY_PENDING_JOIN,
+    portalWaiting: !me.unit && !!MY_PENDING_JOIN,
+    portalWait: MY_PENDING_JOIN ? {
+      // A request the tenant never made needs saying plainly, or it reads as the app
+      // having done something behind their back.
+      title: MY_PENDING_JOIN.source === 'phone_match'
+        ? 'We found your tenancy'
+        : 'Waiting on your landlord',
+      line: MY_PENDING_JOIN.source === 'phone_match'
+        ? `Your number is already on file at ${MY_PENDING_JOIN.property_name || 'a property'}${MY_PENDING_JOIN.unit_number ? `, room ${MY_PENDING_JOIN.unit_number}` : ''}. We have asked your landlord to confirm it is you.`
+        : `You asked to join ${MY_PENDING_JOIN.property_name || 'a property'}. Your landlord has not answered yet.`,
+      // Named so it does not read as an error the tenant caused, and so they know the
+      // wait ends with a person, not a timeout.
+      note: MY_PENDING_JOIN.source === 'phone_match'
+        ? 'Nothing to do — your rent and documents appear here as soon as they confirm.'
+        : 'They will see it next time they open TenantPro.',
+      property: MY_PENDING_JOIN.property_name || '',
+      unit: MY_PENDING_JOIN.unit_number ? String(MY_PENDING_JOIN.unit_number) : ''
+    } : null,
     meFullName: me.name || '',
     meInitials: initialsOf(me.name),
     me: {
@@ -4562,16 +4628,22 @@ export function AppProvider({ children }) {
     try {
       // Payments come along too: "has this tenant ever paid" is what unlocks the
       // agreement, and it is the same call the payment history will read.
-      const [meRes, reqRes, payRes, pulseRes] = await Promise.all([
+      const [meRes, reqRes, payRes, joinRes, pulseRes] = await Promise.all([
         apiPortal.me(),
         apiPortal.requests().catch(() => ({ requests: [] })),
         apiPortal.payments().catch(() => ({ payments: [] })),
+        // The tenant's own join requests — including any the app raised for them when
+        // their number matched a landlord's records. Without this the screen says "no
+        // property yet, go find one" to somebody whose landlord is being asked about
+        // them right now. Swallowed on failure like the rest: an older server has the
+        // endpoint, but a failure here must not cost them their rent card.
+        apiPortal.joinRequests().catch(() => ({ requests: [] })),
         // Same reason as the owner side: keep the stamp level with the data.
         apiPortal.pulse().catch(() => null)
       ]);
       if (pulseRes && pulseRes.stamp) pulseRef.current.stamp = pulseRes.stamp;
       setState({
-        tdata: { me: meRes, requests: reqRes.requests || [], payments: payRes.payments || [] },
+        tdata: { me: meRes, requests: reqRes.requests || [], payments: payRes.payments || [], joins: joinRes.requests || [] },
         dataLoading: false,
         refreshing: false,
         dataError: ''

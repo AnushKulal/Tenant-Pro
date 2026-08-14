@@ -45,6 +45,37 @@ export default function PortalHomeScreen() {
                 </Press>
             </Row>
 
+            {/* Waiting on a landlord to confirm. Distinct from the empty state below:
+                telling somebody to go find a property, while their landlord is being
+                asked about them right now, sends them to raise a second request. */}
+            {vm.portalWaiting && vm.portalWait && (
+                <View
+                    style={{
+                        paddingVertical: 24,
+                        paddingHorizontal: 20,
+                        borderRadius: 22,
+                        backgroundColor: t.ink2,
+                        borderWidth: 1,
+                        borderColor: t.amber,
+                        marginBottom: 8
+                    }}
+                >
+                    <Row gap={11}>
+                        <IconChip name="hourglass-outline" box={40} radius={13} size={19} bg={t.asoft} color={t.amber} />
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                            <T w={600} s={15} lh={1.25} c={t.fg}>{vm.portalWait.title}</T>
+                            {vm.portalWait.property ? (
+                                <T mono w={600} s={9} lh={1.4} ls={0.08} c={t.amber} numberOfLines={1} style={{ marginTop: 4 }}>
+                                    {`${String(vm.portalWait.property).toUpperCase()}${vm.portalWait.unit ? ` · ROOM ${vm.portalWait.unit}` : ''}`}
+                                </T>
+                            ) : null}
+                        </View>
+                    </Row>
+                    <T w={400} s={13} lh={1.5} c={t.fg2} style={{ marginTop: 13 }}>{vm.portalWait.line}</T>
+                    <T w={400} s={12} lh={1.45} c={t.fg3} style={{ marginTop: 7 }}>{vm.portalWait.note}</T>
+                </View>
+            )}
+
             {/* Unlinked empty state */}
             {vm.portalUnlinked && (
                 <View

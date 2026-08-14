@@ -25,6 +25,30 @@ export default function MyPlaceScreen() {
                 <T w={600} s={16} lh={1.1} c={t.fg} style={{ flex: 1, letterSpacing: -0.4 }}>My place</T>
             </Row>
 
+            {/* Waiting on a landlord to confirm — see the note in PortalHomeScreen.
+                This screen has to agree with that one: showing "no property yet" here
+                while the home screen says "we found your tenancy" is a contradiction
+                the tenant reads as the app being broken. */}
+            {vm.portalWaiting && vm.portalWait && (
+                <View style={{ paddingVertical: 24, paddingHorizontal: 20, borderRadius: 22, backgroundColor: t.ink2, borderWidth: 1, borderColor: t.amber }}>
+                    <Row gap={11}>
+                        <View style={{ width: 40, height: 40, borderRadius: 13, backgroundColor: t.asoft, alignItems: 'center', justifyContent: 'center' }}>
+                            <Glyph name="hourglass-outline" size={19} color={t.amber} />
+                        </View>
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                            <T w={600} s={15} lh={1.25} c={t.fg}>{vm.portalWait.title}</T>
+                            {vm.portalWait.property ? (
+                                <T mono w={600} s={9} lh={1.4} ls={0.08} c={t.amber} numberOfLines={1} style={{ marginTop: 4 }}>
+                                    {`${String(vm.portalWait.property).toUpperCase()}${vm.portalWait.unit ? ` · ROOM ${vm.portalWait.unit}` : ''}`}
+                                </T>
+                            ) : null}
+                        </View>
+                    </Row>
+                    <T w={400} s={13} lh={1.5} c={t.fg2} style={{ marginTop: 13 }}>{vm.portalWait.line}</T>
+                    <T w={400} s={12} lh={1.45} c={t.fg3} style={{ marginTop: 7 }}>{vm.portalWait.note}</T>
+                </View>
+            )}
+
             {/* Unlinked state */}
             {vm.portalUnlinked && (
                 <View style={{ alignItems: 'center', paddingVertical: 44, paddingHorizontal: 20, borderRadius: 22, backgroundColor: t.ink2, borderWidth: 1, borderStyle: 'dashed', borderColor: t.line2 }}>
