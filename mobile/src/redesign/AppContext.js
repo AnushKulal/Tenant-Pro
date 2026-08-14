@@ -1003,7 +1003,14 @@ function deriveVm(s, api) {
         .sort((a, b) => a.leaveOn - b.leaveOn);
       if (leaving.length) {
         const soonest = leaving[0];
-        const days = Math.round((soonest.leaveOn - new Date(now.getFullYear(), now.getMonth(), now.getDate())) / 86400000);
+        // `now` does not exist in this scope and never did — deriveVm takes (s, api)
+        // and nothing else. This line threw ReferenceError and took the whole app
+        // down at the render, so a landlord with even one tenant under notice could
+        // not get past the login screen. Midnight today, so "in 3d" counts whole days
+        // rather than shifting with the hour the screen happens to be opened.
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
+        const days = Math.round((soonest.leaveOn - todayStart) / 86400000);
         rows.push({
           icon: 'exit-outline',
           tone: 'amber',
