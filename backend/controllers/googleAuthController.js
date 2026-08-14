@@ -27,6 +27,7 @@ const crypto = require('crypto');
 const db = require('../config/db');
 const jwt = require('jsonwebtoken');
 const { googleConfigured, googleMissing, authUrl, exchangeCode } = require('../config/googleAuth');
+const { tryProposeLinks } = require('../services/tenantLinkService');
 
 const SESSION_TTL_MS = 10 * 60 * 1000;
 
@@ -294,6 +295,12 @@ const pollGoogle = async (req, res) => {
         // here would be a lie — nothing is broken, the account is gone.
         if (!acc) return res.status(404).json({ status: 'failed', message: 'That account no longer exists.' });
 
+        // A returning Google tenant is a login, and logins match too — the landlord
+        // may have typed them into a room since the last time they opened the app.
+        if (session.role === 'tenant') {
+            await tryProposeLinks({ id: acc.id, phone: acc.phone });
+        }
+
         const token = issueToken(acc.id, acc.email, session.role);
         return res.status(200).json({
             status: 'ready',
@@ -374,6 +381,13 @@ const completeGoogle = async (req, res) => {
         );
 
         await db.query('DELETE FROM oauth_sessions WHERE id = ?', [session.id]);
+
+        // Same as password signup: the landlord may already have this number in their
+        // books, and the phone above is the first moment we have one to match on.
+        // Google never supplies it, which is exactly why this screen exists.
+        if (role === 'tenant') {
+            await tryProposeLinks({ id: ins.insertId, phone: digits });
+        }
 
         const token = issueToken(ins.insertId, stored.email, role);
         return res.status(201).json({

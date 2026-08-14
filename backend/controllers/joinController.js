@@ -11,6 +11,7 @@
 // tenant tokens and scope everything to req.user.id as owner_id.
 const db = require('../config/db');
 const { parseStayUntil, toSqlDate } = require('../utils/guestStay');
+const { phoneSql } = require('../utils/tenantMatch');
 
 const JOIN_STATUSES = ['Pending', 'Accepted', 'Rejected'];
 
@@ -369,6 +370,10 @@ const getMyJoinRequests = async (req, res) => {
         const [requests] = await db.query(
             `SELECT jr.id, jr.property_id, jr.unit_id, jr.status, jr.note,
                     jr.requested_stay_until, jr.requested_unit_id, jr.created_at, jr.decided_at,
+                    -- The tenant's own list needs this too, and more urgently: a request
+                    -- they never made, shown as one they did, reads as the app doing
+                    -- something behind their back.
+                    jr.source,
                     p.name AS property_name, p.locality, p.city,
                     u.unit_number,
                     ru.unit_number AS requested_unit_number
@@ -416,6 +421,11 @@ const getJoinRequests = async (req, res) => {
         const [requests] = await db.query(
             `SELECT jr.id, jr.tenant_user_id, jr.property_id, jr.unit_id, jr.status,
                     jr.note, jr.requested_stay_until, jr.requested_unit_id,
+                    -- 'phone_match' means the landlord already has this person in their
+                    -- books and the app noticed. The inbox has to say so: "wants to
+                    -- join" is the wrong sentence for your own tenant, and a landlord
+                    -- who reads it that way rejects somebody they entered themselves.
+                    jr.source,
                     jr.created_at, jr.decided_at,
                     ru.unit_number AS requested_unit_number,
                     tu.name AS requester_name, tu.email AS requester_email, tu.phone AS requester_phone,
@@ -580,6 +590,28 @@ const acceptRequest = async (res, ownerId, request, unitId, stayUntilRaw = null)
             return res.status(409).json({ message: `This request was already ${locked[0].status.toLowerCase()}.` });
         }
 
+        // Which tenancy this accept will REUSE rather than create. Resolved here, up
+        // front, because two decisions below both depend on it and they must not
+        // disagree: the bed count, and the reuse-before-insert further down.
+        //
+        // Matched on the NORMALISED number, not the raw string. A landlord types
+        // "+91 98765 43210" and their tenant registers as "9876543210" — the two
+        // spellings this whole feature exists to reconcile. Comparing them raw found
+        // nothing and inserted a second tenancy for a person who already had one.
+        //
+        // Read without FOR UPDATE deliberately: the lock on the units row below is
+        // what serialises two accepts racing for the same bed, and taking a lock here
+        // would change the established order (request → room → account) for no gain.
+        const [selfRows] = await conn.query(
+            `SELECT t.id FROM tenants t
+             JOIN tenant_users tu ON tu.id = ?
+             WHERE t.owner_id = ?
+               AND (t.phone = tu.phone OR ${phoneSql('t.phone')} = ${phoneSql('tu.phone')})
+             LIMIT 1`,
+            [locked[0].tenant_user_id, ownerId]
+        );
+        const reusingTenantId = selfRows.length ? selfRows[0].id : null;
+
         // a. The room, if the landlord named one. Locking the units row is what
         // makes the capacity check mean anything: without it two accepts into the
         // last free bed both read the same count and both succeed.
@@ -605,9 +637,15 @@ const acceptRequest = async (res, ownerId, request, unitId, stayUntilRaw = null)
             // ordinary tenant edits. The lock on the units row above is already what
             // serialises two accepts racing for the same last bed.
             const capacity = Number(unit.capacity || 1);
+            // The tenancy being reused does not count against itself. Without this
+            // exclusion a landlord accepting the tenant ALREADY RECORDED in room 101
+            // is told "Room 101 is full (1/1 beds taken)" — and the bed it means is
+            // that same tenant's own. It is the ordinary outcome for a phone match,
+            // where every accept is somebody the landlord already put in a room.
             const [beds] = await conn.query(
-                "SELECT COUNT(*) AS occupied FROM tenants WHERE unit_id = ? AND status = 'Active'",
-                [unit.id]
+                `SELECT COUNT(*) AS occupied FROM tenants
+                 WHERE unit_id = ? AND status = 'Active' AND id <> ?`,
+                [unit.id, reusingTenantId || 0]
             );
             const occupied = Number(beds[0].occupied);
             if (occupied >= capacity) {
@@ -642,14 +680,12 @@ const acceptRequest = async (res, ownerId, request, unitId, stayUntilRaw = null)
         // within this owner: landlords routinely add a tenant by hand first and
         // link the app account afterwards, and two rows for one person would split
         // their payments and their dues across both.
-        const [existing] = await conn.query(
-            'SELECT id, unit_id FROM tenants WHERE owner_id = ? AND phone = ? LIMIT 1',
-            [ownerId, account.phone]
-        );
-
+        //
+        // Resolved above rather than re-queried here, so the bed count and this
+        // decision cannot disagree about which row is being reused.
         let tenantId;
-        if (existing.length > 0) {
-            tenantId = existing[0].id;
+        if (reusingTenantId) {
+            tenantId = reusingTenantId;
             if (unit) {
                 await conn.query(
                     `UPDATE tenants
