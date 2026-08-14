@@ -21,10 +21,11 @@
 // Every route produces a CLAIM the landlord confirms. Nothing here asserts that
 // money arrived, because the app cannot see money.
 import React from 'react';
-import { View, ScrollView } from 'react-native';
+import { View } from 'react-native';
 import { useVm } from '../AppContext';
 import { useT } from '../ThemeContext';
 import { T, Eyebrow, Card, Row, Press, Glyph, Field, QrCode } from '../ui';
+import { KeyboardScroll } from '../keyboard';
 
 export default function CheckoutScreen() {
     const vm = useVm();
@@ -51,7 +52,7 @@ export default function CheckoutScreen() {
     );
 
     return (
-        <ScrollView
+        <KeyboardScroll
             contentContainerStyle={{ paddingTop: 14, paddingHorizontal: 18, paddingBottom: 28 }}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
@@ -238,6 +239,6 @@ export default function CheckoutScreen() {
                     <QuietButton label="Back to home" onPress={vm.payDone} />
                 </>
             )}
-        </ScrollView>
+        </KeyboardScroll>
     );
 }

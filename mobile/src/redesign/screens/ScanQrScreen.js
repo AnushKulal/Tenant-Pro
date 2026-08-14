@@ -13,6 +13,7 @@ import { View, Animated, Easing, Dimensions } from 'react-native';
 import { useVm } from '../AppContext';
 import { useT } from '../ThemeContext';
 import { T, Eyebrow, Row, Press, Glyph, Field } from '../ui';
+import { useKeyboardHeight } from '../keyboard';
 
 // Resolved once, at first render, so a missing native module is a state to render
 // rather than a crash.
@@ -88,6 +89,8 @@ export default function ScanQrScreen() {
     const vm = useVm();
     const t = useT();
     const scan = vm.scan;
+    // 0 when the keyboard is closed, so this costs nothing until somebody types.
+    const kb = useKeyboardHeight();
 
     const [camera] = useState(loadCamera);
     const [granted, setGranted] = useState(null); // null = still asking
@@ -135,8 +138,15 @@ export default function ScanQrScreen() {
                 {children}
             </View>
 
-            {/* Typing the code always works, whatever the camera is doing. */}
-            <View style={{ paddingBottom: 26 }}>
+            {/* Typing the code always works, whatever the camera is doing.
+                ...but only if you can SEE it. This block is pinned to the bottom of a
+                flex column, so the keyboard opened right on top of it: the tenant
+                tapped PROPERTY CODE and the field they were typing into vanished
+                behind the keyboard, along with the button that submits it.
+                Not a KeyboardScroll, because there is nothing to scroll — the layout
+                fills the screen. Lifting the block by the keyboard's own height is
+                what a scroll would have amounted to here anyway. */}
+            <View style={{ paddingBottom: 26 + kb }}>
                 {note}
                 {/* Offered on every no-camera path — module missing, permission
                     refused, still asking — because in all three the tenant is holding

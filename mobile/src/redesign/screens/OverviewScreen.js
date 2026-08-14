@@ -239,14 +239,21 @@ export default function OverviewScreen() {
                 ))}
             </View>
 
-            {/* A dashed outline in the muted text colour is how this app draws an
-                EMPTY state — "nothing here yet, add one" — so using it for a live
-                control made the button read as disabled. It is a real action, so it
-                now looks like one: solid fill, solid border, full-strength label and
-                an accent chevron. */}
+            {/* This button has now read as "disabled" twice, for two different reasons,
+                and both times the cause was borrowing a costume that means something
+                else in this app.
+
+                First it was a dashed outline in the muted text colour — which is how
+                an EMPTY state is drawn ("nothing here yet, add one"). That was swapped
+                for a solid fill... of `ink3` on a `line` border, which is precisely
+                what `disabled ?` renders everywhere else: the checkout button, the demo
+                reset, the ask-for-ID button. So it went on looking switched off.
+
+                Tinted now. A soft accent fill with an accent border is what every
+                working secondary action in this app wears, and nothing inert does. */}
             {vm.hasMoreTickets && (
                 <Press onPress={vm.openAllTickets} style={{ width: '100%', marginTop: 8 }}>
-                    <Row align="center" justify="center" gap={8} style={{ paddingVertical: 14, borderRadius: 16, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line }}>
+                    <Row align="center" justify="center" gap={8} style={{ paddingVertical: 14, borderRadius: 16, backgroundColor: t.lsoft, borderWidth: 1, borderColor: t.accent }}>
                         <Glyph name="construct-outline" size={14} color={t.accent} />
                         <T w={600} s={12.5} lh={1} c={t.fg}>{vm.moreTicketsLabel}</T>
                         <Glyph name="chevron-forward" size={14} color={t.accent} />

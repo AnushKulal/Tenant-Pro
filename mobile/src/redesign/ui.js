@@ -203,6 +203,60 @@ export function Field({
     );
 }
 
+// A multi-line note box, with the same focus ring as Field and SearchBar.
+//
+// It exists because the one place in the app that needed a multi-line input — the note
+// a landlord attaches when rejecting a claimed payment — was a raw TextInput with a
+// static border. Every other input in the app lights up when you tap into it, so the
+// one that did not read as a label rather than a field, on the one screen where the
+// landlord is being asked to explain a refusal to somebody who believes they paid.
+//
+// Same trade as Field: one component, so the ring cannot be forgotten at a call site.
+export function NoteBox({
+    value,
+    onChangeText,
+    placeholder,
+    minHeight = 62,
+    maxLength,
+    style
+}) {
+    const t = useT();
+    const [focused, setFocused] = React.useState(false);
+    return (
+        <TextInput
+            value={value}
+            onChangeText={onChangeText}
+            placeholder={placeholder}
+            placeholderTextColor={t.fg3}
+            multiline
+            maxLength={maxLength}
+            onFocus={() => setFocused(true)}
+            onBlur={() => setFocused(false)}
+            style={[
+                {
+                    // grotesk is a FUNCTION of weight — grotesk(400). Passing the
+                    // function itself hands React Native a callable where it expects a
+                    // font name, and it calls .indexOf on that while resolving the
+                    // family. That killed the whole sheet the instant it opened.
+                    fontFamily: grotesk(400),
+                    fontSize: 13,
+                    color: t.fg,
+                    backgroundColor: t.ink3,
+                    borderWidth: 1,
+                    borderColor: focused ? t.accent : t.line,
+                    borderRadius: 16,
+                    paddingHorizontal: 14,
+                    paddingTop: 12,
+                    paddingBottom: 12,
+                    minHeight,
+                    textAlignVertical: 'top'
+                },
+                style
+            ]}
+        />
+    );
+}
+
 // On the web preview a focused <input> also gets the browser's own focus ring, drawn
 // as a hard rectangle INSIDE our rounded pill. There is no such thing on a phone, so
 // this is web-only — and guarded rather than unconditional, because `outlineStyle` is

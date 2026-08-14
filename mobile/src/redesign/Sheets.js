@@ -8,7 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useVm } from './AppContext';
 import { useT } from './ThemeContext';
 import { grotesk } from './theme';
-import { T, Eyebrow, Row, Press, Glyph, Field, Avatar, Composer, DocThumb } from './ui';
+import { T, Eyebrow, Row, Press, Glyph, Field, Avatar, Composer, DocThumb, NoteBox } from './ui';
 import { useSheetIn, useFadeIn } from './motion';
 import { useIdShield } from './shield';
 import { KeyboardScroll, useKeyboardHeight } from './keyboard';
@@ -1738,35 +1738,11 @@ export default function Sheets() {
 
                         {/* A rejection is a message to somebody who believes they have
                             paid, so the note travels with it. Optional on purpose. */}
-                        <TextInput
+                        <NoteBox
                             value={vm.payDecide.note}
                             onChangeText={vm.payDecide.setNote}
                             placeholder={vm.payDecide.notePlaceholder}
-                            placeholderTextColor={t.fg3}
-                            multiline
-                            style={{
-                                // grotesk is a FUNCTION of weight — grotesk(400) — and
-                                // passing the function itself handed React Native a
-                                // callable where it expected a font name. It calls
-                                // .indexOf on that string while resolving the family,
-                                // so the whole sheet died with "i.indexOf is not a
-                                // function" the instant a landlord opened a payment to
-                                // confirm it. Every other call site in the app passes a
-                                // weight; this was the only one that did not.
-                                fontFamily: grotesk(400),
-                                fontSize: 13,
-                                color: t.fg,
-                                backgroundColor: t.ink3,
-                                borderWidth: 1,
-                                borderColor: t.line,
-                                borderRadius: 16,
-                                paddingHorizontal: 14,
-                                paddingTop: 12,
-                                paddingBottom: 12,
-                                minHeight: 62,
-                                textAlignVertical: 'top',
-                                marginBottom: 12
-                            }}
+                            style={{ marginBottom: 12 }}
                         />
 
                         <Row gap={8} align="flex-start" style={{ marginBottom: 14 }}>

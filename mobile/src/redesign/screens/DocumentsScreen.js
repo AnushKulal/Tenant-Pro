@@ -15,10 +15,11 @@
 // would be lost if the account was created and the upload then failed, leaving a
 // real account that could never satisfy its own requirement.
 import React, { useEffect } from 'react';
-import { View, ScrollView, Image, ActivityIndicator } from 'react-native';
+import { View, Image, ActivityIndicator } from 'react-native';
 import { useVm } from '../AppContext';
 import { useT } from '../ThemeContext';
 import { T, Eyebrow, Row, Press, Glyph, Field, IconChip, DocThumb } from '../ui';
+import { KeyboardScroll } from '../keyboard';
 import { useIdShield } from '../shield';
 
 export default function DocumentsScreen() {
@@ -40,7 +41,7 @@ export default function DocumentsScreen() {
     }, [d.loaded, d.loading, vm]);
 
     return (
-        <ScrollView
+        <KeyboardScroll
             contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 22, paddingBottom: 34 }}
             showsVerticalScrollIndicator={false}
         >
@@ -229,6 +230,6 @@ export default function DocumentsScreen() {
                     <Glyph name="arrow-forward" size={15} color={d.canContinue ? t.ink : t.fg3} />
                 </Press>
             </View>
-        </ScrollView>
+        </KeyboardScroll>
     );
 }
