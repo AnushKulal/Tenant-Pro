@@ -287,14 +287,14 @@ const INITIAL_STATE = {
   // client that has not asked to look at one.
   // `key` identifies the open view ('tenant:7' / 'join:3') so a late response for
   // a person the landlord has navigated away from is discarded, not rendered.
-  docs: { key: '', from: null, list: [], summary: null, person: null, noAccount: false, visibility: 'full', visibilityReason: '', blurAvailable: true, loading: false, error: '', deciding: 0 },
+  docs: { key: '', from: null, list: [], summary: null, person: null, noAccount: false, visibility: 'full', visibilityReason: '', blurAvailable: true, ask: null, asking: false, loading: false, error: '', deciding: 0 },
   // The document currently open full-screen, or null. Deliberately NOT part of
   // `docs`: it sits above whichever sheet opened it — the landlord's list or the
   // tenant's own — and closing it must leave that sheet exactly as it was, with the
   // Verify and Reject buttons still there. Both sheets set this same key.
   docView: null,
   // The tenant's own documents, and the add form.
-  myDocs: { list: [], summary: null, loading: false, error: '', loaded: false },
+  myDocs: { list: [], summary: null, requests: [], loading: false, error: '', loaded: false },
   docForm: { type: 'aadhaar', number: '', photo: null, error: '', busy: false },
   // True while the tenant is in the "you must add an ID" step of registration,
   // which is what makes the document mandatory rather than merely offered.
@@ -3062,6 +3062,44 @@ function deriveVm(s, api) {
           // Undo, for the landlord who tapped the wrong one.
           reopen: () => api.decideDoc(x.id, 'pending')
         })),
+        // ── Asking for an ID that is not there ────────────────────────────────
+        // "No ID on file" used to be a dead end: the only way to chase a document
+        // was to text them, and a text does not survive being read once.
+        //
+        // Every field here comes from the server's verdict rather than being worked
+        // out locally — allowed, the label, the warning — because the app deciding
+        // for itself when asking is permitted would be a second copy of the rule.
+        ask: (() => {
+          const k = d.ask;
+          // An older server sends nothing, and a sheet that is still loading has no
+          // verdict yet. Both draw no button, rather than one that 404s.
+          if (!k || d.loading) return null;
+          const first = String(who.name || 'them').split(' ')[0];
+          return {
+            // Only on the tenant sheet: an applicant has no tenancy to ask against.
+            show: String(d.key || '').startsWith('tenant:'),
+            can: k.allowed === true && !d.asking,
+            label: k.label || 'Request ID',
+            note: k.note || '',
+            hasNote: !!k.note,
+            busy: !!d.asking,
+            // The open ask, so the sheet shows what was asked and when instead of a
+            // button that silently does nothing on a second tap.
+            pending: !!k.request,
+            pendingLine: k.request
+              ? (k.request.doc_label
+                ? `You asked ${first} for their ${k.request.doc_label}.`
+                : `You asked ${first} for a government ID.`)
+              : '',
+            // Only offered while an ask is actually open — the whole point of the
+            // button is to stop a prompt that is currently showing.
+            canWithdraw: !!k.request && !d.asking,
+            // No confirm step on the ask itself: it is a request, not a decision, and
+            // it can be withdrawn. Withdrawing is likewise immediate.
+            go: () => api.requestId(null),
+            withdraw: () => api.cancelIdRequest()
+          };
+        })(),
         close: () => setState({ overlay: d.from || null, docs: { ...INITIAL_STATE.docs } })
       };
     })(),
@@ -4056,6 +4094,41 @@ function deriveVm(s, api) {
       { icon: 'calendar-outline', label: 'Notice period', v: '30 days' },
       { icon: 'ban-outline', label: 'Smoking', v: 'Not allowed indoors' }
     ],
+    // ── A landlord has asked this tenant for their ID ────────────────────────
+    // Loaded with their documents rather than on its own, so the banner and the list
+    // it is about are one response and cannot be a refresh apart.
+    //
+    // Every word of this comes from the server: an unexplained demand for a government
+    // ID is exactly the shape of a scam, so the prompt names the landlord, carries
+    // their number, and tells the tenant to ring and check before photographing
+    // anything. The app inventing any of that would be inventing the reassurance too.
+    idAsk: (() => {
+      const rs = (s.myDocs && s.myDocs.requests) || [];
+      // `show` is the server's call — it stops prompting after three weeks rather than
+      // shouting at a home screen that has ignored it twenty-one times.
+      const live = rs.filter((r) => r && r.show);
+      if (!live.length) return null;
+      const r = live[0];
+      return {
+        title: r.title || 'Your landlord asked for your ID',
+        line: r.line || '',
+        note: r.note || '',
+        hasNote: !!r.note,
+        who: r.landlordName || '',
+        phone: r.landlordPhone || '',
+        phoneLabel: fmtPhone(r.landlordPhone),
+        hasPhone: !!r.landlordPhone,
+        verifyLine: r.verifyLine || '',
+        // More than one landlord asking is rare but real — somebody mid-move. Counted
+        // rather than stacked, so the home screen does not become a column of demands.
+        more: live.length > 1 ? `+${live.length - 1} more` : '',
+        // Straight to the upload form, because a prompt that only tells you off is
+        // the version of this that people learn to ignore.
+        go: () => { api.loadMyDocs(); go('tdocs'); },
+        // So they can check the ask is genuine before sending a photograph of their ID.
+        call: () => (r.landlordPhone ? callNumber(r.landlordPhone, r.landlordName || 'your landlord') : flash('No number on file for your landlord'))
+      };
+    })(),
     portalLinked: !!me.unit,
     // "No property yet — go find one" is the wrong screen for somebody whose landlord
     // is already being asked about them. Split into three states rather than two: not
@@ -4628,7 +4701,7 @@ export function AppProvider({ children }) {
     try {
       // Payments come along too: "has this tenant ever paid" is what unlocks the
       // agreement, and it is the same call the payment history will read.
-      const [meRes, reqRes, payRes, joinRes, pulseRes] = await Promise.all([
+      const [meRes, reqRes, payRes, joinRes, docRes, pulseRes] = await Promise.all([
         apiPortal.me(),
         apiPortal.requests().catch(() => ({ requests: [] })),
         apiPortal.payments().catch(() => ({ payments: [] })),
@@ -4638,12 +4711,31 @@ export function AppProvider({ children }) {
         // them right now. Swallowed on failure like the rest: an older server has the
         // endpoint, but a failure here must not cost them their rent card.
         apiPortal.joinRequests().catch(() => ({ requests: [] })),
+        // Their documents, and — the reason it is fetched HERE rather than only when
+        // the documents screen opens — any landlord request for one. The prompt belongs
+        // on the home screen, and a tenant who never taps Documents is exactly the
+        // tenant being asked. Costs one query per refresh and pre-warms that screen.
+        apiPortal.documents().catch(() => null),
         // Same reason as the owner side: keep the stamp level with the data.
         apiPortal.pulse().catch(() => null)
       ]);
       if (pulseRes && pulseRes.stamp) pulseRef.current.stamp = pulseRes.stamp;
+      const now = new Date();
       setState({
         tdata: { me: meRes, requests: reqRes.requests || [], payments: payRes.payments || [], joins: joinRes.requests || [] },
+        // Only when the call actually succeeded. Overwriting a loaded list with an
+        // empty one on a failed refresh would blank the documents screen and, worse,
+        // silently drop a prompt the tenant is meant to be seeing.
+        ...(docRes ? {
+          myDocs: {
+            list: (docRes.documents || []).map((d) => mapDocument(d, now)),
+            summary: docRes.summary || null,
+            requests: docRes.requests || [],
+            loading: false,
+            error: '',
+            loaded: true
+          }
+        } : {}),
         dataLoading: false,
         refreshing: false,
         dataError: ''
@@ -5232,6 +5324,15 @@ export function AppProvider({ children }) {
           visibility: res.visibility || 'full',
           visibilityReason: res.visibility_reason || '',
           blurAvailable: res.blur_available !== false,
+          // Whether the landlord may ask for an ID, what the button should say, and the
+          // open ask if there is one. Carried from the server for the same reason as
+          // visibility above: the app deciding for itself when asking is allowed would
+          // be a second copy of the rule, and the two would eventually disagree.
+          //
+          // Absent on an older server, which is what `null` means here — the sheet then
+          // draws no button rather than one that 404s.
+          ask: res.ask || null,
+          asking: false,
           loading: false,
           error: '',
           deciding: 0
@@ -5290,6 +5391,65 @@ export function AppProvider({ children }) {
     }
   }, [setState, flash, loadOwnerData]);
 
+  // ── Asking a tenant for an ID ───────────────────────────────────────────────
+  // Reloads the sheet from the server afterwards rather than patching state by hand.
+  // The ask state is a server decision (allowed, label, the open request), and a
+  // locally-guessed version of it would be a second copy of the rule that drifts.
+  const requestId = useCallback(async (docType) => {
+    const d = stateRef.current.docs;
+    // `key` is "tenant:<id>" — an applicant sheet has no tenancy to ask against, and
+    // the button is not drawn there. Guarded anyway: a stale sheet must not POST to a
+    // route built from the wrong id.
+    const [kind, id] = String(d.key || '').split(':');
+    if (kind !== 'tenant' || !id) return;
+    if (d.asking) return;
+    setState({ docs: { ...d, asking: true, error: '' } });
+    try {
+      const res = await apiOwner.requestId(id, docType ? { doc_type: docType } : {});
+      flash(res.message || 'Asked for their ID');
+      await loadDocs('tenant', id);
+    } catch (e) {
+      if (stateRef.current.docs.key !== d.key) return;
+      setState({
+        docs: {
+          ...stateRef.current.docs,
+          asking: false,
+          // notDeployed covers the app-newer-than-server case, which is the ordinary
+          // state of things for the first few minutes after an OTA: a 404 with no JSON
+          // message would otherwise surface as "could not ask", which sends the
+          // landlord to try again forever.
+          error: notDeployed(e)
+            ? 'Your landlord app is ahead of the server. Try again in a few minutes.'
+            : errText(e, 'Could not send the request. Please try again.')
+        }
+      });
+    }
+  }, [setState, flash, loadDocs]);
+
+  // Withdrawing it — the only way to stop a prompt on somebody's home screen after
+  // asking by mistake, or after getting the document another way.
+  const cancelIdRequest = useCallback(async () => {
+    const d = stateRef.current.docs;
+    const [kind, id] = String(d.key || '').split(':');
+    if (kind !== 'tenant' || !id) return;
+    if (d.asking) return;
+    setState({ docs: { ...d, asking: true, error: '' } });
+    try {
+      const res = await apiOwner.cancelIdRequest(id);
+      flash(res.message || 'Request withdrawn');
+      await loadDocs('tenant', id);
+    } catch (e) {
+      if (stateRef.current.docs.key !== d.key) return;
+      setState({
+        docs: {
+          ...stateRef.current.docs,
+          asking: false,
+          error: errText(e, 'Could not withdraw the request.')
+        }
+      });
+    }
+  }, [setState, flash, loadDocs]);
+
   // ── The tenant's own documents ─────────────────────────────────────────────
   const loadMyDocs = useCallback(async () => {
     setState({ myDocs: { ...stateRef.current.myDocs, loading: true, error: '' } });
@@ -5300,6 +5460,10 @@ export function AppProvider({ children }) {
         myDocs: {
           list: (res.documents || []).map((d) => mapDocument(d, now)),
           summary: res.summary || null,
+          // Who has asked them for an ID. Carried on every write as well as the read,
+          // because each of these changes the answer: an upload closes an ask, and
+          // deleting that upload opens it again.
+          requests: res.requests || [],
           loading: false,
           error: '',
           loaded: true
@@ -5345,6 +5509,10 @@ export function AppProvider({ children }) {
         myDocs: {
           list: (res.documents || []).map((d) => mapDocument(d, now)),
           summary: res.summary || null,
+          // Who has asked them for an ID. Carried on every write as well as the read,
+          // because each of these changes the answer: an upload closes an ask, and
+          // deleting that upload opens it again.
+          requests: res.requests || [],
           loading: false,
           error: '',
           loaded: true
@@ -5370,6 +5538,10 @@ export function AppProvider({ children }) {
         myDocs: {
           list: (res.documents || []).map((d) => mapDocument(d, now)),
           summary: res.summary || null,
+          // Who has asked them for an ID. Carried on every write as well as the read,
+          // because each of these changes the answer: an upload closes an ask, and
+          // deleting that upload opens it again.
+          requests: res.requests || [],
           loading: false,
           error: '',
           loaded: true
@@ -6204,6 +6376,7 @@ export function AppProvider({ children }) {
       pickPhotoFor, createProperty, saveProperty, deleteProperty, createUnit, createTenantRecord, goBackOneStep,
       decideJoin, decidePayment, requestToJoin, holdJoinCode, askPermission, finishPermits,
       loadDocs, decideDoc, loadMyDocs, pickDocPhoto, addMyDoc, removeMyDoc,
+      requestId, cancelIdRequest,
       lookupProperty, scanQrFromImage, resetDemo, openUpiPayment, declareMyPayment,
       startGoogleSignIn, finishGoogleSignUp, cancelGoogleSignIn,
       openLeave, confirmLeave, withdrawLeave,
@@ -6218,6 +6391,7 @@ export function AppProvider({ children }) {
       pickPhotoFor, createProperty, saveProperty, deleteProperty, createUnit, createTenantRecord, goBackOneStep,
       decideJoin, decidePayment, requestToJoin, holdJoinCode, askPermission, finishPermits,
       loadDocs, decideDoc, loadMyDocs, pickDocPhoto, addMyDoc, removeMyDoc,
+      requestId, cancelIdRequest,
       lookupProperty, scanQrFromImage, resetDemo, openUpiPayment, declareMyPayment,
       startGoogleSignIn, finishGoogleSignUp, cancelGoogleSignIn,
       openLeave, confirmLeave, withdrawLeave,

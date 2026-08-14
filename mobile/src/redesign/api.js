@@ -96,6 +96,11 @@ export const owner = {
     // see one: for somebody already their tenant, and for a stranger asking to be.
     tenantDocuments: (tenantId) => body(http.get(`/owner/tenants/${tenantId}/documents`)),
     applicantDocuments: (joinId) => body(http.get(`/owner/join-requests/${joinId}/documents`)),
+    // Ask for an ID that is not there yet, and withdraw the ask. Scoped by tenant
+    // rather than by portal account: the landlord is asking a person, and one they
+    // typed in by hand can be asked before they have ever opened the app.
+    requestId: (tenantId, payload) => body(http.post(`/owner/tenants/${tenantId}/id-request`, payload || {})),
+    cancelIdRequest: (tenantId) => body(http.delete(`/owner/tenants/${tenantId}/id-request`)),
     decideDocument: (id, decision, note) => body(
         http.put(`/owner/documents/${id}`, { decision, ...(note ? { note } : {}) })
     ),

@@ -45,6 +45,62 @@ export default function PortalHomeScreen() {
                 </Press>
             </Row>
 
+            {/* A landlord has asked for an ID. Above everything else, because it is the
+                only thing on this screen somebody else is waiting on.
+
+                It names the person and carries their number on purpose: an unexplained
+                demand for a government ID, from an app, is exactly the shape of a scam,
+                and the tenant needs to be able to ring and check before photographing
+                anything. */}
+            {vm.idAsk && (
+                <View
+                    style={{
+                        padding: 18,
+                        borderRadius: 22,
+                        backgroundColor: t.ink2,
+                        borderWidth: 1,
+                        borderColor: t.accent,
+                        marginBottom: 8
+                    }}
+                >
+                    <Row gap={11}>
+                        <IconChip name="shield-outline" box={40} radius={13} size={19} bg={t.vsoft} color={t.accent} />
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                            <T w={600} s={14.5} lh={1.25} c={t.fg}>{vm.idAsk.title}</T>
+                            {vm.idAsk.more ? (
+                                <T mono w={600} s={9} lh={1.4} ls={0.08} c={t.fg3} style={{ marginTop: 4 }}>{vm.idAsk.more}</T>
+                            ) : null}
+                        </View>
+                    </Row>
+                    <T w={400} s={13} lh={1.5} c={t.fg2} style={{ marginTop: 12 }}>{vm.idAsk.line}</T>
+                    {vm.idAsk.hasNote ? (
+                        <T w={400} s={12.5} lh={1.5} c={t.fg2} style={{ marginTop: 7 }}>{`“${vm.idAsk.note}”`}</T>
+                    ) : null}
+                    {vm.idAsk.verifyLine ? (
+                        <T w={400} s={11.5} lh={1.45} c={t.fg3} style={{ marginTop: 9 }}>{vm.idAsk.verifyLine}</T>
+                    ) : null}
+                    <Row gap={7} style={{ marginTop: 13 }}>
+                        {vm.idAsk.hasPhone ? (
+                            <Press
+                                onPress={vm.idAsk.call}
+                                style={{ flexDirection: 'row', alignItems: 'center', columnGap: 6, paddingVertical: 12, paddingHorizontal: 14, borderRadius: 13, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line }}
+                            >
+                                <Glyph name="call" size={14} color={t.pos} />
+                                <T w={600} s={12} c={t.fg}>Call</T>
+                            </Press>
+                        ) : null}
+                        {/* A prompt that only tells you off is the version people learn
+                            to ignore, so this goes straight to the upload form. */}
+                        <Press
+                            onPress={vm.idAsk.go}
+                            style={{ flex: 1, alignItems: 'center', paddingVertical: 12, borderRadius: 13, backgroundColor: t.lime }}
+                        >
+                            <T w={700} s={12.5} c={t.on}>Upload my ID</T>
+                        </Press>
+                    </Row>
+                </View>
+            )}
+
             {/* Waiting on a landlord to confirm. Distinct from the empty state below:
                 telling somebody to go find a property, while their landlord is being
                 asked about them right now, sends them to raise a second request. */}

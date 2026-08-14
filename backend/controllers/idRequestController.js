@@ -215,9 +215,35 @@ const closeRequestsFor = async (tenantUserId, doc) => {
     }
 };
 
+// Re-open an ask whose answering document has been deleted.
+//
+// Without this, a tenant who uploads and then withdraws leaves the request marked
+// Fulfilled with nothing behind it: the landlord sees no document AND no open ask, so
+// nothing tells them to look again. Keeping document_id on the row is what makes this
+// answerable, and this is the thing that was supposed to use it.
+//
+// Only rows this exact document closed are reopened — a request closed by some other
+// upload is not affected by this one going away.
+const reopenRequestsFor = async (documentId) => {
+    if (!documentId) return 0;
+    try {
+        const [r] = await db.query(
+            "UPDATE document_requests SET status = 'Pending', closed_at = NULL, document_id = NULL WHERE document_id = ? AND status = 'Fulfilled'",
+            [documentId]
+        );
+        return r.affectedRows || 0;
+    } catch (err) {
+        // Same reasoning as closing: the delete itself succeeded, and losing it over a
+        // bookkeeping update would be the worse outcome.
+        console.error('reopenRequestsFor failed (the delete itself was applied):', err.message);
+        return 0;
+    }
+};
+
 module.exports = {
     createIdRequest,
     cancelIdRequest,
+    reopenRequestsFor,
     askStateFor,
     promptsForAccount,
     closeRequestsFor,

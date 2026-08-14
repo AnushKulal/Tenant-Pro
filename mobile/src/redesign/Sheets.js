@@ -1133,6 +1133,48 @@ export default function Sheets() {
                             </View>
                         ) : null}
 
+                        {/* Asking for one. Sits directly under the empty state, because
+                            "no ID on file" and "ask them for it" are the same thought —
+                            and until now the first was a dead end. */}
+                        {vm.docs.ask && vm.docs.ask.show ? (
+                            <View style={{ marginBottom: 14 }}>
+                                {vm.docs.ask.pending ? (
+                                    <View style={{ padding: 13, borderRadius: 16, backgroundColor: t.asoft, borderWidth: 1, borderColor: t.amber }}>
+                                        <Row gap={9}>
+                                            <Glyph name="hourglass-outline" size={16} color={t.amber} />
+                                            <T w={600} s={12.5} lh={1.4} c={t.fg} style={{ flex: 1 }}>{vm.docs.ask.pendingLine}</T>
+                                        </Row>
+                                        {/* The only way to stop a prompt on somebody's
+                                            home screen after asking by mistake. */}
+                                        <Press
+                                            onPress={vm.docs.ask.canWithdraw ? vm.docs.ask.withdraw : undefined}
+                                            style={{ marginTop: 11, paddingVertical: 10, borderRadius: 12, backgroundColor: t.ink2, borderWidth: 1, borderColor: t.line, alignItems: 'center', opacity: vm.docs.ask.canWithdraw ? 1 : 0.5 }}
+                                        >
+                                            <T w={600} s={12} c={t.fg2}>{vm.docs.ask.busy ? 'Withdrawing…' : 'Withdraw request'}</T>
+                                        </Press>
+                                    </View>
+                                ) : (
+                                    <>
+                                        <Press
+                                            onPress={vm.docs.ask.can ? vm.docs.ask.go : undefined}
+                                            style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', columnGap: 8, paddingVertical: 13, borderRadius: 14, backgroundColor: vm.docs.ask.can ? t.lime : t.ink3, borderWidth: 1, borderColor: vm.docs.ask.can ? t.lime : t.line, opacity: vm.docs.ask.busy ? 0.6 : 1 }}
+                                        >
+                                            <Glyph name="shield-outline" size={15} color={vm.docs.ask.can ? t.on : t.fg3} />
+                                            <T w={700} s={12.5} c={vm.docs.ask.can ? t.on : t.fg3}>
+                                                {vm.docs.ask.busy ? 'Sending…' : vm.docs.ask.label}
+                                            </T>
+                                        </Press>
+                                        {/* "Nobody will see this yet" has to be said before
+                                            the tap, not after — a landlord who believes a
+                                            notification went out stops chasing. */}
+                                        {vm.docs.ask.hasNote ? (
+                                            <T w={400} s={11.5} lh={1.45} c={t.fg3} style={{ marginTop: 7, textAlign: 'center' }}>{vm.docs.ask.note}</T>
+                                        ) : null}
+                                    </>
+                                )}
+                            </View>
+                        ) : null}
+
                         <View style={{ rowGap: 8, marginBottom: 14 }}>
                             {vm.docs.rows.map((d) => (
                                 <View

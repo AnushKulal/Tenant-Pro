@@ -27,7 +27,7 @@ const { Readable } = require('stream');
 // One-way: idRequestController requires nothing from this file, which is why it keeps
 // its own copy of the document labels rather than importing DOC_TYPES below. A test
 // pins the two lists together so they cannot drift apart in silence.
-const { askStateFor, promptsForAccount, closeRequestsFor } = require('./idRequestController');
+const { askStateFor, promptsForAccount, closeRequestsFor, reopenRequestsFor } = require('./idRequestController');
 
 // ── Serving a blurred ID without disclosing where the original lives ───────────
 //
@@ -259,8 +259,23 @@ const deleteMyDocument = async (req, res) => {
         }
 
         await db.query('DELETE FROM tenant_documents WHERE id = ?', [req.params.id]);
+        // If this document was what answered a landlord's request, that request is open
+        // again. Otherwise it stays marked Fulfilled with nothing behind it — the
+        // landlord sees no document AND no outstanding ask, so nothing tells them to
+        // look again, and the tenant is never prompted either.
+        const reopened = await reopenRequestsFor(Number(req.params.id));
+
         const documents = await fetchDocuments(req.user.id);
-        res.status(200).json({ message: 'Document removed.', documents, summary: summarise(documents) });
+        res.status(200).json({
+            // Said plainly, because withdrawing an ID quietly puts a prompt back on
+            // their own home screen and they should not have to work that out.
+            message: reopened
+                ? "Document removed. Your landlord's request is open again."
+                : 'Document removed.',
+            documents,
+            summary: summarise(documents),
+            requests: await promptsForAccount(req.user.id)
+        });
     } catch (error) {
         console.error('Error deleting tenant document:', error);
         res.status(500).json({ message: 'Server error while removing the document.' });
