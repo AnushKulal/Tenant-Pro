@@ -179,7 +179,8 @@ const sendTo = async ({ role, accountId, kind, data = {} }) => {
         }
         // The audience check. See the header — this is the one that stops a landlord's
         // message reaching a tenant when a caller passes the wrong id.
-        if (msg.audience !== role) {
+        // 'any' is the test message and nothing else — see pushRules' AUDIENCE.
+        if (msg.audience !== 'any' && msg.audience !== role) {
             console.error(`push: "${kind}" is for ${msg.audience}, refused for ${role}`);
             return { sent: 0, reason: 'WRONG_AUDIENCE' };
         }
@@ -227,4 +228,30 @@ const notify = (args) => {
     }).catch(() => {});
 };
 
-module.exports = { registerToken, forgetToken, sendTo, notify, pushMode, tokensFor, sweepOrphanTokens };
+// Notify the person living in a tenancy, whoever that turns out to be signed in as.
+//
+// A `tenants` row is a PLACE — a person in a room — while a push goes to an ACCOUNT.
+// The two are not one-to-one: usually one account, occasionally two when somebody
+// registered twice and the landlord linked both, and none at all for a tenant the
+// landlord typed in who has never installed the app. Every tenant-facing call site has
+// the tenancy id to hand and none of them should have to know that, so the fan-out
+// lives here rather than being copied five times.
+//
+// Zero accounts is silence, not an error. There is genuinely nowhere to send, and the
+// thing being announced is on their screen the next time they open it.
+//
+// Fire-and-forget like `notify`: never awaited, never throws.
+const notifyTenancy = ({ tenantId, kind, data = {} }) => {
+    if (!tenantId) return;
+    db.query('SELECT id FROM tenant_users WHERE tenant_id = ?', [tenantId])
+        .then(([accounts]) => {
+            for (const a of accounts) notify({ role: 'tenant', accountId: a.id, kind, data });
+        })
+        .catch((err) => {
+            console.error(`push: could not resolve accounts for tenancy ${tenantId} -`, err.message);
+        });
+};
+
+module.exports = {
+    registerToken, forgetToken, sendTo, notify, notifyTenancy, pushMode, tokensFor, sweepOrphanTokens
+};

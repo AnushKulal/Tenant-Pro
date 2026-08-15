@@ -7,6 +7,7 @@
 // Auth: these handlers hang off the owner router, so `protect` has already put
 // req.user on the request and every query is scoped by req.user.id as owner_id.
 const db = require('../config/db');
+const { notifyTenancy } = require('../services/pushService');
 
 // The statuses the schema's enum accepts. Anything else is rejected rather than
 // handed to MySQL, which would either truncate it to '' or error out depending on
@@ -229,6 +230,29 @@ const createMessage = async (req, res) => {
         }
 
         const item = await insertMessage(req.params.id, 'owner', text);
+
+        // The reply lands in a thread the tenant has to go and open. The commonest
+        // reply is a question — "which tap is it?", "is anyone home Thursday?" — and a
+        // question nobody sees is a repair that stalls with both sides believing they
+        // are waiting on the other. Fire-and-forget: the message is already stored.
+        db.query(
+            `SELECT r.tenant_id, r.title, o.name AS landlord_name
+               FROM maintenance_requests r
+               LEFT JOIN owners o ON r.owner_id = o.id
+              WHERE r.id = ?`,
+            [req.params.id]
+        ).then(([rows]) => {
+            if (!rows.length) return;
+            notifyTenancy({
+                tenantId: rows[0].tenant_id,
+                kind: 'ticket_replied',
+                data: {
+                    landlordName: rows[0].landlord_name,
+                    subject: rows[0].title,
+                    id: Number(req.params.id)
+                }
+            });
+        }).catch(() => {});
 
         res.status(201).json({ message: 'Message sent.', item });
     } catch (error) {

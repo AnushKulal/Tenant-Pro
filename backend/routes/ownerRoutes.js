@@ -18,7 +18,7 @@ const {
     decideDocument
 } = require('../controllers/documentController');
 const { createIdRequest, cancelIdRequest } = require('../controllers/idRequestController');
-const { savePushToken, dropPushToken } = require('../controllers/pushController');
+const { savePushToken, dropPushToken, sendTestPush } = require('../controllers/pushController');
 const { getDemoStatus, resetDemo } = require('../controllers/demoController');
 const { protect } = require('../middleware/authMiddleware');
 const upload = require('../middleware/uploadMiddleware');
@@ -76,6 +76,10 @@ router.delete('/tenants/:id/id-request', protect, cancelIdRequest);
 // without having to open the app and look.
 router.post('/push-token', protect, savePushToken);
 router.delete('/push-token', protect, dropPushToken);
+
+// "Did that actually arrive?" — the only way to answer it without staging a real event
+// against a real tenant. Scoped in the controller to the caller and their own tenants.
+router.post('/push-test', protect, sendTestPush);
 
 // --- Demo account ---
 // The demo is a real account that KEEPS whatever a demo does to it, so restoring its

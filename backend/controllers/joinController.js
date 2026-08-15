@@ -12,6 +12,9 @@
 const db = require('../config/db');
 const { parseStayUntil, toSqlDate } = require('../utils/guestStay');
 const { phoneSql } = require('../utils/tenantMatch');
+// Both ends of this flow spend their time waiting on the other one to open a screen:
+// the landlord on an inbox sheet, the applicant on a decision they cannot chase.
+const { notify } = require('../services/pushService');
 
 const JOIN_STATUSES = ['Pending', 'Accepted', 'Rejected'];
 
@@ -338,6 +341,23 @@ const createJoinRequest = async (req, res) => {
             [userId]
         );
 
+        // Tell the landlord, without making the applicant wait for the lookup. Until
+        // this is decided the applicant has no rent, no documents and no portal — they
+        // are a name in a sheet, and nothing in the app tells the landlord to go and
+        // open it.
+        db.query('SELECT name FROM tenant_users WHERE id = ?', [userId])
+            .then(([who]) => notify({
+                role: 'owner',
+                accountId: property.owner_id,
+                kind: 'join_requested',
+                data: {
+                    tenantName: who.length ? who[0].name : null,
+                    property: property.name,
+                    id: result.insertId
+                }
+            }))
+            .catch(() => {});
+
         res.status(201).json({
             message: 'Request sent to the landlord.',
             request: {
@@ -484,6 +504,19 @@ const rejectRequest = async (request) => {
             [request.tenant_user_id]
         );
     }
+
+    // A rejection that is never announced looks exactly like a request nobody has read
+    // yet, so the applicant keeps waiting on a decision that has already gone against
+    // them — and does not go and ask a different landlord. Saying it is the kinder
+    // outcome even though it is the worse news.
+    db.query('SELECT name FROM properties WHERE id = ?', [request.property_id])
+        .then(([p]) => notify({
+            role: 'tenant',
+            accountId: request.tenant_user_id,
+            kind: 'join_rejected',
+            data: { property: p.length ? p[0].name : null, id: request.id }
+        }))
+        .catch(() => {});
 };
 
 // PUT /api/owner/join-requests/:id — accept or reject.
@@ -743,6 +776,22 @@ const acceptRequest = async (res, ownerId, request, unitId, stayUntilRaw = null)
         );
 
         await conn.commit();
+
+        // Sent to the ACCOUNT rather than through the tenancy: the two were joined a
+        // line ago, and the account is the thing that has been waiting. After the
+        // commit, so nothing announces a tenancy that then rolled back.
+        db.query('SELECT name FROM properties WHERE id = ?', [locked[0].property_id])
+            .then(([p]) => notify({
+                role: 'tenant',
+                accountId: account.id,
+                kind: 'join_accepted',
+                data: {
+                    property: p.length ? p[0].name : null,
+                    unit: unit ? unit.unit_number : null,
+                    id: tenantId
+                }
+            }))
+            .catch(() => {});
 
         res.status(200).json({
             message: unit ? `Accepted into room ${unit.unit_number}.` : 'Accepted. Assign a room when you are ready.',

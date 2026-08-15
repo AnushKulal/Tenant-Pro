@@ -28,6 +28,7 @@ const { Readable } = require('stream');
 // its own copy of the document labels rather than importing DOC_TYPES below. A test
 // pins the two lists together so they cannot drift apart in silence.
 const { askStateFor, promptsForAccount, closeRequestsFor, reopenRequestsFor } = require('./idRequestController');
+const { notify } = require('../services/pushService');
 
 // ── Serving a blurred ID without disclosing where the original lives ───────────
 //
@@ -218,6 +219,28 @@ const addMyDocument = async (req, res) => {
         // never by anybody saying it arrived — a landlord able to close their own
         // request could silence the tenant's prompt without receiving anything.
         const closed = await closeRequestsFor(req.user.id, { id: result.insertId, doc_type: docType });
+
+        // Tell the landlord it arrived — but only one who is already entitled to look
+        // at it. The link through `tenants` is the same relationship `ownerMaySee`
+        // checks: an applicant's upload notifies nobody, because at that point no
+        // landlord may open the document and telling one it is there would be an
+        // invitation to a screen that correctly refuses them.
+        //
+        // It also closes the loop on a request they made. Without it the landlord's
+        // prompt simply stops nagging, which reads as the ask expiring rather than
+        // being answered.
+        db.query(
+            'SELECT t.owner_id, t.name FROM tenant_users tu JOIN tenants t ON tu.tenant_id = t.id WHERE tu.id = ?',
+            [req.user.id]
+        ).then(([rows]) => {
+            if (!rows.length || !rows[0].owner_id) return;
+            notify({
+                role: 'owner',
+                accountId: rows[0].owner_id,
+                kind: 'id_uploaded',
+                data: { tenantName: rows[0].name, docLabel: DOC_TYPES[docType], id: result.insertId }
+            });
+        }).catch(() => {});
 
         const documents = await fetchDocuments(req.user.id);
         res.status(201).json({

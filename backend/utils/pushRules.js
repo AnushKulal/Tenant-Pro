@@ -33,7 +33,17 @@ const AUDIENCE = {
     payment_declared: 'owner',
     ticket_raised: 'owner',
     notice_given: 'owner',
-    id_uploaded: 'owner'
+    id_uploaded: 'owner',
+    // ── To whoever asked for it ───────────────────────────────────────────────
+    // The one kind readable by either role, and the only one that will ever be. It
+    // exists to answer "does this phone receive notifications at all", which is a
+    // question about the DEVICE and so has the same answer for both roles.
+    //
+    // 'any' does not weaken the guarantee above, because the guarantee is about
+    // somebody else's information reaching the wrong person and this message has none
+    // to leak: no name, no amount, no property, no id. See COPY.push_test — it is the
+    // same eleven words whoever receives it.
+    push_test: 'any'
 };
 
 // A lock screen shows roughly this much before truncating, and a body that gets cut
@@ -60,6 +70,19 @@ const first = (name, fallback) => {
 const money = (n) => {
     const v = Number(n);
     return Number.isFinite(v) && v > 0 ? `₹${v.toLocaleString('en-IN')}` : null;
+};
+
+// A date as a person says it — "14 Sep" — or null when there isn't one to say.
+//
+// Call sites hold SQL dates, and "Last day 2026-09-14" on a lock screen reads like a
+// log line rather than a message. Parsed rather than trusted: an unparseable value
+// drops the clause instead of printing "Invalid Date", which is the same rule as
+// money() and for the same reason.
+const dayMonth = (d) => {
+    if (!d) return null;
+    const t = d instanceof Date ? d : new Date(String(d).slice(0, 10));
+    if (isNaN(t.getTime())) return null;
+    return `${t.getDate()} ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][t.getMonth()]}`;
 };
 
 // The copy, one place. Each returns { title, body } and may read whatever the caller
@@ -132,11 +155,21 @@ const COPY = {
     }),
     notice_given: (d) => ({
         title: `${first(d.tenantName, 'A tenant')} gave notice`,
-        body: [d.leaveOn && `Last day ${d.leaveOn}`, d.unit && `room ${d.unit}`].filter(Boolean).join(' · ')
+        body: [dayMonth(d.leaveOn) && `Last day ${dayMonth(d.leaveOn)}`, d.unit && `room ${d.unit}`].filter(Boolean).join(' · ')
     }),
     id_uploaded: (d) => ({
         title: `${first(d.tenantName, 'A tenant')} added their ${d.docLabel || 'ID'}`,
         body: 'Tap to check it.'
+    }),
+
+    // Fixed text, ignoring everything the caller passes. That is the point: it is the
+    // only kind either role can receive, and it is safe to send to either precisely
+    // because there is nothing personal in it to get wrong. It also has no entry in
+    // DEST, so tapping it opens the app and leaves the reader where they were rather
+    // than throwing them onto a screen that has nothing to do with why they tapped.
+    push_test: () => ({
+        title: 'TenantPro notifications are on',
+        body: 'This is a test. Real ones tell you about rent, repairs and requests.'
     })
 };
 
