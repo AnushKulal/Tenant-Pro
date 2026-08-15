@@ -80,6 +80,7 @@ const { uploadMode } = require('./middleware/uploadMiddleware');
 // Whether "Continue with Google" can work. Same reasoning as `uploads`: the button
 // either does something or dead-ends, and from the outside those look identical
 // until somebody presses it. Reports only which variables are missing, never a value.
+const { pushMode, sweepOrphanTokens } = require('./services/pushService');
 const { googleConfigured, googleMissing } = require('./config/googleAuth');
 
 // WHICH COMMIT IS ACTUALLY RUNNING.
@@ -158,6 +159,10 @@ app.get('/healthz', async (req, res) => {
             commit: runningCommit(),
             uploads: uploadMode(),
             google: googleConfigured() ? 'ready' : `not-configured (missing ${googleMissing().join(', ')})`,
+            // Whether anybody can actually be REACHED. The 8am rent reminder has been
+            // firing daily into nothing because mail is unconfigured, and there was no
+            // way to see that from outside — which is how it stayed unnoticed.
+            push: await pushMode(),
             time: new Date().toISOString()
         });
     } catch (e) {
@@ -220,6 +225,14 @@ app.listen(PORT, () => {
         await ensureDemoAccount();
     } catch (err) {
         console.error('❌ Demo seed failed:', err.message);
+    }
+    // push_tokens has no foreign key -- it points at one of two account tables -- so
+    // nothing removes a token when its account is deleted. Once on boot is enough;
+    // sends already ignore orphans, this stops them piling up for ever.
+    try {
+        await sweepOrphanTokens();
+    } catch (err) {
+        console.error('push: orphan sweep skipped -', err.message);
     }
     initCronJobs();
 })();

@@ -128,6 +128,37 @@ CREATE TABLE IF NOT EXISTS `document_requests` (
   CONSTRAINT `document_requests_ibfk_2` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+-- 4c. push_tokens
+-- One row per DEVICE, not per person: somebody with a phone and a tablet gets both,
+-- and a tenant who reinstalls gets a new token while the old one lingers until Expo
+-- tells us it is dead.
+--
+-- Not on `owners`/`tenant_users` as a column for the same reason, and not on `units`
+-- where the email/SMS toggles live -- a device belongs to a person, not to a room.
+--
+-- No foreign key, deliberately: the row is keyed by (role, account_id) across TWO
+-- tables, and MySQL cannot express that as one constraint. Nothing else would remove a
+-- token when its account is deleted, so two things do it instead: every send joins back
+-- to the owners/tenant_users row and finds nothing, and a sweep on boot deletes the
+-- leftovers outright. See pushService.tokensFor and sweepOrphanTokens.
+CREATE TABLE IF NOT EXISTS `push_tokens` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `role` enum('owner','tenant') NOT NULL,
+  `account_id` int(11) NOT NULL,
+  -- Expo's own token, e.g. ExponentPushToken[xxxxxxxx]. Unique across everybody:
+  -- reinstalling can hand the same token to a different account on the same handset,
+  -- and two accounts pointing at one device would send somebody else's rent there.
+  `token` varchar(255) NOT NULL,
+  `platform` varchar(16) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  -- Refreshed every time the app registers, so a sweep can drop tokens for handsets
+  -- that have not opened the app in months without waiting for Expo to say so.
+  `last_seen_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `token` (`token`),
+  KEY `account` (`role`, `account_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
 -- 5. leases (-> tenants, units)
 CREATE TABLE IF NOT EXISTS `leases` (
   `id` int(11) NOT NULL AUTO_INCREMENT,

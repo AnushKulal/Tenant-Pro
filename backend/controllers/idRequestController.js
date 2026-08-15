@@ -18,6 +18,7 @@
 
 const db = require('../config/db');
 const { askability, normaliseType, fulfils, prompt } = require('../utils/idRequest');
+const { notify } = require('../services/pushService');
 
 const isTenantToken = (req) => req.user?.role === 'tenant';
 
@@ -118,6 +119,34 @@ const createIdRequest = async (req, res) => {
             'INSERT INTO document_requests (owner_id, tenant_id, doc_type, note) VALUES (?, ?, ?, ?)',
             [ownerId, tenancy.id, docType, note]
         );
+
+        // Tell them. Until now this landed on a screen the tenant had to think to open,
+        // which for a request about their government ID is most of the way to not
+        // asking at all. Fire-and-forget: the request is already saved, and Expo being
+        // slow must not make the landlord's tap feel slow.
+        try {
+            const [devices] = await db.query(
+                'SELECT tu.id FROM tenant_users tu WHERE tu.tenant_id = ?',
+                [tenancy.id]
+            );
+            const [[landlord]] = await db.query('SELECT name FROM owners WHERE id = ?', [ownerId]);
+            for (const d of devices) {
+                notify({
+                    role: 'tenant',
+                    accountId: d.id,
+                    kind: 'id_requested',
+                    data: {
+                        landlordName: landlord ? landlord.name : null,
+                        docLabel: docType ? DOC_LABELS[docType] : null,
+                        id: result.insertId
+                    }
+                });
+            }
+        } catch (err) {
+            // Swallowed deliberately — see pushService's header. The ask exists either
+            // way, and it is on their home screen the next time they look.
+            console.error('idRequest: could not notify -', err.message);
+        }
 
         res.status(201).json({
             // Said differently when nobody can receive it yet, because a landlord told
