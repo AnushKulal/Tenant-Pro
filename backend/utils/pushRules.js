@@ -140,23 +140,32 @@ const COPY = {
     })
 };
 
-// Where tapping it should land. A notification that opens the home screen and leaves
-// somebody hunting is barely better than none — the tap is the whole point.
-const ROUTE = {
-    id_requested: 'tdocs',
-    rent_due: 'portalhome',
-    rent_overdue: 'portalhome',
-    payment_confirmed: 'portalhome',
-    payment_rejected: 'portalhome',
-    join_accepted: 'portalhome',
-    join_rejected: 'portalhome',
-    ticket_replied: 'tsupport',
-    join_requested: 'joins',
-    phone_matched: 'joins',
-    payment_declared: 'declared',
-    ticket_raised: 'support',
-    notice_given: 'people',
-    id_uploaded: 'people'
+// Where tapping it should land — as a ROUTE and, where the destination is a sheet
+// rather than a screen, an OVERLAY over it.
+//
+// Both, explicitly, because the app has two navigation concepts and they are not
+// interchangeable. The landlord's join inbox and payment queue are overlays drawn over
+// the dashboard, not routes; sending 'joins' as a route would set a route that does not
+// exist AND close the overlay it meant to open. Guessing which one a name is would be
+// the same bug with extra steps.
+//
+// A notification that opens nothing is the worst kind of broken here — the person
+// already went to the trouble of responding to it.
+const DEST = {
+    id_requested: { route: 'tdocs' },
+    rent_due: { route: 'portal' },
+    rent_overdue: { route: 'portal' },
+    payment_confirmed: { route: 'portal' },
+    payment_rejected: { route: 'portal' },
+    join_accepted: { route: 'portal' },
+    join_rejected: { route: 'portal' },
+    ticket_replied: { route: 'thelp' },
+    join_requested: { route: 'home', overlay: 'joins' },
+    phone_matched: { route: 'home', overlay: 'joins' },
+    payment_declared: { route: 'home', overlay: 'declared' },
+    ticket_raised: { route: 'support' },
+    notice_given: { route: 'people' },
+    id_uploaded: { route: 'people' }
 };
 
 // Expo's own token shape. Anything else is a client bug or somebody probing the
@@ -182,7 +191,10 @@ const buildPush = (kind, data = {}) => {
         body: body ? clip(body, BODY_MAX) : undefined,
         data: {
             kind,
-            route: ROUTE[kind] || null,
+            route: (DEST[kind] && DEST[kind].route) || null,
+            // Only when there is one. An `overlay: null` in the payload would read to
+            // the app as "close whatever is open", which is a different instruction.
+            ...(DEST[kind] && DEST[kind].overlay ? { overlay: DEST[kind].overlay } : {}),
             // Whatever the screen needs to open the right row. Passed through rather
             // than interpreted here.
             ...(data.id != null ? { id: data.id } : {})
@@ -190,4 +202,4 @@ const buildPush = (kind, data = {}) => {
     };
 };
 
-module.exports = { AUDIENCE, ROUTE, buildPush, isExpoToken, TITLE_MAX, BODY_MAX };
+module.exports = { AUDIENCE, DEST, buildPush, isExpoToken, TITLE_MAX, BODY_MAX };
