@@ -11,7 +11,7 @@ const db = require('../config/db');
 // One transporter, one place to configure, one boot check that covers both.
 const { sendAppMail, isMailConfigured } = require('../config/mailer');
 // When a reminder is due, kept pure and tested rather than expressed as a WHERE clause.
-const { shouldRemind, reminderKind, daysPastDue } = require('../utils/rentReminder');
+const { shouldRemind, reminderKind, daysPastDue, LEAD_DAYS } = require('../utils/rentReminder');
 const { notify } = require('./pushService');
 
 // --- 2. TWILIO SETUP (SMS & WhatsApp) ---
@@ -35,14 +35,14 @@ const checkAndSendRentReminders = async () => {
     console.log("⏰ [CRON] Running daily rent reminder check...");
 
     try {
-        // Everyone whose rent is due TODAY OR EARLIER. It used to be `= CURDATE()`,
-        // which meant a tenant who missed the day was never mentioned again — the
-        // reminder fired once, into a channel that was not configured, and that was
-        // that.
+        // Everyone whose rent is due within the run-up, today, or any time in the past.
+        // It used to be `= CURDATE()` — one morning, once, into a channel that is not
+        // configured — so a tenant who missed the day was never mentioned again.
         //
-        // Nothing before the due date, deliberately, and that is enforced here in SQL as
-        // well as in the schedule below: chasing rent that is not owed yet is not the
-        // app's job.
+        // The window reaches LEAD_DAYS into the future rather than stopping at today,
+        // because the schedule is willing to give notice and a query that only selects
+        // rent already due would silently make that impossible. The two have to agree,
+        // which is why the number is imported rather than written twice.
         //
         // `id` and the tenant's portal account come along now, so a reminder can reach
         // a phone rather than only an inbox.
@@ -60,10 +60,10 @@ const checkAndSendRentReminders = async () => {
             LEFT JOIN payment_settings ps ON t.owner_id = ps.owner_id
             WHERE t.status = 'Active' 
             AND t.next_rent_due IS NOT NULL
-            AND t.next_rent_due <= CURDATE()
+            AND t.next_rent_due <= DATE_ADD(CURDATE(), INTERVAL ? DAY)
         `;
 
-        const [candidates] = await db.query(query);
+        const [candidates] = await db.query(query, [LEAD_DAYS]);
 
         // Which of them actually hear from us this morning. Somebody forty days behind
         // must not be pushed forty times — by day five they have muted the app, and then
@@ -72,7 +72,7 @@ const checkAndSendRentReminders = async () => {
         const dueTenants = candidates.filter((t) => shouldRemind(daysPastDue(t.next_rent_due, now)));
         const held = candidates.length - dueTenants.length;
         if (held > 0) {
-            console.log(`🔕 [CRON] ${held} overdue tenant(s) skipped today by the reminder schedule.`);
+            console.log(`🔕 [CRON] ${held} tenant(s) skipped today by the reminder schedule.`);
         }
 
         if (dueTenants.length === 0) {

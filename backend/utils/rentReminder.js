@@ -3,22 +3,30 @@
 // Which mornings a tenant hears about rent.
 //
 // ── The rule ───────────────────────────────────────────────────────────────────
-// Nothing before the due date. Not "due in three days", not "due tomorrow" — a
-// reminder about money somebody does not owe yet is a nag, and the app has no business
-// chasing rent early on a landlord's behalf.
+// A short run-up, then the day itself, then it keeps asking.
 //
-// From the due date onward it keeps asking, because that is the point. But not every
+// Two days of notice, no more. Enough for somebody paid monthly to move money or
+// notice they are away from their bank; not so early that the reminder is about a bill
+// they cannot act on yet and will have forgotten by the time it lands.
+//
+// From the due date onward it does not stop, because that is the point. But not every
 // morning forever: a tenant forty days behind who has been pushed forty times has
 // turned notifications off by day five, and then nothing reaches them again — including
 // the things that matter more, like a landlord asking for their ID.
 //
-// So it front-loads and then backs off. Day 0, 1, 3, 7, and weekly after that.
+// So it front-loads and then backs off. Days -2, -1, 0, 1, 3, 7, and weekly after that.
 //
 // Pure, because "when does the app message somebody about their debt" is exactly the
 // kind of decision that should be readable and pinned rather than buried in a cron.
 
-// The early days, where a reminder is most likely to be the reason it gets paid.
-const EARLY = [0, 1, 3, 7];
+// How much notice, in days. Exported because the cron's WHERE clause has to look this
+// far ahead too — a schedule that is willing to remind somebody two days early is no
+// use if the query only selects rent that is already due.
+const LEAD_DAYS = 2;
+
+// The days around the due date, where a reminder is most likely to be the reason it
+// gets paid. Negative is before, 0 is the day, positive is late.
+const EARLY = [-2, -1, 0, 1, 3, 7];
 // After that, one a week. Frequent enough to be a real reminder, rare enough that it
 // does not become the thing they mute.
 const WEEKLY_EVERY = 7;
@@ -33,8 +41,10 @@ const shouldRemind = (daysPastDue) => {
     // nobody ever set. Which is the runaway this whole schedule exists to avoid.
     if (typeof daysPastDue !== 'number' || !Number.isFinite(daysPastDue)) return false;
     const d = daysPastDue;
-    // The whole rule in one line: never early.
-    if (d < 0) return false;
+    // Never earlier than the run-up. Without this the weekly arm below would fire on
+    // day -7, -14 and so on — reminding somebody about rent a fortnight before they owe
+    // it, which is how an app teaches people to ignore it.
+    if (d < -LEAD_DAYS) return false;
     if (EARLY.includes(d)) return true;
     // Weekly from then on. Deliberately uncapped — "we stopped mentioning your unpaid
     // rent" is a strange thing for a rent app to do, and the landlord has other ways to
@@ -63,4 +73,4 @@ const daysPastDue = (dueDate, now = new Date()) => {
     return Math.round((today - due) / 86400000);
 };
 
-module.exports = { shouldRemind, reminderKind, daysPastDue, EARLY, WEEKLY_EVERY };
+module.exports = { shouldRemind, reminderKind, daysPastDue, EARLY, WEEKLY_EVERY, LEAD_DAYS };
