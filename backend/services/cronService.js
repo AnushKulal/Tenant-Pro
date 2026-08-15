@@ -10,6 +10,9 @@ const db = require('../config/db');
 // while rent reminders stayed silently broken — two email paths, one configured.
 // One transporter, one place to configure, one boot check that covers both.
 const { sendAppMail, isMailConfigured } = require('../config/mailer');
+// When a reminder is due, kept pure and tested rather than expressed as a WHERE clause.
+const { shouldRemind, reminderKind, daysPastDue } = require('../utils/rentReminder');
+const { notify } = require('./pushService');
 
 // --- 2. TWILIO SETUP (SMS & WhatsApp) ---
 let twilioClient = null;
@@ -32,10 +35,20 @@ const checkAndSendRentReminders = async () => {
     console.log("⏰ [CRON] Running daily rent reminder check...");
 
     try {
-        // Find ALL tenants whose rent is due EXACTLY today.
-        // It also grabs the toggle switches (notify_email, notify_sms, notify_whatsapp) for their unit!
+        // Everyone whose rent is due TODAY OR EARLIER. It used to be `= CURDATE()`,
+        // which meant a tenant who missed the day was never mentioned again — the
+        // reminder fired once, into a channel that was not configured, and that was
+        // that.
+        //
+        // Nothing before the due date, deliberately, and that is enforced here in SQL as
+        // well as in the schedule below: chasing rent that is not owed yet is not the
+        // app's job.
+        //
+        // `id` and the tenant's portal account come along now, so a reminder can reach
+        // a phone rather than only an inbox.
         const query = `
             SELECT 
+                t.id AS tenant_id,
                 t.name as tenant_name, t.email as tenant_email, t.phone as tenant_phone, 
                 t.rent_share, t.next_rent_due,
                 u.unit_number, u.notify_email, u.notify_sms, u.notify_whatsapp,
@@ -46,21 +59,71 @@ const checkAndSendRentReminders = async () => {
             JOIN properties p ON u.property_id = p.id
             LEFT JOIN payment_settings ps ON t.owner_id = ps.owner_id
             WHERE t.status = 'Active' 
-            AND t.next_rent_due = CURDATE()
+            AND t.next_rent_due IS NOT NULL
+            AND t.next_rent_due <= CURDATE()
         `;
 
-        const [dueTenants] = await db.query(query);
+        const [candidates] = await db.query(query);
+
+        // Which of them actually hear from us this morning. Somebody forty days behind
+        // must not be pushed forty times — by day five they have muted the app, and then
+        // nothing reaches them again, including the things that matter more.
+        const now = new Date();
+        const dueTenants = candidates.filter((t) => shouldRemind(daysPastDue(t.next_rent_due, now)));
+        const held = candidates.length - dueTenants.length;
+        if (held > 0) {
+            console.log(`🔕 [CRON] ${held} overdue tenant(s) skipped today by the reminder schedule.`);
+        }
 
         if (dueTenants.length === 0) {
-            console.log("✅ [CRON] No rent due today. Sleeping.");
+            console.log("✅ [CRON] Nobody to remind today. Sleeping.");
             return;
         }
 
-        console.log(`🔔 [CRON] Found ${dueTenants.length} tenants due today. Processing...`);
+        console.log(`🔔 [CRON] Reminding ${dueTenants.length} tenant(s). Processing...`);
 
         // LOOP through EVERY tenant who owes money today
         for (const tenant of dueTenants) {
             
+            // ==============================================
+            // 🔔 0. PUSH (the only channel that needs no account with anybody)
+            // ==============================================
+            // First, and unconditional, because it is the one that actually works right
+            // now: email needs SMTP credentials and SMS needs Twilio, and this server
+            // has neither — which is why this cron has been composing messages every
+            // morning and delivering none of them.
+            //
+            // No per-unit toggle, because those three switches live on `units` and
+            // describe a room. A push goes to a device belonging to a person; somebody
+            // who does not want them turns them off in the OS, which is the control they
+            // already understand.
+            try {
+                const past = daysPastDue(tenant.next_rent_due, now);
+                const [accounts] = await db.query(
+                    'SELECT id FROM tenant_users WHERE tenant_id = ?',
+                    [tenant.tenant_id]
+                );
+                for (const a of accounts) {
+                    notify({
+                        role: 'tenant',
+                        accountId: a.id,
+                        kind: reminderKind(past),
+                        data: {
+                            // reminderKind picks the wording; both read `days`, but one
+                            // counts down to nothing and the other counts up.
+                            days: Math.abs(past),
+                            amount: tenant.rent_share,
+                            property: tenant.property_name,
+                            unit: tenant.unit_number
+                        }
+                    });
+                }
+            } catch (err) {
+                // A reminder that could not be pushed must not stop the email and SMS
+                // below from going out to the same person.
+                console.error(`❌ Push reminder failed for ${tenant.tenant_name}:`, err.message);
+            }
+
             const amountStr = `₹${tenant.rent_share}`;
             const qrLink = tenant.qr_code_url ? `${process.env.BASE_URL}${tenant.qr_code_url}` : 'No QR Provided';
             const formattedPhone = formatPhone(tenant.tenant_phone);
