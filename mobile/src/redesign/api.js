@@ -100,6 +100,10 @@ export const owner = {
     // rather than by portal account: the landlord is asking a person, and one they
     // typed in by hand can be asked before they have ever opened the app.
     requestId: (tenantId, payload) => body(http.post(`/owner/tenants/${tenantId}/id-request`, payload || {})),
+    // This device, so a join request or a declared payment reaches the landlord without
+    // them having to open the app and look.
+    savePushToken: (payload) => body(http.post('/owner/push-token', payload)),
+    dropPushToken: (token) => body(http.delete('/owner/push-token', { data: { token } })),
     cancelIdRequest: (tenantId) => body(http.delete(`/owner/tenants/${tenantId}/id-request`)),
     decideDocument: (id, decision, note) => body(
         http.put(`/owner/documents/${id}`, { decision, ...(note ? { note } : {}) })
@@ -196,6 +200,10 @@ export const portal = {
     // code only — there is no browse-all endpoint, by design.
     lookupProperty: (code) => body(http.get('/tenant-portal/property-lookup', { params: { code } })),
     joinRequests: () => body(http.get('/tenant-portal/join-requests')),
+    // Registered above the live-stay guard on the server, because the notification a
+    // new tenant most needs — "you're in" — fires while they have no tenancy yet.
+    savePushToken: (payload) => body(http.post('/tenant-portal/push-token', payload)),
+    dropPushToken: (token) => body(http.delete('/tenant-portal/push-token', { data: { token } })),
     requestJoin: (payload) => body(http.post('/tenant-portal/join-requests', payload)),
     // The tenant's own ID proofs. `addDocument` always carries a file, so it is
     // always multipart.

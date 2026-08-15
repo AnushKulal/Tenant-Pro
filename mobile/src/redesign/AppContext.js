@@ -11,7 +11,7 @@
 import React, {
   createContext, useCallback, useContext, useEffect, useMemo, useRef, useState
 } from 'react';
-import { Appearance, AppState, Linking } from 'react-native';
+import { Appearance, AppState, Linking, Platform } from 'react-native';
 import {
   PRIORITY, MOVE_IN, MONTH_LABELS, creditOf, SEED
 } from './data';
@@ -24,6 +24,7 @@ import { mapOwnerData, mapPortalRequest, mapDocument, mapMyPlace } from './mappi
 import { hasPin, roundCoord, DEFAULT_CENTER, openDirections, MIN_ZOOM, MAX_ZOOM } from './maps';
 import { upiUri } from './qr';
 import { readBuild } from './buildinfo';
+import { getPushToken, onNotificationTap, setForegroundBehaviour } from './push';
 import {
   loadSession, saveOwnerSession, saveTenantSession, clearSession,
   hasOnboarded, setOnboarded, hasSeenPermits, setPermitsSeen
@@ -6365,7 +6366,42 @@ export function AppProvider({ children }) {
   }, [setState, flash, requestToJoin]);
 
 
+  // ── Push notifications ──────────────────────────────────────────────────────
+  // Held in a ref rather than state: nothing renders from it, and it has to survive
+  // the state reset sign-out performs so the token can still be handed back.
+  const pushRef = useRef(null);
+
+  // Register this device against whoever just signed in.
+  //
+  // Silent throughout. A build without the native module returns no token, somebody who
+  // declined notifications returns no token, and neither is worth telling anybody about
+  // — least of all with a toast on the screen they have just signed in to.
+  const registerForPush = useCallback(async (role) => {
+    try {
+      const token = await getPushToken();
+      if (!token) return;
+      const bind = role === 'tenant' ? apiPortal : apiOwner;
+      await bind.savePushToken({ token, platform: Platform.OS });
+      pushRef.current = token;
+    } catch (e) {
+      // An unreachable server on the one call that is pure courtesy must not make
+      // signing in feel broken.
+    }
+  }, []);
+
   const signOut = useCallback(async () => {
+    // Forget the device FIRST, while the token still authenticates. After the reset
+    // below there is nothing to authorise the call with, and the next person to sign in
+    // on this handset would keep receiving the last person's notifications.
+    try {
+      const token = pushRef.current;
+      if (token) {
+        const bind = stateRef.current.role === 'tenant' ? apiPortal : apiOwner;
+        await bind.dropPushToken(token);
+      }
+    } catch (e) { /* signing out must never fail on this */ }
+    pushRef.current = null;
+
     try { await clearSession(); } catch (e) { /* clearing is best-effort */ }
     setToken(null);
     setState({ ...INITIAL_STATE, route: 'role', session: null, data: SEED, live: false, theme: stateRef.current.theme });
@@ -6373,6 +6409,37 @@ export function AppProvider({ children }) {
 
   // Resolve the stored session once, on mount.
   useEffect(() => { resolveSession(); }, [resolveSession]);
+
+  // Register this device whenever a session appears — whatever route created it:
+  // password login, Google, a fresh registration, a guest claiming their account, or a
+  // stored session restored on launch. ONE effect rather than a call at each of those
+  // five sites, so a sixth way in cannot quietly forget to do it.
+  //
+  // Keyed on role AND token, so a re-login on the same handset refreshes the row rather
+  // than leaving it pointed at whoever was signed in before.
+  const sessionKey = state.session && state.session.role
+    ? `${state.session.role}:${state.session.token || ''}`
+    : null;
+  useEffect(() => {
+    if (!sessionKey) return;
+    registerForPush(sessionKey.split(':')[0]);
+  }, [sessionKey, registerForPush]);
+
+  // A tapped notification should land on the thing it was about. `route` comes from the
+  // server (backend/utils/pushRules), so the two ends cannot disagree about where a
+  // given kind goes — and a route we do not recognise is ignored rather than guessed
+  // at, because a wrong screen is more confusing than the one they were already on.
+  useEffect(() => {
+    setForegroundBehaviour();
+    return onNotificationTap((data) => {
+      if (!data || !data.route) return;
+      // Route AND overlay, because the destination can be either. The landlord's join
+      // inbox and payment queue are sheets over the dashboard, not screens — setting a
+      // route of 'joins' would name a route that does not exist and close the sheet it
+      // meant to open. The server sends both; the app does not have to guess which.
+      setState({ route: data.route, overlay: data.overlay || null });
+    });
+  }, [setState]);
 
   const api = useMemo(
     () => ({

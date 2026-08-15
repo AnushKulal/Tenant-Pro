@@ -7,7 +7,9 @@
     "orientation": "portrait",
     "icon": "./assets/icon-tp.png",
     "userInterfaceStyle": "automatic",
-    "runtimeVersion": { "policy": "appVersion" },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
     "updates": {
       "enabled": true,
       "url": "https://u.expo.dev/3b258101-bef2-412f-8be0-53af8b224dfb",
@@ -47,16 +49,22 @@
           "locationWhenInUsePermission": "TenantPro uses your location only while you are placing a property on the map, so the pin can start where you are standing.",
           "isAndroidBackgroundLocationEnabled": false
         }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#C8F751"
+        }
       ]
     ],
     "extra": {
       "eas": {
         "projectId": "3b258101-bef2-412f-8be0-53af8b224dfb"
       },
-      "whatsNew": "Add glass design system: theme tokens, UI kit, navigation flow helpers\nFix OTA pointing app at dead LAN IP — use hosted backend\nFail fast when DB is down + add back button to role login screens\nFix login instability and add guest login + auto-OTA\nShow a 'What's new' changelog in the in-app update popup\nTenant portal Phase 1: role selection + tenant accounts",
+      "whatsNew": "Add glass design system: theme tokens, UI kit, navigation flow helpers\nFix OTA pointing app at dead LAN IP \u2014 use hosted backend\nFail fast when DB is down + add back button to role login screens\nFix login instability and add guest login + auto-OTA\nShow a 'What's new' changelog in the in-app update popup\nTenant portal Phase 1: role selection + tenant accounts",
       "releaseNotes": [
         "Add glass design system: theme tokens, UI kit, navigation flow helpers",
-        "Fix OTA pointing app at dead LAN IP — use hosted backend",
+        "Fix OTA pointing app at dead LAN IP \u2014 use hosted backend",
         "Fail fast when DB is down + add back button to role login screens",
         "Fix login instability and add guest login + auto-OTA",
         "Show a 'What's new' changelog in the in-app update popup",
