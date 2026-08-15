@@ -104,6 +104,10 @@ export const owner = {
     // them having to open the app and look.
     savePushToken: (payload) => body(http.post('/owner/push-token', payload)),
     dropPushToken: (token) => body(http.delete('/owner/push-token', { data: { token } })),
+    // "Did that actually arrive?" — with no number it goes to this landlord's own
+    // devices; with one it may reach them or one of their own tenants, and nobody else.
+    // The server decides that, not the app.
+    testPush: (phone) => body(http.post('/owner/push-test', phone ? { phone } : {})),
     cancelIdRequest: (tenantId) => body(http.delete(`/owner/tenants/${tenantId}/id-request`)),
     decideDocument: (id, decision, note) => body(
         http.put(`/owner/documents/${id}`, { decision, ...(note ? { note } : {}) })
@@ -204,6 +208,9 @@ export const portal = {
     // new tenant most needs — "you're in" — fires while they have no tenancy yet.
     savePushToken: (payload) => body(http.post('/tenant-portal/push-token', payload)),
     dropPushToken: (token) => body(http.delete('/tenant-portal/push-token', { data: { token } })),
+    // A tenant's test can only ever reach their own devices — the server ignores any
+    // number they send, which is why this takes none.
+    testPush: () => body(http.post('/tenant-portal/push-test', {})),
     requestJoin: (payload) => body(http.post('/tenant-portal/join-requests', payload)),
     // The tenant's own ID proofs. `addDocument` always carries a file, so it is
     // always multipart.

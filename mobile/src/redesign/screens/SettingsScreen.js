@@ -3,6 +3,7 @@ import { View, ScrollView } from 'react-native';
 import { useVm } from '../AppContext';
 import { useT } from '../ThemeContext';
 import { T, Eyebrow, Row, Press, Glyph, Face, Avatar } from '../ui';
+import PushTestCard from '../PushTestCard';
 
 export default function SettingsScreen() {
   const vm = useVm();
@@ -73,6 +74,10 @@ export default function SettingsScreen() {
           </Press>
         ))}
       </View>
+
+      {/* Checking that a notification actually arrives. Temporary by intent — see the
+          card — and above the demo block because it applies to every landlord. */}
+      <PushTestCard pt={vm.pushTest} />
 
       {/* Demo account — rendered only when the SERVER says this is the demo, so a
           real landlord is never shown a control that deletes their data. */}

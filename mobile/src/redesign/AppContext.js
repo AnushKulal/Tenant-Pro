@@ -24,7 +24,7 @@ import { mapOwnerData, mapPortalRequest, mapDocument, mapMyPlace } from './mappi
 import { hasPin, roundCoord, DEFAULT_CENTER, openDirections, MIN_ZOOM, MAX_ZOOM } from './maps';
 import { upiUri } from './qr';
 import { readBuild } from './buildinfo';
-import { getPushToken, onNotificationTap, setForegroundBehaviour } from './push';
+import { resolvePushToken, onNotificationTap, setForegroundBehaviour } from './push';
 import {
   loadSession, saveOwnerSession, saveTenantSession, clearSession,
   hasOnboarded, setOnboarded, hasSeenPermits, setPermitsSeen
@@ -255,6 +255,16 @@ const INITIAL_STATE = {
 
   // The QR scanner's manually-typed fallback code.
   scanCode: '',
+
+  // ── The notification test in Settings ──
+  // How this device's registration went, set once per sign-in by registerForPush:
+  // null (not attempted yet), 'ready', 'unsupported', 'denied' or 'failed'. The card
+  // reads it so "nothing arrived" gets the right answer rather than a shrug.
+  pushState: null,
+  // The number typed into the test, whether a send is in flight, and what the server
+  // said last. Kept as state rather than inside the screen so the answer survives a
+  // re-render and can be tested off the view-model like everything else.
+  pt: { phone: '', busy: false, said: '', tone: '' },
   // True while a tenant's "request to join" is in flight.
   joining: false,
   // Which join request the landlord has opened from the inbox.
@@ -3386,6 +3396,52 @@ function deriveVm(s, api) {
         ask: () => set('overlay', 'demoreset')
       };
     })(),
+    // ── The notification test ─────────────────────────────────────────────────
+    // A push is the only thing in this app whose evidence is somewhere else — a phone
+    // lighting up in another room. Everything else can be checked by looking at a
+    // screen. Without this control the only way to test delivery is to stage a real
+    // event against a real tenant: declare a payment, give notice, raise a repair.
+    //
+    // Its whole value is in being honest about failure, so it reports three separate
+    // things rather than one: whether THIS device can receive at all, who the send was
+    // aimed at, and what became of it. They have three different fixes.
+    pushTest: (() => {
+      const p = s.pt || {};
+      // What this BINARY can do, which an update cannot change: expo-notifications is
+      // native, so a landlord on an older build needs telling that plainly rather than
+      // being left to conclude the server is broken.
+      const blocked = {
+        unsupported: 'This build cannot receive notifications at all — that part ships in the app binary, not in an update. Install the latest APK first.',
+        denied: 'Notifications are switched off for TenantPro on this phone. Turn them on in your system settings, then sign out and back in.',
+        failed: 'This phone could not be registered for notifications. Sign out and back in to try again.'
+      }[s.pushState] || '';
+      const isTenant = s.role === 'tenant';
+      return {
+        // A tenant has nobody they are entitled to buzz, so they get no field — the
+        // server ignores a number from them either way, and offering a box that is
+        // quietly discarded would be a lie in the shape of a text input.
+        asksPhone: !isTenant,
+        phone: p.phone || '',
+        setPhone: (e) => setState({ pt: { ...p, phone: evStr(e).replace(/[^\d+ ]/g, '').slice(0, 16) } }),
+        hint: isTenant
+          ? 'Sends a test notification to this account’s phones.'
+          : 'Leave it blank to test your own phone. A number reaches you or one of your own tenants — nobody else.',
+        // The device's own problem, shown above the button because no amount of
+        // sending fixes it.
+        blocked,
+        // Registered and working. Said out loud because "no news" and "all fine" look
+        // identical otherwise.
+        ok: s.pushState === 'ready',
+        busy: !!p.busy,
+        label: p.busy ? 'Sending…' : 'Send a test notification',
+        // What the server said last, kept on the card rather than flashed in a toast:
+        // it is several sentences and often needs reading twice.
+        said: p.said || '',
+        tone: p.tone || '',
+        send: () => api.sendTestPush()
+      };
+    })(),
+
     isDemoReset: s.overlay === 'demoreset',
     demoReset: (() => {
       const c = (s.demo && s.demo.counts) || {};
@@ -5888,6 +5944,45 @@ export function AppProvider({ children }) {
     if (ok) flash(message || 'Demo data rebuilt');
   }, [setState, ownerWrite, flash]);
 
+  // Send a test notification and report, honestly, what happened to it.
+  //
+  // Deliberately NOT routed through ownerWrite: that reloads the dashboard and flashes
+  // a toast, and neither belongs here. Nothing on the server changed, and the answer is
+  // several sentences long — which phone it went to, or why it went nowhere — so it
+  // stays on the card where it can be read twice rather than in a toast that leaves.
+  //
+  // The one rule this respects is that a failure is as loud as a success. "Sent" when
+  // nothing arrived is the single answer that would make the whole control worthless.
+  const sendTestPush = useCallback(async () => {
+    const cur = stateRef.current.pt || {};
+    if (cur.busy) return;
+    const role = stateRef.current.role;
+    const phone = String(cur.phone || '').trim();
+    setState({ pt: { ...cur, busy: true, said: '', tone: '' } });
+    try {
+      const r = role === 'tenant' ? await apiPortal.testPush() : await apiOwner.testPush(phone);
+      setState({
+        pt: {
+          ...stateRef.current.pt,
+          busy: false,
+          said: r.message || (r.sent ? 'Sent.' : 'Nothing was sent.'),
+          tone: r.sent ? 'pos' : 'amber'
+        }
+      });
+    } catch (e) {
+      setState({
+        pt: {
+          ...stateRef.current.pt,
+          busy: false,
+          // The server's own words when it has any — a 403 here means the number is
+          // not yours, and saying so is more useful than "could not send".
+          said: errText(e, 'Could not send the test. Check your connection.'),
+          tone: 'coral'
+        }
+      });
+    }
+  }, [setState]);
+
   const createUnit = useCallback(async () => {
     const nu = stateRef.current.nu;
     if (nu.busy) return;
@@ -6377,17 +6472,27 @@ export function AppProvider({ children }) {
   // declined notifications returns no token, and neither is worth telling anybody about
   // — least of all with a toast on the screen they have just signed in to.
   const registerForPush = useCallback(async (role) => {
+    let outcome = 'failed';
     try {
-      const token = await getPushToken();
-      if (!token) return;
+      const { token, reason } = await resolvePushToken();
+      if (!token) {
+        // Recorded, not shown. Nothing here interrupts anybody — it is read only by
+        // the notification test in Settings, where "why did nothing arrive" is the
+        // actual question being asked and each reason has a different answer.
+        setState({ pushState: reason || 'failed' });
+        return;
+      }
       const bind = role === 'tenant' ? apiPortal : apiOwner;
       await bind.savePushToken({ token, platform: Platform.OS });
       pushRef.current = token;
+      outcome = 'ready';
     } catch (e) {
       // An unreachable server on the one call that is pure courtesy must not make
-      // signing in feel broken.
+      // signing in feel broken. `outcome` stays 'failed', which is the truth: this
+      // device has a token but the server does not know about it.
     }
-  }, []);
+    setState({ pushState: outcome });
+  }, [setState]);
 
   const signOut = useCallback(async () => {
     // Forget the device FIRST, while the token still authenticates. After the reset
@@ -6451,7 +6556,7 @@ export function AppProvider({ children }) {
       decideJoin, decidePayment, requestToJoin, holdJoinCode, askPermission, finishPermits,
       loadDocs, decideDoc, loadMyDocs, pickDocPhoto, addMyDoc, removeMyDoc,
       requestId, cancelIdRequest,
-      lookupProperty, scanQrFromImage, resetDemo, openUpiPayment, declareMyPayment,
+      lookupProperty, scanQrFromImage, resetDemo, sendTestPush, openUpiPayment, declareMyPayment,
       startGoogleSignIn, finishGoogleSignUp, cancelGoogleSignIn,
       openLeave, confirmLeave, withdrawLeave,
       submitClaim,
@@ -6466,7 +6571,7 @@ export function AppProvider({ children }) {
       decideJoin, decidePayment, requestToJoin, holdJoinCode, askPermission, finishPermits,
       loadDocs, decideDoc, loadMyDocs, pickDocPhoto, addMyDoc, removeMyDoc,
       requestId, cancelIdRequest,
-      lookupProperty, scanQrFromImage, resetDemo, openUpiPayment, declareMyPayment,
+      lookupProperty, scanQrFromImage, resetDemo, sendTestPush, openUpiPayment, declareMyPayment,
       startGoogleSignIn, finishGoogleSignUp, cancelGoogleSignIn,
       openLeave, confirmLeave, withdrawLeave,
       submitClaim,

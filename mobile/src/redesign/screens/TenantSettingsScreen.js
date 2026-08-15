@@ -3,6 +3,7 @@ import { View, ScrollView } from 'react-native';
 import { useVm } from '../AppContext';
 import { useT } from '../ThemeContext';
 import { T, Eyebrow, Row, Press, Glyph, IconChip } from '../ui';
+import PushTestCard from '../PushTestCard';
 
 export default function TenantSettingsScreen() {
     const vm = useVm();
@@ -78,6 +79,10 @@ export default function TenantSettingsScreen() {
                     </Press>
                 ))}
             </View>
+
+            {/* Checking that a notification actually arrives. A tenant's test can only
+                ever reach their own phones — the card draws no number field for them. */}
+            <PushTestCard pt={vm.pushTest} />
 
             {/* Sign out */}
             <Press

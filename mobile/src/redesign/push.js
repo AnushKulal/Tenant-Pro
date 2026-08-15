@@ -72,14 +72,22 @@ const ensureChannel = async (Notifications) => {
     }
 };
 
-// Ask for permission and return this device's Expo token, or null.
+// Ask for permission and resolve this device's Expo token.
 //
-// Null covers every ordinary refusal — an old build, a simulator, a person who said no
-// — and none of them is an error worth showing. Somebody who declined notifications
-// declined them; telling them off about it is not the app's business.
-export const getPushToken = async () => {
+// Returns { token, reason } — the token, or null with the reason it is null. The REASON
+// is not for the ordinary path, which correctly says nothing: somebody who declined
+// notifications declined them, and telling them off about it is not the app's business.
+// It exists because "why did my test notification not arrive" has four completely
+// different answers with completely different fixes, and without this the app cannot
+// tell them apart:
+//
+//   unsupported  this binary has no notification module — an OTA cannot add one
+//   denied       permission was refused, so the fix is in the system settings
+//   failed       a simulator, no Play services, a project id that does not match
+//   (none)       there is a token
+export const resolvePushToken = async () => {
     const Notifications = loadNotifications();
-    if (!Notifications) return null;
+    if (!Notifications) return { token: null, reason: 'unsupported' };
 
     try {
         await ensureChannel(Notifications);
@@ -92,17 +100,19 @@ export const getPushToken = async () => {
             const asked = await Notifications.requestPermissionsAsync();
             status = asked?.status;
         }
-        if (status !== 'granted') return null;
+        if (status !== 'granted') return { token: null, reason: 'denied' };
 
         const id = projectId();
         const res = await Notifications.getExpoPushTokenAsync(id ? { projectId: id } : undefined);
-        return res?.data || null;
+        const token = res?.data || null;
+        return token ? { token, reason: null } : { token: null, reason: 'failed' };
     } catch (e) {
-        // Simulators, missing Google Play services, a project id that does not match the
-        // build. All of them mean "no token", none of them means "tell the user".
-        return null;
+        return { token: null, reason: 'failed' };
     }
 };
+
+// The token alone, or null. What every caller that is not a diagnostic wants.
+export const getPushToken = async () => (await resolvePushToken()).token;
 
 // What the app should do when a notification is tapped while it is closed or in the
 // background. Returns an unsubscribe, or a no-op on a build without the module.
@@ -144,4 +154,4 @@ export const setForegroundBehaviour = () => {
     }
 };
 
-export default { pushAvailable, getPushToken, onNotificationTap, setForegroundBehaviour };
+export default { pushAvailable, getPushToken, resolvePushToken, onNotificationTap, setForegroundBehaviour };
