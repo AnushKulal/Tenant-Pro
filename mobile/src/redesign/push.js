@@ -83,6 +83,7 @@ const ensureChannel = async (Notifications) => {
 //
 //   unsupported  this binary has no notification module — an OTA cannot add one
 //   denied       permission was refused, so the fix is in the system settings
+//   nofcm        the build carries no Firebase config, so Android cannot register
 //   failed       a simulator, no Play services, a project id that does not match
 //   (none)       there is a token
 export const resolvePushToken = async () => {
@@ -107,8 +108,24 @@ export const resolvePushToken = async () => {
         const token = res?.data || null;
         return token ? { token, reason: null } : { token: null, reason: 'failed' };
     } catch (e) {
-        return { token: null, reason: 'failed' };
+        return { token: null, reason: classify(e) };
     }
+};
+
+// Android delivers push through Firebase Cloud Messaging, and a build with no
+// google-services.json cannot register with it — getExpoPushTokenAsync throws rather
+// than returning null. That is a BUILD configuration problem, and telling somebody to
+// sign out and back in sends them round a loop that cannot possibly help.
+//
+// Matched on the message text, which is unavoidably fragile — Firebase's wording is not
+// a contract. It degrades the right way though: anything unrecognised falls through to
+// 'failed', which is exactly what this returned before, so a reworded error costs a
+// better sentence rather than a working diagnosis.
+const classify = (e) => {
+    const msg = `${(e && e.message) || ''} ${(e && e.code) || ''}`;
+    return /firebase|fcm|FIS_AUTH|SERVICE_NOT_AVAILABLE|MISSING_INSTANCEID/i.test(msg)
+        ? 'nofcm'
+        : 'failed';
 };
 
 // The token alone, or null. What every caller that is not a diagnostic wants.

@@ -3413,6 +3413,11 @@ function deriveVm(s, api) {
       const blocked = {
         unsupported: 'This build cannot receive notifications at all — that part ships in the app binary, not in an update. Install the latest APK first.',
         denied: 'Notifications are switched off for TenantPro on this phone. Turn them on in your system settings, then sign out and back in.',
+        // Not something the person holding the phone can fix, so it does not ask them
+        // to try anything. Android push goes through Firebase, and a build with no
+        // Firebase config cannot register — that is settled at build time, and sending
+        // somebody round a sign-out loop over it wastes their afternoon.
+        nofcm: 'This build has no Firebase configuration, which is what Android needs to receive notifications. Nothing on this phone can fix that — the app has to be rebuilt with it.',
         failed: 'This phone could not be registered for notifications. Sign out and back in to try again.'
       }[s.pushState] || '';
       const isTenant = s.role === 'tenant';
