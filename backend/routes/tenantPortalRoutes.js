@@ -30,7 +30,7 @@ const {
     deleteMyDocument
 } = require('../controllers/documentController');
 const { claimAccount } = require('../controllers/guestController');
-const { savePushToken, dropPushToken } = require('../controllers/pushController');
+const { savePushToken, dropPushToken, sendTestPush } = require('../controllers/pushController');
 
 router.use(protect);
 
@@ -46,6 +46,10 @@ router.post('/claim-account', claimAccount);
 // Sunrise Residency" — which by definition fires while they have no tenancy yet.
 router.post('/push-token', savePushToken);
 router.delete('/push-token', dropPushToken);
+// A tenant's test can only ever reach their own devices — see resolveTestTarget. Above
+// the expiry guard with the others, because "are notifications working" is a question
+// about the handset and not about the tenancy.
+router.post('/push-test', sendTestPush);
 
 // ── Guest stay expiry ─────────────────────────────────────────────────────────
 // Applied to everything BELOW this line, which deliberately leaves two routes above

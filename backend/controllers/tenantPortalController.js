@@ -29,6 +29,11 @@ const { planNotice, NOTICE_DAYS } = require('../utils/noticePeriod');
 // due date it eventually moves are written by the same code.
 const { toSqlDate } = require('../utils/rentDates');
 
+// Three things a tenant does here reach the landlord and nothing else does: declaring a
+// payment, raising a repair, giving notice. All three sit in a queue the landlord has
+// to think to open, and all three are worse the later they are read.
+const { notify } = require('../services/pushService');
+
 // Resolves the logged-in tenant_users account to its linked landlord tenant row,
 // with the unit, property and the owner's UPI settings joined in. Returns null if
 // the account isn't a tenant, doesn't exist, or hasn't been linked to a unit yet —
@@ -424,6 +429,25 @@ const declarePayment = async (req, res) => {
             [ctx.tenant_id, amount, toSqlDate(when), method, reference, ctx.user_id, ctx.next_rent_due || null]
         );
 
+        // Tell the landlord. This claim does nothing at all until they confirm it —
+        // the tenant's month is not cleared, the due date has not moved — and the queue
+        // it lands in is a sheet they have to think to open. A tenant who has paid and
+        // is waiting for a receipt is the person most poorly served by that.
+        if (ctx.owner_id) {
+            notify({
+                role: 'owner',
+                accountId: ctx.owner_id,
+                kind: 'payment_declared',
+                data: {
+                    tenantName: ctx.name || ctx.account_name,
+                    amount,
+                    method,
+                    unit: ctx.unit_number,
+                    id: result.insertId
+                }
+            });
+        }
+
         res.status(201).json({
             message: 'Sent to your landlord. It clears the month once they confirm it.',
             payment: {
@@ -491,6 +515,22 @@ const createRequest = async (req, res) => {
              VALUES (?, ?, ?, ?, ?, ?, 'Open', ?)`,
             [ctx.tenant_id, ctx.owner_id, (category || 'General').slice(0, 50), title.trim().slice(0, 150), (description || '').trim() || null, prio, imageUrl]
         );
+
+        // A repair is the one thing here where the delay is the damage — a leak reported
+        // on Friday and read on Monday is a different repair by Monday.
+        if (ctx.owner_id) {
+            notify({
+                role: 'owner',
+                accountId: ctx.owner_id,
+                kind: 'ticket_raised',
+                data: {
+                    tenantName: ctx.name || ctx.account_name,
+                    subject: title.trim(),
+                    unit: ctx.unit_number,
+                    id: result.insertId
+                }
+            });
+        }
 
         res.status(201).json({
             message: 'Request submitted.',
@@ -582,7 +622,7 @@ const createRequestMessage = async (req, res) => {
 const loadForNotice = async (userId) => {
     const [rows] = await db.query(
         `SELECT t.id, t.owner_id, t.unit_id, t.status, t.stay_until, t.next_rent_due,
-                t.rent_share, t.deposit, t.notice_given_on, t.leave_on,
+                t.rent_share, t.deposit, t.notice_given_on, t.leave_on, t.name AS tenant_name,
                 u.unit_number, p.name AS property_name,
                 o.name AS owner_name, o.phone AS owner_phone
            FROM tenant_users tu
@@ -662,6 +702,25 @@ const giveNotice = async (req, res) => {
             'UPDATE tenants SET notice_given_on = CURDATE(), leave_on = ? WHERE id = ?',
             [plan.leaveOn, ctx.id]
         );
+
+        // The landlord needs this one early or not at all: notice is how long they have
+        // to re-let the room, and every day they do not know about it is a day of that
+        // gone. It is also the only event here the tenant cannot follow up on — they
+        // have given notice and the app tells them it is done, so if the landlord never
+        // reads it, neither of them finds out until the move-out date.
+        if (ctx.owner_id) {
+            notify({
+                role: 'owner',
+                accountId: ctx.owner_id,
+                kind: 'notice_given',
+                data: {
+                    tenantName: ctx.tenant_name,
+                    leaveOn: plan.leaveOn,
+                    unit: ctx.unit_number,
+                    id: ctx.id
+                }
+            });
+        }
 
         // The tenancy stays Active and the room stays occupied. Both are still true
         // until the leave date, and flipping them now would free a room the landlord

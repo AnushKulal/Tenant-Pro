@@ -1,6 +1,32 @@
 const db = require('../config/db');
 const { getFileUrl } = require('../middleware/uploadMiddleware');
 const { nextDueAfter, anchorDayOf } = require('../utils/rentDates');
+const { notifyTenancy } = require('../services/pushService');
+
+// Tell the tenant what became of the payment they declared.
+//
+// This is the notification with the most riding on it. Between declaring and hearing
+// back, the tenant has paid real money and has nothing in the app saying it counted;
+// a confirmation ends that, and a rejection is the only way they learn their landlord
+// could not find it while the reference is still fresh enough to chase.
+//
+// The landlord's name is read AFTER the transaction and separately from the locked
+// row. Joining `owners` into a SELECT ... FOR UPDATE would take a lock on the landlord
+// as well as the payment, which serialises two confirmations by the same landlord for
+// nothing but a display name.
+const notifyPaymentDecision = (pay, status, note) => {
+    const send = (landlordName) => notifyTenancy({
+        tenantId: pay.tenant_id,
+        kind: status === 'Confirmed' ? 'payment_confirmed' : 'payment_rejected',
+        data: { landlordName, amount: Number(pay.amount_paid), note, id: pay.id }
+    });
+    if (!pay.owner_id) return send(null);
+    db.query('SELECT name FROM owners WHERE id = ?', [pay.owner_id])
+        // Without the name the copy says "Your landlord", which is true and readable,
+        // so a failed lookup costs a word rather than the whole notification.
+        .then(([rows]) => send(rows.length ? rows[0].name : null))
+        .catch(() => send(null));
+};
 
 // Owner tokens carry no role; tenant tokens carry role: 'tenant'. server.js already
 // mounts requireOwner on this whole router, so this is the second lock on the same
@@ -120,10 +146,20 @@ const recordPayment = async (req, res) => {
         // moment it is knowable: next_rent_due is overwritten below, so afterwards there
         // is no way to say whether this payment was early, on time or late. That missing
         // fact is why the tenant score reported "None missed" for everybody.
-        await db.query(
+        const [entered] = await db.query(
             `INSERT INTO payments (tenant_id, amount_paid, payment_date, payment_method, reference_id, status, due_date)
              VALUES (?, ?, ?, ?, ?, 'Confirmed', ?)`,
             [id, amount, payment_date, payment_mode, reference_id || null, tenants[0].next_rent_due || null]
+        );
+
+        // The tenant never asked for this one — the landlord entered it, usually for
+        // cash or a transfer that arrived outside the app — which is exactly why it is
+        // worth sending. It is the tenant's only confirmation that money handed over in
+        // person was written down, and their receipt is now there to prove it.
+        notifyPaymentDecision(
+            { id: entered.insertId, tenant_id: id, amount_paid: amount, owner_id: req.user.id },
+            'Confirmed',
+            null
         );
 
         // 3. Push the due date forward by one month. The month arithmetic -- including
@@ -215,7 +251,7 @@ const settlePayment = async ({ paymentId, status, note = null, source, gatewayRe
         // still-Declared check.
         const [rows] = await conn.query(
             `SELECT pay.id, pay.status, pay.amount_paid, pay.payment_date, pay.tenant_id,
-                    t.next_rent_due, t.move_in_date, t.name AS tenant_name
+                    t.next_rent_due, t.move_in_date, t.name AS tenant_name, t.owner_id
              FROM payments pay
              JOIN tenants t ON pay.tenant_id = t.id
              WHERE pay.id = ? ${ownerId != null ? 'AND t.owner_id = ?' : ''}
@@ -254,6 +290,16 @@ const settlePayment = async ({ paymentId, status, note = null, source, gatewayRe
         }
 
         await conn.commit();
+
+        // Told here rather than in decidePayment, because BOTH callers owe the tenant
+        // this: a gateway webhook confirming a payment settles their month exactly as a
+        // landlord tapping Confirm does, and a tenant who learns about one but not the
+        // other has no way to know which kind of confirmation they got.
+        //
+        // After the commit on purpose. A notification about a transaction that then
+        // rolled back is a receipt for money the app no longer believes it received.
+        notifyPaymentDecision(pay, status, note);
+
         return {
             ok: true,
             status,
