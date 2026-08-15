@@ -18,6 +18,7 @@ const {
     decideDocument
 } = require('../controllers/documentController');
 const { createIdRequest, cancelIdRequest } = require('../controllers/idRequestController');
+const { savePushToken, dropPushToken } = require('../controllers/pushController');
 const { getDemoStatus, resetDemo } = require('../controllers/demoController');
 const { protect } = require('../middleware/authMiddleware');
 const upload = require('../middleware/uploadMiddleware');
@@ -69,6 +70,12 @@ router.post('/tenants/:id/id-request', protect, createIdRequest);
 // And withdrawing it — the only way to stop a prompt on somebody's home screen after
 // asking by mistake, or after getting the document another way.
 router.delete('/tenants/:id/id-request', protect, cancelIdRequest);
+
+// --- Push notifications ---
+// This device, so the landlord hears about a join request or a declared payment
+// without having to open the app and look.
+router.post('/push-token', protect, savePushToken);
+router.delete('/push-token', protect, dropPushToken);
 
 // --- Demo account ---
 // The demo is a real account that KEEPS whatever a demo does to it, so restoring its

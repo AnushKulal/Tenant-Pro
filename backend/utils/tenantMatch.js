@@ -111,6 +111,11 @@ const proposeMatches = ({ candidates = [], existing = [], accountLinked = false 
             // The room they are already recorded in, so the landlord's accept
             // pre-fills correctly instead of asking a question they have answered.
             unit_id: c.unit_id || null,
+            // The room NUMBER as well as its row id. The id is what the join request
+            // stores; the number is the only one of the two a human recognises, and a
+            // notification saying "room 9" when the door says 101 is worse than one
+            // that names no room at all.
+            unit_number: c.unit_number || null,
             tenant_id: c.id,
             tenant_name: c.name || null
         });

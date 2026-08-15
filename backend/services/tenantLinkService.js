@@ -15,6 +15,7 @@
 
 const db = require('../config/db');
 const { normalisePhone, proposeMatches, phoneSql } = require('../utils/tenantMatch');
+const { notify } = require('./pushService');
 
 // Landlords type "+91 98765 43210" and tenants type "9876543210"; a raw equality test
 // would miss almost every genuine match. Shared with the accept path — see the note on
@@ -53,7 +54,7 @@ const proposeLinksForAccount = async ({ id, phone }) => {
     // and the rules drop those: join_requests.property_id is NOT NULL, and there
     // would be nothing for the landlord to accept them INTO.
     const [candidates] = await db.query(
-        `SELECT t.id, t.owner_id, t.unit_id, t.status, t.name, u.property_id
+        `SELECT t.id, t.owner_id, t.unit_id, t.status, t.name, u.property_id, u.unit_number
          FROM tenants t
          LEFT JOIN units u ON t.unit_id = u.id
          WHERE ${PHONE_SQL} = ?
@@ -87,6 +88,15 @@ const proposeLinksForAccount = async ({ id, phone }) => {
                 [id, p.owner_id, p.property_id, p.unit_id, p.unit_id]
             );
             written.push({ ...p, id: result.insertId });
+            // Tell the landlord. This is the notification with the shortest useful
+            // life in the app: the tenant is standing there having just registered,
+            // and one tap confirms them. A day later it is admin.
+            notify({
+                role: 'owner',
+                accountId: p.owner_id,
+                kind: 'phone_matched',
+                data: { tenantName: p.tenant_name, unit: p.unit_number, id: result.insertId }
+            });
         } catch (err) {
             // One landlord's row failing must not cost the others theirs. The usual
             // cause is a room deleted between the SELECT and the INSERT, which is a

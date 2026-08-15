@@ -30,6 +30,7 @@ const {
     deleteMyDocument
 } = require('../controllers/documentController');
 const { claimAccount } = require('../controllers/guestController');
+const { savePushToken, dropPushToken } = require('../controllers/pushController');
 
 router.use(protect);
 
@@ -39,6 +40,12 @@ router.get('/me', getMe);
 // the reason is in the note below: an expired guest must be able to take the one
 // action that restores their access.
 router.post('/claim-account', claimAccount);
+
+// This device's push token. ABOVE the expiry guard, and above the live-stay guard,
+// for the same class of reason: the notification a tenant most needs is "you're in at
+// Sunrise Residency" — which by definition fires while they have no tenancy yet.
+router.post('/push-token', savePushToken);
+router.delete('/push-token', dropPushToken);
 
 // ── Guest stay expiry ─────────────────────────────────────────────────────────
 // Applied to everything BELOW this line, which deliberately leaves two routes above
