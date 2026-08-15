@@ -42,26 +42,47 @@ const signatureMatches = (secret, rawBody, provided) => {
 
 // Which payment does this event mean? Two ways in, tried in order:
 //
-//   1. our own reference, which we put in the UPI note when the tenant paid, and
-//   2. the provider's transaction id, if we have already seen and stored it.
+//   1. the provider's own transaction id, if we have already seen and stored it, and
+//   2. our reference, which we put in the UPI note when the tenant paid.
 //
 // Only a Declared row is eligible. A gateway cannot conjure a payment that the tenant
 // never claimed — that would let anyone who guesses a reference create money in
 // somebody's ledger.
+//
+// ── Why the gateway's id is tried FIRST, and why a repeated reference settles nothing
+//
+// `reference_id` is free text the TENANT typed. It is not unique, not scoped to a
+// landlord, and not ours to trust. Matching it globally and taking the first row meant
+// a tenant could declare a payment quoting a reference they expect somebody else to
+// use, and let that person's real money confirm their own invented one — a free month,
+// charged to a stranger's transfer, in a different landlord's ledger.
+//
+// So: the gateway's transaction id wins, because the provider issues it and nobody
+// else can choose it. And a reference that matches MORE THAN ONE outstanding claim
+// settles none of them — two claims on one payment is precisely the case where we
+// cannot know which is real, and guessing is how the wrong tenant gets a free month.
+// The event is then ignored rather than misapplied; the landlord still has both claims
+// in their queue and confirms the right one by hand, which is the status quo today.
 const findDeclaredPayment = async (reference, gatewayRef) => {
-    if (reference) {
-        const [byRef] = await db.query(
-            "SELECT id FROM payments WHERE reference_id = ? AND status = 'Declared' LIMIT 1",
-            [reference]
-        );
-        if (byRef.length) return byRef[0].id;
-    }
     if (gatewayRef) {
         const [byGw] = await db.query(
             "SELECT id FROM payments WHERE gateway_ref = ? AND status = 'Declared' LIMIT 1",
             [gatewayRef]
         );
         if (byGw.length) return byGw[0].id;
+    }
+    if (reference) {
+        // LIMIT 2 rather than 1: one row is an answer, two is a refusal, and we only
+        // ever need to know which of those it is.
+        const [byRef] = await db.query(
+            "SELECT id FROM payments WHERE reference_id = ? AND status = 'Declared' LIMIT 2",
+            [reference]
+        );
+        if (byRef.length > 1) {
+            console.warn(`webhook: reference "${reference}" matches ${byRef.length} outstanding claims — settling none`);
+            return null;
+        }
+        if (byRef.length === 1) return byRef[0].id;
     }
     return null;
 };

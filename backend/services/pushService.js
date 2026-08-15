@@ -70,9 +70,23 @@ const registerToken = async ({ role, accountId, token, platform }) => {
 
 // Forget a device. Called on sign-out, so the next person to use the handset does not
 // inherit the last person's notifications.
-const forgetToken = async (token) => {
+//
+// Scoped to the caller's own row. Deleting by token alone made the token string itself
+// the only thing standing between anybody with a session and somebody else's
+// notifications — present it and that person stops being reachable, silently, with no
+// sign in the app that anything happened. A token is not a secret we control: it is
+// issued by Expo, lives on a handset, and travels through logs and crash reports we do
+// not own, so it must not be treated as an authenticator.
+//
+// The legitimate path is unaffected — the app drops the token it registered under this
+// same account, which is exactly the row this matches.
+const forgetToken = async (token, { role, accountId } = {}) => {
     if (!token) return 0;
-    const [r] = await db.query('DELETE FROM push_tokens WHERE token = ?', [String(token).trim()]);
+    if (!['owner', 'tenant'].includes(role) || !accountId) return 0;
+    const [r] = await db.query(
+        'DELETE FROM push_tokens WHERE token = ? AND role = ? AND account_id = ?',
+        [String(token).trim(), role, accountId]
+    );
     return r.affectedRows || 0;
 };
 

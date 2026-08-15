@@ -48,7 +48,13 @@ const savePushToken = async (req, res) => {
 // somebody else's rent, tenants and repairs.
 const dropPushToken = async (req, res) => {
     try {
-        const removed = await forgetToken(req.body?.token);
+        // The account comes from the token, never the body — the same rule as
+        // registration, and here it is what stops one signed-in user unregistering
+        // another's handset by presenting its push token.
+        const removed = await forgetToken(req.body?.token, {
+            role: roleOf(req),
+            accountId: req.user.id
+        });
         // 200 either way. "It was already gone" is the same outcome as "I removed it"
         // from the caller's side, and sign-out must never fail on this.
         res.status(200).json({ message: 'Notifications off for this device.', removed });
