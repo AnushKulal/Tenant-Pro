@@ -809,8 +809,24 @@ function deriveVm(s, api) {
   const mod = MOD[s.route] || null;
   const curProp = mod ? (s.scope[mod] || 'all') : 'all';
   const setScope = (v) => setState({ scope: { ...s.scope, [mod || 'home']: v }, overlay: null, q: '' });
-  const scoped = curProp !== 'all';
   const scopeProp = PROPS.find((p) => p.id === curProp);
+  // Scoped means the filter is set AND still points at a property that exists.
+  //
+  // A scope outlives the thing it names. `loadOwnerData` re-points `place` and `who` at
+  // the new first row when the portfolio changes, but never touches `scope`, and
+  // neither does deleting a property — so the id sat there naming nothing, `scopeProp`
+  // came back undefined, and the seven places that read `scopeProp.name` behind this
+  // flag threw TypeError during render. `unitsLine` below is the worst of them: it is
+  // computed on every render of the dashboard and the Properties tab, not lazily.
+  //
+  // Two ways in, one of which needs no user action at all: delete the property you had
+  // filtered to, or sit on that tab while the 25-second pulse drops it because somebody
+  // deleted it on another device. The ErrorBoundary catches the throw, but it never
+  // resets — the app is dead until it is force-quit.
+  //
+  // Falling back to unscoped is the right answer rather than a repair: the filter named
+  // a property that is gone, so "all properties" is what is left of the request.
+  const scoped = curProp !== 'all' && !!scopeProp;
 
   // Live roster: room moves and move-outs override the seeded unit; deleted
   // members leave the system entirely.
@@ -2107,7 +2123,13 @@ function deriveVm(s, api) {
     // Shown on the tenant's own place screen once notice is in. Sourced from /me so it
     // survives a restart — a notice the app forgets on relaunch is not a notice.
     myNotice: (() => {
-      const n = (TLIVE && TD && TD.me && TD.me.notice) || null;
+      // Under `profile`, which is where /tenant-portal/me actually puts it. Reading a
+      // top-level `notice` gave undefined every time, so this always returned
+      // { given: false } and MyPlaceScreen kept offering "Leave this property" to
+      // somebody who had already left — no last day, no record, nothing to withdraw.
+      // The comment above the endpoint says a notice the app forgets on relaunch is not
+      // a notice; reading the wrong path made that true.
+      const n = (TLIVE && TD && TD.me && TD.me.profile && TD.me.profile.notice) || null;
       if (!n || !n.given) return { given: false };
       return {
         given: true,
