@@ -6591,6 +6591,21 @@ export function AppProvider({ children }) {
     setForegroundBehaviour();
     return onNotificationTap((data) => {
       if (!data || !data.route) return;
+      // A notification outlives the session it was sent to. It sits in the tray for
+      // days, and by the time it is tapped the reader may have signed out, or signed in
+      // as the other role on the same handset. Obeying the destination regardless put a
+      // SIGNED-OUT reader on the tenant portal, where the seed bundle rendered "₹8,000"
+      // as their rent — a number belonging to nobody, presented as theirs.
+      //
+      // Nothing here is a security boundary; every screen fetches its own data with its
+      // own token. It is about not showing somebody a confident screen that is not
+      // about them.
+      const sess = stateRef.current.session;
+      if (!sess || !sess.role) return;
+      // `audience` is stamped by the server (backend/utils/pushRules). Older payloads
+      // predate it and simply carry none — those fall back to the session check above,
+      // which is the part that mattered.
+      if (data.audience && data.audience !== 'any' && data.audience !== sess.role) return;
       // Route AND overlay, because the destination can be either. The landlord's join
       // inbox and payment queue are sheets over the dashboard, not screens — setting a
       // route of 'joins' would name a route that does not exist and close the sheet it
