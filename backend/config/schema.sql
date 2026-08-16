@@ -533,3 +533,42 @@ CREATE TABLE IF NOT EXISTS `demo_state` (
   KEY `owner_id` (`owner_id`),
   CONSTRAINT `demo_state_ibfk_1` FOREIGN KEY (`owner_id`) REFERENCES `owners` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- 18. contact_verifications
+-- A pending change to a phone number or an email address, and the code that proves
+-- the person asking actually holds it.
+--
+-- WHY THIS TABLE EXISTS AT ALL
+-- Both of these columns are SIGN-IN IDENTIFIERS. `owners.phone` is what
+-- `WHERE phone = ?` matches at login, and the tenant phone-match links an account to a
+-- landlord's records by number. So letting somebody type a new number straight into
+-- their profile is letting them move their account onto a number they may not hold —
+-- and, on the tenant side, onto somebody else's tenancy. The new value therefore lives
+-- HERE until a code sent to it comes back, and only then moves onto the account.
+--
+-- No foreign key: the row points at one of TWO account tables (owners, tenant_users),
+-- which MySQL cannot express. Rows are short-lived and swept, so orphans are cheap.
+--
+-- The CODE IS HASHED. It is short-lived and only six digits, but it is a bearer
+-- credential while it lives, and this table is read by every profile save.
+CREATE TABLE IF NOT EXISTS `contact_verifications` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `role` enum('owner','tenant') NOT NULL,
+  `account_id` int(11) NOT NULL,
+  `channel` enum('phone','email') NOT NULL,
+  -- The value being PROVED, stored normalised for a phone so the code cannot be
+  -- redeemed against a different spelling of the number it was sent to.
+  `value` varchar(150) NOT NULL,
+  `code_hash` varchar(255) NOT NULL,
+  `expires_at` datetime NOT NULL,
+  -- Counted so a six-digit code cannot be guessed by brute force. A row is dead once
+  -- this passes its limit, without waiting for the clock.
+  `attempts` tinyint(4) NOT NULL DEFAULT 0,
+  `consumed_at` datetime DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  -- One live request per account per channel is what the flow needs; the lookup is
+  -- always "the newest unconsumed row for this account and channel".
+  KEY `account` (`role`,`account_id`,`channel`),
+  KEY `expires_at` (`expires_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
