@@ -4,6 +4,7 @@ const db = require('../config/db');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { tryProposeLinks } = require('../services/tenantLinkService');
+const { forSignup, phoneTaken } = require('../utils/signupPhone');
 
 // --- Tenant Registration ---
 const registerTenant = async (req, res) => {
@@ -19,15 +20,17 @@ const registerTenant = async (req, res) => {
         // Check the phone too: it is a sign-in identifier now, so a duplicate one
         // would make that number ambiguous at login. Reported separately so the user
         // knows which field to change.
+        // Compared as a NUMBER, not as a string — see utils/signupPhone. This table
+        // has a UNIQUE key on email but NOT on phone, so this check is the ONLY thing
+        // standing between one person and two tenant accounts.
+        const { store: phoneToStore } = forSignup(phone);
         const [existing] = await db.query(
-            'SELECT email, phone FROM tenant_users WHERE email = ? OR phone = ?',
-            [email, phone]
+            'SELECT email FROM tenant_users WHERE email = ? LIMIT 1', [email]
         );
         if (existing.length > 0) {
-            const clash = existing[0];
-            if (clash.email === email) {
-                return res.status(409).json({ message: 'An account with this email already exists.' });
-            }
+            return res.status(409).json({ message: 'An account with this email already exists.' });
+        }
+        if (await phoneTaken(db, 'tenant_users', phone)) {
             return res.status(409).json({ message: 'This mobile number is already registered.' });
         }
 
@@ -36,22 +39,25 @@ const registerTenant = async (req, res) => {
         // tenant account, never both, because sign-in accepts either identifier and
         // an address in both tables would be ambiguous.
         const [crossOwner] = await db.query(
-            'SELECT email, phone FROM owners WHERE email = ? OR phone = ?',
-            [email, phone]
+            'SELECT email FROM owners WHERE email = ? LIMIT 1', [email]
         );
         if (crossOwner.length > 0) {
-            const clash = crossOwner[0];
             return res.status(409).json({
-                message: clash.email === email
-                    ? 'This email is already used for a landlord account. Use a different email, or sign in through the landlord portal.'
-                    : 'This mobile number is already used for a landlord account. Use a different number, or sign in through the landlord portal.'
+                message: 'This email is already used for a landlord account. Use a different email, or sign in through the landlord portal.'
+            });
+        }
+        if (await phoneTaken(db, 'owners', phone)) {
+            return res.status(409).json({
+                message: 'This mobile number is already used for a landlord account. Use a different number, or sign in through the landlord portal.'
             });
         }
 
         const passwordHash = await bcrypt.hash(password, 10);
         const [result] = await db.query(
             'INSERT INTO tenant_users (name, email, phone, password_hash) VALUES (?, ?, ?, ?)',
-            [name, email, phone, passwordHash]
+            // Normalised, so the phone-match below and this row agree about what
+            // number this account is on.
+            [name, email, phoneToStore, passwordHash]
         );
 
         const token = jwt.sign(

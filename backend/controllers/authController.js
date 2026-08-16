@@ -1,6 +1,7 @@
 // File: backend/controllers/authController.js
 const db = require('../config/db');
 const bcrypt = require('bcryptjs');
+const { forSignup, phoneTaken } = require('../utils/signupPhone');
 const jwt = require('jsonwebtoken');
 const { sendAppMail, isMailConfigured } = require('../config/mailer');
 
@@ -13,20 +14,21 @@ const registerOwner = async (req, res) => {
             return res.status(400).json({ message: 'All fields are required' });
         }
 
-        // Check if email or phone already exists BEFORE inserting
-        const checkSql = `SELECT email, phone FROM owners WHERE email = ? OR phone = ?`;
-        const [existingOwners] = await db.execute(checkSql, [email, phone]);
+        // Compared as a NUMBER, not as a string. See utils/signupPhone — a raw
+        // comparison let "+91 9876543210" register alongside "9876543210" as a
+        // separate account, and the tenant phone-match then offered that account to
+        // the real tenant's landlord as the real tenant.
+        const { store: phoneToStore } = forSignup(phone);
 
+        // Check if email or phone already exists BEFORE inserting
+        const [existingOwners] = await db.execute(
+            `SELECT email FROM owners WHERE email = ? LIMIT 1`, [email]
+        );
         if (existingOwners.length > 0) {
-            const existing = existingOwners[0];
-            
-            // Send specific error messages based on what matched
-            if (existing.email === email) {
-                return res.status(409).json({ message: 'An account with this email already exists.' });
-            }
-            if (existing.phone === phone) {
-                return res.status(409).json({ message: 'This phone number is already registered.' });
-            }
+            return res.status(409).json({ message: 'An account with this email already exists.' });
+        }
+        if (await phoneTaken(db, 'owners', phone)) {
+            return res.status(409).json({ message: 'This phone number is already registered.' });
         }
 
         // The two portals are kept mutually exclusive: one email or mobile number
@@ -36,15 +38,18 @@ const registerOwner = async (req, res) => {
         // meant for either account. Enforced at the point of creation, which is the
         // only place it can be enforced cheaply.
         const [crossTenant] = await db.execute(
-            'SELECT email, phone FROM tenant_users WHERE email = ? OR phone = ?',
-            [email, phone]
+            'SELECT email FROM tenant_users WHERE email = ? LIMIT 1', [email]
         );
         if (crossTenant.length > 0) {
-            const clash = crossTenant[0];
             return res.status(409).json({
-                message: clash.email === email
-                    ? 'This email is already used for a tenant account. Use a different email, or sign in through the tenant portal.'
-                    : 'This mobile number is already used for a tenant account. Use a different number, or sign in through the tenant portal.'
+                message: 'This email is already used for a tenant account. Use a different email, or sign in through the tenant portal.'
+            });
+        }
+        // On the NUMBER again — a variant spelling would otherwise walk straight past
+        // the exclusivity this block exists to enforce.
+        if (await phoneTaken(db, 'tenant_users', phone)) {
+            return res.status(409).json({
+                message: 'This mobile number is already used for a tenant account. Use a different number, or sign in through the tenant portal.'
             });
         }
 
@@ -54,7 +59,9 @@ const registerOwner = async (req, res) => {
 
         // profile_pic will default to NULL automatically in the database
         const sql = `INSERT INTO owners (name, email, phone, password_hash) VALUES (?, ?, ?, ?)`;
-        const [result] = await db.execute(sql, [name, email, phone, hashedPassword]);
+        // The normalised form, so every new row is stored the same way and the UNIQUE
+        // key on this column starts meaning "one account per number" again.
+        const [result] = await db.execute(sql, [name, email, phoneToStore, hashedPassword]);
 
         res.status(201).json({ 
             message: 'Owner registered successfully!', 
