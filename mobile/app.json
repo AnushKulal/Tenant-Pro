@@ -26,6 +26,7 @@
     },
     "android": {
       "package": "com.anushkulal.tenantpro",
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-tp-foreground.png",
         "backgroundColor": "#C8F751"
