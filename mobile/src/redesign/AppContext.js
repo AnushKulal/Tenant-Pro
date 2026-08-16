@@ -193,6 +193,14 @@ const inr = (n) => {
 // `lat`/`lon` are null until the landlord pins the property on the map. Null, not
 // 0: zero is a real coordinate in the Atlantic, and a form default that means "not
 // set" must not be a place.
+// The profile form's empty state. `photo` is a local asset from the picker until it
+// is uploaded; `open` is not used by the sheet (the overlay decides that) but keeps a
+// reset from leaving a half-filled form behind the next time it opens.
+const BLANK_PROFILE_EDIT = { name: '', email: '', phone: '', photo: null, pw0: '', pw1: '', error: '', open: false };
+// A contact change waiting on its code. Outlives the form: the code arrives a minute
+// later, often on another device, and the sheet has to be re-openable.
+const BLANK_PROFILE_VERIFY = { channel: null, value: '', code: '', error: '', busy: false };
+
 const BLANK_EDIT_PROPERTY = { id: null, name: '', type: 'PG', address: '', locality: '', city: '', pincode: '', lat: null, lon: null, photo: null, busy: false, error: '' };
 
 // The ways a tenant can tell us they paid. Mirrors the server's own list in
@@ -265,6 +273,16 @@ const INITIAL_STATE = {
 
   // The QR scanner's manually-typed fallback code.
   scanCode: '',
+
+  // ── Editing your own profile ──
+  // The form, prefilled from the account when it opens. `photo` is a local file the
+  // picker returned, not a URL — it only becomes one after the upload.
+  pe: { ...BLANK_PROFILE_EDIT },
+  // A phone number or email address that has been sent a code and is waiting for it.
+  // Held apart from `pe` because the form closes when it saves and this outlives it —
+  // the code arrives a minute later, on another device, and the sheet has to be
+  // re-openable from the profile screen rather than only in that one moment.
+  pv: { ...BLANK_PROFILE_VERIFY },
 
   // ── The notification test in Settings ──
   // How this device's registration went, set once per sign-in by registerForPush:
@@ -1621,6 +1639,14 @@ function deriveVm(s, api) {
           icon: 'image-outline',
           title: 'Photos',
           why: 'To attach a picture to a maintenance request, and to set your profile photo.'
+        },
+        {
+          key: 'notifications',
+          icon: 'notifications-outline',
+          title: 'Notifications',
+          // Named by what arrives, not by the feature. "Allow notifications" is a
+          // request; "we will tell you when rent is due" is a reason.
+          why: 'To tell you when rent is due, when a payment needs confirming, and when a tenant raises a repair — without you having to open the app and look. Nothing else is ever sent.'
         },
         {
           key: 'location',
@@ -3428,6 +3454,110 @@ function deriveVm(s, api) {
         ask: () => set('overlay', 'demoreset')
       };
     })(),
+    // ── Editing your own profile ──────────────────────────────────────────────
+    // The screen was read-only: every field rendered as text with an edit button
+    // wired to `noop`, which flashed "Not wired in this prototype". The endpoint has
+    // existed the whole time and nothing called it.
+    //
+    // One form, prefilled, with an Update button — but phone and email are not
+    // ordinary fields. Both are SIGN-IN IDENTIFIERS, so a change to either does not
+    // save here; the server sends a code to the new value and it moves when the code
+    // comes back. The form says so before you type, rather than after you save.
+    openEditProfile: () => setState({
+      overlay: 'editprofile',
+      // Prefilled from the account, not from whatever was left in state last time.
+      pe: {
+        ...BLANK_PROFILE_EDIT,
+        name: (u && u.name) || '',
+        email: (u && u.email) || '',
+        phone: (u && u.phone) || ''
+      }
+    }),
+    isEditProfile: s.overlay === 'editprofile',
+    editProfile: (() => {
+      const pe = s.pe || BLANK_PROFILE_EDIT;
+      const patch = (p) => setState({ pe: { ...pe, ...p, error: '' } });
+      const changed = (field, current) => {
+        const next = String(pe[field] || '').trim();
+        return !!next && next !== String(current || '').trim();
+      };
+      return {
+        name: pe.name,
+        setName: (e) => patch({ name: evStr(e).slice(0, 100) }),
+        email: pe.email,
+        setEmail: (e) => patch({ email: evStr(e).trim().slice(0, 100) }),
+        phone: pe.phone,
+        // Same shape the signup field accepts, so a number typed with +91 is not
+        // rejected here and then normalised by the server anyway.
+        setPhone: (e) => patch({ phone: evStr(e).replace(/[^\d+ ]/g, '').slice(0, 16) }),
+        photo: pe.photo,
+        // The same picker the property and room forms use — `pe` is just another
+        // slot, so a profile photo needs no new plumbing.
+        pickPhoto: (source) => api.pickPhotoFor('pe', source || 'library'),
+        // Optional, and only sent when both are filled. Proving the CURRENT password
+        // is what makes this a password change rather than a takeover of whatever
+        // session happens to be open — the server checks it too.
+        currentPassword: pe.pw0,
+        setCurrentPassword: (e) => patch({ pw0: evStr(e) }),
+        newPassword: pe.pw1,
+        setNewPassword: (e) => patch({ pw1: evStr(e) }),
+        passwordNote: 'Leave both blank to keep your current password.',
+        error: pe.error || '',
+        hasError: !!pe.error,
+        busy: !!s.writing,
+        label: s.writing ? 'Saving…' : 'Update',
+        // Shown under the two identifier fields, and only when they have actually
+        // been changed — a standing warning on an untouched field is noise.
+        willVerifyPhone: changed('phone', u && u.phone),
+        willVerifyEmail: changed('email', u && u.email),
+        verifyNote: 'We will send a code to confirm it before it becomes your sign-in.',
+        save: () => api.saveProfile(),
+        cancel: () => setState({ overlay: null, pe: { ...BLANK_PROFILE_EDIT } })
+      };
+    })(),
+
+    // ── Confirming a new number or address ────────────────────────────────────
+    isVerifyContact: s.overlay === 'verifycontact',
+    verifyContact: (() => {
+      const pv = s.pv || BLANK_PROFILE_VERIFY;
+      if (!pv.channel) return null;
+      const isPhone = pv.channel === 'phone';
+      return {
+        title: isPhone ? 'Confirm your new number' : 'Confirm your new email',
+        // Naming the destination matters: it is the only chance to notice a typo
+        // before wondering for ten minutes why no code arrived.
+        sentTo: `We sent a 6-digit code to ${pv.value}.`,
+        hint: isPhone
+          ? 'It expires in 10 minutes. Your number does not change until you enter it.'
+          : 'It expires in 10 minutes. Check your spam folder if it is not there.',
+        code: pv.code,
+        setCode: (e) => setState({ pv: { ...pv, code: evStr(e).replace(/[^0-9]/g, '').slice(0, 6), error: '' } }),
+        error: pv.error || '',
+        hasError: !!pv.error,
+        busy: !!pv.busy,
+        label: pv.busy ? 'Confirming…' : 'Confirm',
+        confirm: () => api.verifyContactCode(),
+        // Closing does not cancel the code — it stays valid for its ten minutes, and
+        // the profile screen offers this sheet again. Said out loud because "cancel"
+        // on a verification usually means "start over".
+        laterNote: 'You can close this and enter the code later.',
+        cancel: () => setState({ overlay: null })
+      };
+    })(),
+    // The way back in after closing the sheet. Rendered on the profile screen only
+    // while something is genuinely waiting.
+    pendingContact: (() => {
+      const pv = s.pv || BLANK_PROFILE_VERIFY;
+      if (!pv.channel) return null;
+      return {
+        line: pv.channel === 'phone'
+          ? `${pv.value} is waiting to be confirmed.`
+          : `${pv.value} is waiting to be confirmed.`,
+        cta: 'Enter the code',
+        open: () => setState({ overlay: 'verifycontact' })
+      };
+    })(),
+
     // ── The notification test ─────────────────────────────────────────────────
     // A push is the only thing in this app whose evidence is somewhere else — a phone
     // lighting up in another room. Everything else can be checked by looking at a
@@ -3507,11 +3637,14 @@ function deriveVm(s, api) {
     isProfile: s.route === 'profile',
     // Real account details from the signed-in session (the prototype hard-coded
     // the demo landlord here).
+    // All four open the same prefilled form. `editable` is carried so a row that
+    // genuinely cannot be edited says so with a dash rather than an EDIT button that
+    // does nothing — which is what every one of these was before.
     profileFields: [
-      { label: 'FULL NAME', value: (u && u.name) || '—' },
-      { label: 'EMAIL', value: (u && u.email) || '—' },
-      { label: 'MOBILE', value: (u && u.phone) || '—' },
-      { label: 'PASSWORD', value: '••••••••••' }
+      { label: 'FULL NAME', value: (u && u.name) || '—', editable: true },
+      { label: 'EMAIL', value: (u && u.email) || '—', editable: true },
+      { label: 'MOBILE', value: (u && u.phone) || '—', editable: true },
+      { label: 'PASSWORD', value: '••••••••••', editable: true }
     ],
     // "OWNER · 2 PROPERTIES · 6 TENANTS" — counted from the live collections.
     profileSubtitle: `OWNER · ${PROPS.length} ${PROPS.length === 1 ? 'PROPERTY' : 'PROPERTIES'} · ${ROSTER.length} ${ROSTER.length === 1 ? 'TENANT' : 'TENANTS'}`,
@@ -5869,6 +6002,15 @@ export function AppProvider({ children }) {
         done(res && res.granted ? 'granted' : 'denied');
         return;
       }
+      if (kind === 'notifications') {
+        // Through the same wrapper the rest of the push code uses, so the "not in this
+        // build" case is decided in ONE place. Every build before push shipped reports
+        // 'missing' here rather than throwing, which is the honest answer: an OTA
+        // cannot add a native module.
+        const { requestNotificationPermission } = require('./push');
+        done(await requestNotificationPermission());
+        return;
+      }
       const picker = require('expo-image-picker');
       const res = await picker.requestMediaLibraryPermissionsAsync();
       done(res && res.granted ? 'granted' : 'denied');
@@ -6007,6 +6149,109 @@ export function AppProvider({ children }) {
     setState({ demoBusy: false, demo: demo && demo.is_demo ? demo : stateRef.current.demo });
     if (ok) flash(message || 'Demo data rebuilt');
   }, [setState, ownerWrite, flash]);
+
+  // Save the profile form.
+  //
+  // Name and photo apply immediately. A changed phone number or email does NOT — the
+  // server sends a code to it and answers with `pending`, because both are sign-in
+  // identifiers and writing one straight from a form is letting somebody move their
+  // account onto an address they may not hold.
+  //
+  // So this reads `pending` and decides what the person sees next: a code sheet if a
+  // code really went out, or the reason it could not, said plainly.
+  const saveProfile = useCallback(async () => {
+    const pe = stateRef.current.pe || {};
+    if (stateRef.current.writing) return;
+    const name = String(pe.name || '').trim();
+    if (!name) { setState({ pe: { ...pe, error: 'Your name cannot be empty.' } }); return; }
+    // Caught here, in the field the person is looking at, rather than as a toast after
+    // a round trip — and half-filled is the case the server cannot tell from "no
+    // password change was wanted".
+    const pw0 = String(pe.pw0 || '');
+    const pw1 = String(pe.pw1 || '');
+    if ((pw0 || pw1) && !(pw0 && pw1)) {
+      setState({ pe: { ...pe, error: 'To change your password, fill in both the current and the new one.' } });
+      return;
+    }
+    if (pw1 && pw1.length < 6) {
+      setState({ pe: { ...pe, error: 'A new password needs at least 6 characters.' } });
+      return;
+    }
+
+    const form = new FormData();
+    put(form, 'name', name);
+    put(form, 'email', String(pe.email || '').trim());
+    put(form, 'phone', String(pe.phone || '').trim());
+    // Only when BOTH are present. Sending one alone makes the server's
+    // `newPassword && currentPassword` guard silently skip the change, which reads to
+    // the user as "it saved and did nothing".
+    if (String(pe.pw0 || '') && String(pe.pw1 || '')) {
+      put(form, 'currentPassword', pe.pw0);
+      put(form, 'newPassword', pe.pw1);
+    }
+    if (pe.photo) form.append('profile_pic', filePart(pe.photo, 'profile.jpg'));
+
+    setState({ writing: true, pe: { ...pe, error: '' } });
+    let res = null;
+    try {
+      res = await apiOwner.updateProfile(form);
+    } catch (e) {
+      setState({ writing: false, pe: { ...stateRef.current.pe, error: errText(e, 'Could not save your profile.') } });
+      return;
+    }
+
+    // The account as the server now has it — the source of truth for what actually
+    // changed, rather than what was typed.
+    const o = res && res.owner ? res.owner : null;
+    const session = stateRef.current.session;
+    setState({
+      writing: false,
+      pe: { ...BLANK_PROFILE_EDIT },
+      overlay: null,
+      ...(o && session ? { session: { ...session, user: { ...(session.user || {}), ...o } } } : {})
+    });
+
+    // Anything the server could not apply yet. A code that really went out opens the
+    // sheet; everything else is a sentence explaining why nothing was sent, which is
+    // the part a silent flow gets wrong.
+    const pending = (res && res.pending) || [];
+    const sent = pending.find((p) => p.ok);
+    const blocked = pending.find((p) => !p.ok);
+    if (sent) {
+      setState({
+        overlay: 'verifycontact',
+        pv: { channel: sent.channel, value: sent.value || sent.sentTo || '', code: '', error: '', busy: false }
+      });
+      return;
+    }
+    if (blocked) { flash(blocked.message || 'Some changes could not be saved.'); return; }
+    flash((res && res.message) || 'Profile updated');
+  }, [setState, flash]);
+
+  // Redeem the code, which is the only thing that moves a new number or address onto
+  // the account.
+  const verifyContactCode = useCallback(async () => {
+    const pv = stateRef.current.pv || {};
+    if (pv.busy || !pv.channel) return;
+    const code = String(pv.code || '').trim();
+    if (code.length < 4) { setState({ pv: { ...pv, error: 'Enter the code we sent you.' } }); return; }
+    setState({ pv: { ...pv, busy: true, error: '' } });
+    try {
+      const res = await apiOwner.verifyProfile(pv.channel, code);
+      const o = res && res.owner ? res.owner : null;
+      const session = stateRef.current.session;
+      setState({
+        pv: { ...BLANK_PROFILE_VERIFY },
+        overlay: null,
+        ...(o && session ? { session: { ...session, user: { ...(session.user || {}), ...o } } } : {})
+      });
+      flash((res && res.message) || 'Confirmed');
+    } catch (e) {
+      // Kept ON the sheet rather than flashed: a wrong code is answered with how many
+      // tries are left, which is information the person needs while still typing.
+      setState({ pv: { ...stateRef.current.pv, busy: false, error: errText(e, 'That did not work. Try again.') } });
+    }
+  }, [setState, flash]);
 
   // Send a test notification and report, honestly, what happened to it.
   //
@@ -6646,7 +6891,7 @@ export function AppProvider({ children }) {
       decideJoin, decidePayment, requestToJoin, holdJoinCode, askPermission, finishPermits,
       loadDocs, decideDoc, loadMyDocs, pickDocPhoto, addMyDoc, removeMyDoc,
       requestId, cancelIdRequest,
-      lookupProperty, scanQrFromImage, resetDemo, sendTestPush, openUpiPayment, declareMyPayment,
+      lookupProperty, scanQrFromImage, resetDemo, sendTestPush, saveProfile, verifyContactCode, openUpiPayment, declareMyPayment,
       startGoogleSignIn, finishGoogleSignUp, cancelGoogleSignIn,
       openLeave, confirmLeave, withdrawLeave,
       submitClaim,
@@ -6661,7 +6906,7 @@ export function AppProvider({ children }) {
       decideJoin, decidePayment, requestToJoin, holdJoinCode, askPermission, finishPermits,
       loadDocs, decideDoc, loadMyDocs, pickDocPhoto, addMyDoc, removeMyDoc,
       requestId, cancelIdRequest,
-      lookupProperty, scanQrFromImage, resetDemo, sendTestPush, openUpiPayment, declareMyPayment,
+      lookupProperty, scanQrFromImage, resetDemo, sendTestPush, saveProfile, verifyContactCode, openUpiPayment, declareMyPayment,
       startGoogleSignIn, finishGoogleSignUp, cancelGoogleSignIn,
       openLeave, confirmLeave, withdrawLeave,
       submitClaim,

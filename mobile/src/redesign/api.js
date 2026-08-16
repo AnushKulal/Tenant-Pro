@@ -70,6 +70,10 @@ export const owner = {
     dashboard: (propertyId = 'all') => body(http.get('/owner/dashboard', { params: { property_id: propertyId } })),
     transactions: (propertyId = 'all') => body(http.get('/owner/transactions', { params: { property_id: propertyId } })),
     updateProfile: (form) => body(http.put('/owner/profile', form, MULTIPART)),
+    // The other half of a profile save. A changed phone number or email address does
+    // not land on the account when it is typed — both are sign-in identifiers, so the
+    // server sends a code to the new value and only moves it when this confirms.
+    verifyProfile: (channel, code) => body(http.put('/owner/profile/verify', { channel, code })),
     // The maintenance queue: every request the owner's tenants have raised, with
     // the tenant/unit/property joined in so a row can be rendered on its own.
     requests: (propertyId = 'all') => body(http.get('/owner/requests', { params: { property_id: propertyId } })),

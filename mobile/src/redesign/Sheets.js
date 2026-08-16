@@ -2112,6 +2112,168 @@ export default function Sheets() {
                     </View>
                 )}
 
+                {/* ── Edit profile (owner) ─────────────────────────────── */}
+                {vm.isEditProfile && vm.editProfile && (
+                    <View>
+                        <T w={700} s={20} lh={1} style={{ letterSpacing: -0.8 }}>Edit profile</T>
+                        <T w={400} s={12.5} lh={1.45} c={t.fg2} style={{ marginTop: 7, marginBottom: 16 }}>
+                            Your name and photo save straight away. A new number or email is
+                            confirmed with a code first.
+                        </T>
+
+                        {vm.editProfile.hasError ? (
+                            <Row gap={9} align="flex-start" style={{ paddingVertical: 11, paddingHorizontal: 13, borderRadius: 14, backgroundColor: t.csoft, marginBottom: 12 }}>
+                                <Glyph name="alert-circle-outline" size={15} color={t.coral} />
+                                <T w={500} s={12} lh={1.45} c={t.coral} style={{ flex: 1 }}>{vm.editProfile.error}</T>
+                            </Row>
+                        ) : null}
+
+                        <Press
+                            onPress={vm.editProfile.busy ? undefined : vm.editProfile.pickPhoto}
+                            style={{ alignSelf: 'flex-start', marginBottom: 12 }}
+                        >
+                            <Row gap={12}>
+                                <Avatar uri={vm.editProfile.photo ? vm.editProfile.photo.uri : vm.ownerImg} name={vm.editProfile.name} size={54} radius={18} />
+                                <View>
+                                    <T w={600} s={13} lh={1.2} c={t.accent}>
+                                        {vm.editProfile.photo ? 'Photo chosen' : 'Change photo'}
+                                    </T>
+                                    <T w={400} s={11.5} lh={1.3} c={t.fg3} style={{ marginTop: 3 }}>
+                                        {vm.editProfile.photo ? 'Saved when you tap Update.' : 'Optional.'}
+                                    </T>
+                                </View>
+                            </Row>
+                        </Press>
+
+                        <Field
+                            label="FULL NAME"
+                            icon="person-outline"
+                            value={vm.editProfile.name}
+                            onChangeText={vm.editProfile.setName}
+                            placeholder="Your name"
+                            autoCapitalize="words"
+                            editable={!vm.editProfile.busy}
+                            style={{ marginBottom: 10 }}
+                        />
+                        <Field
+                            label="MOBILE NUMBER"
+                            icon="call-outline"
+                            value={vm.editProfile.phone}
+                            onChangeText={vm.editProfile.setPhone}
+                            placeholder="10-digit mobile"
+                            keyboardType="phone-pad"
+                            editable={!vm.editProfile.busy}
+                            style={{ marginBottom: vm.editProfile.willVerifyPhone ? 6 : 10 }}
+                        />
+                        {/* Only once the field has actually changed. A standing warning
+                            on an untouched number is noise people learn to skip. */}
+                        {vm.editProfile.willVerifyPhone ? (
+                            <Row gap={8} align="flex-start" style={{ marginBottom: 10, paddingHorizontal: 4 }}>
+                                <Glyph name="shield-checkmark-outline" size={13} color={t.amber} />
+                                <T w={500} s={11.5} lh={1.4} c={t.amber} style={{ flex: 1 }}>{vm.editProfile.verifyNote}</T>
+                            </Row>
+                        ) : null}
+                        <Field
+                            label="EMAIL"
+                            icon="mail-outline"
+                            value={vm.editProfile.email}
+                            onChangeText={vm.editProfile.setEmail}
+                            placeholder="you@example.com"
+                            keyboardType="email-address"
+                            editable={!vm.editProfile.busy}
+                            style={{ marginBottom: vm.editProfile.willVerifyEmail ? 6 : 14 }}
+                        />
+                        {vm.editProfile.willVerifyEmail ? (
+                            <Row gap={8} align="flex-start" style={{ marginBottom: 14, paddingHorizontal: 4 }}>
+                                <Glyph name="shield-checkmark-outline" size={13} color={t.amber} />
+                                <T w={500} s={11.5} lh={1.4} c={t.amber} style={{ flex: 1 }}>{vm.editProfile.verifyNote}</T>
+                            </Row>
+                        ) : null}
+
+                        <Eyebrow s={9} ls={0.12} c={t.fg3} style={{ marginBottom: 9 }}>CHANGE PASSWORD</Eyebrow>
+                        <Field
+                            label="CURRENT PASSWORD"
+                            icon="lock-closed-outline"
+                            value={vm.editProfile.currentPassword}
+                            onChangeText={vm.editProfile.setCurrentPassword}
+                            placeholder="Only if changing it"
+                            secure
+                            editable={!vm.editProfile.busy}
+                            style={{ marginBottom: 10 }}
+                        />
+                        <Field
+                            label="NEW PASSWORD"
+                            icon="lock-open-outline"
+                            value={vm.editProfile.newPassword}
+                            onChangeText={vm.editProfile.setNewPassword}
+                            placeholder="At least 6 characters"
+                            secure
+                            editable={!vm.editProfile.busy}
+                            style={{ marginBottom: 8 }}
+                        />
+                        <T w={400} s={11.5} lh={1.4} c={t.fg3} style={{ marginBottom: 16 }}>
+                            {vm.editProfile.passwordNote}
+                        </T>
+
+                        <Press
+                            onPress={vm.editProfile.busy ? undefined : vm.editProfile.save}
+                            disabled={vm.editProfile.busy}
+                            style={{ width: '100%', paddingVertical: 15, borderRadius: 18, backgroundColor: vm.editProfile.busy ? t.ink3 : t.lime, alignItems: 'center' }}
+                        >
+                            <T w={700} s={14} lh={1} c={vm.editProfile.busy ? t.fg3 : t.on}>{vm.editProfile.label}</T>
+                        </Press>
+                        <Press onPress={vm.editProfile.cancel} style={{ width: '100%', paddingVertical: 13, alignItems: 'center' }}>
+                            <T mono w={600} s={9} ls={0.12} c={t.fg3}>CANCEL</T>
+                        </Press>
+                    </View>
+                )}
+
+                {/* ── Confirming a new number or email (owner) ─────────── */}
+                {vm.isVerifyContact && vm.verifyContact && (
+                    <View>
+                        <T w={700} s={20} lh={1} style={{ letterSpacing: -0.8 }}>{vm.verifyContact.title}</T>
+                        <T w={400} s={12.5} lh={1.45} c={t.fg2} style={{ marginTop: 7 }}>
+                            {vm.verifyContact.sentTo}
+                        </T>
+                        <T w={400} s={12} lh={1.45} c={t.fg3} style={{ marginTop: 5, marginBottom: 16 }}>
+                            {vm.verifyContact.hint}
+                        </T>
+
+                        {vm.verifyContact.hasError ? (
+                            <Row gap={9} align="flex-start" style={{ paddingVertical: 11, paddingHorizontal: 13, borderRadius: 14, backgroundColor: t.csoft, marginBottom: 12 }}>
+                                <Glyph name="alert-circle-outline" size={15} color={t.coral} />
+                                <T w={500} s={12} lh={1.45} c={t.coral} style={{ flex: 1 }}>{vm.verifyContact.error}</T>
+                            </Row>
+                        ) : null}
+
+                        <Field
+                            label="6-DIGIT CODE"
+                            icon="keypad-outline"
+                            value={vm.verifyContact.code}
+                            onChangeText={vm.verifyContact.setCode}
+                            placeholder="000000"
+                            keyboardType="number-pad"
+                            maxLength={6}
+                            editable={!vm.verifyContact.busy}
+                            style={{ marginBottom: 14 }}
+                        />
+
+                        <Press
+                            onPress={vm.verifyContact.busy ? undefined : vm.verifyContact.confirm}
+                            disabled={vm.verifyContact.busy}
+                            style={{ width: '100%', paddingVertical: 15, borderRadius: 18, backgroundColor: vm.verifyContact.busy ? t.ink3 : t.lime, alignItems: 'center' }}
+                        >
+                            <T w={700} s={14} lh={1} c={vm.verifyContact.busy ? t.fg3 : t.on}>{vm.verifyContact.label}</T>
+                        </Press>
+                        <T w={400} s={11.5} lh={1.4} c={t.fg3} style={{ textAlign: 'center', marginTop: 12 }}>
+                            {vm.verifyContact.laterNote}
+                        </T>
+                        <Press onPress={vm.verifyContact.cancel} style={{ width: '100%', paddingVertical: 13, alignItems: 'center' }}>
+                            <T mono w={600} s={9} ls={0.12} c={t.fg3}>CLOSE</T>
+                        </Press>
+                    </View>
+                )}
+
                 {/* ── Payment settings (owner) ────────────────────────── */}
                 {vm.isPaySettings && vm.paySettings && (
                     <View>

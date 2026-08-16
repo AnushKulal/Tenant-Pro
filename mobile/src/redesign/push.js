@@ -131,6 +131,31 @@ const classify = (e) => {
 // The token alone, or null. What every caller that is not a diagnostic wants.
 export const getPushToken = async () => (await resolvePushToken()).token;
 
+// Ask for notification permission, and answer in the permissions screen's own words:
+// 'granted', 'denied', or 'missing' when this build has no notification module at all.
+//
+// Separate from resolvePushToken because the primer is asking a different question. It
+// wants permission, not a token — there may be no session yet to register one against,
+// and a screen that says "allowed" is telling the truth about the SWITCH even before
+// anything has been registered.
+export const requestNotificationPermission = async () => {
+    const Notifications = loadNotifications();
+    if (!Notifications) return 'missing';
+    try {
+        const existing = await Notifications.getPermissionsAsync();
+        let status = existing?.status;
+        // Only ask if unanswered — re-prompting somebody who already said no does
+        // nothing on either platform, and is why apps feel nagging.
+        if (status !== 'granted') {
+            const asked = await Notifications.requestPermissionsAsync();
+            status = asked?.status;
+        }
+        return status === 'granted' ? 'granted' : 'denied';
+    } catch (e) {
+        return 'missing';
+    }
+};
+
 // What the app should do when a notification is tapped while it is closed or in the
 // background. Returns an unsubscribe, or a no-op on a build without the module.
 //
@@ -171,4 +196,4 @@ export const setForegroundBehaviour = () => {
     }
 };
 
-export default { pushAvailable, getPushToken, resolvePushToken, onNotificationTap, setForegroundBehaviour };
+export default { pushAvailable, getPushToken, resolvePushToken, requestNotificationPermission, onNotificationTap, setForegroundBehaviour };
