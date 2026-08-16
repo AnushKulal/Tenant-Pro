@@ -224,6 +224,13 @@ const buildPush = (kind, data = {}) => {
         body: body ? clip(body, BODY_MAX) : undefined,
         data: {
             kind,
+            // Who this is FOR, carried into the payload as well as checked at send
+            // time. A notification outlives the session it was sent to: it sits in the
+            // tray for days, and the person can sign out, or sign in as the other role,
+            // before tapping it. Without this the app can only see a destination and
+            // has to obey it — which put a signed-out reader on a tenant portal showing
+            // a rent figure that was not theirs.
+            audience: AUDIENCE[kind],
             route: (DEST[kind] && DEST[kind].route) || null,
             // Only when there is one. An `overlay: null` in the payload would read to
             // the app as "close whatever is open", which is a different instruction.

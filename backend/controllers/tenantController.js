@@ -433,44 +433,85 @@ const getUnassignedTenants = async (req, res) => {
 };
 
 // --- 2. ASSIGN TENANT TO A ROOM ---
+//
+// Two callers, and they send very different things. The "add an existing tenant to this
+// room" form sends the lot: room, rent, deposit, move-in date, billing cycle. The "move
+// to another room" sheet sends ONE field — `unit_id` — because moving somebody's room
+// is not meant to change what they pay.
+//
+// This wrote every column unconditionally, so the second caller's missing fields landed
+// as `|| 0` and `|| null`. Moving a tenant between rooms therefore set their rent to 0,
+// their deposit to 0, and their move-in date and next due date to NULL. The due date is
+// the one with teeth: the reminder cron filters on `next_rent_due IS NOT NULL`, so the
+// tenant silently stopped being billed, stopped counting toward pending dues, and the
+// record of what deposit was being held for them was gone with no audit trail.
+//
+// So the UPDATE is now built from what was actually SENT. A field the caller omitted is
+// a field they did not mean to change.
 const assignTenantToRoom = async (req, res) => {
     try {
         const tenantId = req.params.id;
-        const { unit_id, deposit, rent_share, move_in_date, billing_cycle } = req.body; 
+        const { unit_id, deposit, rent_share, move_in_date, billing_cycle } = req.body;
 
         if (!unit_id) return res.status(400).json({ message: "Unit ID is required." });
 
+        // The room must be one of THIS landlord's, checked before anything is written —
+        // otherwise the room id is a way to file your tenant into a stranger's property.
+        const [rooms] = await db.query(
+            `SELECT u.id FROM units u
+             JOIN properties p ON u.property_id = p.id
+             WHERE u.id = ? AND p.owner_id = ?`,
+            [unit_id, req.user.id]
+        );
+        if (rooms.length === 0) {
+            return res.status(404).json({ message: "That room is not one of yours." });
+        }
+
+        // Always: the room, and Active — reassigning somebody is what brings a moved-out
+        // tenant back.
+        const sets = ['unit_id = ?', "status = 'Active'"];
+        const args = [unit_id];
+
+        // Only what was sent. `!== undefined` rather than a truthiness test, so a
+        // deliberate 0 — a tenant who pays no deposit — is still written.
+        if (deposit !== undefined) { sets.push('deposit = ?'); args.push(Number(deposit) || 0); }
+        if (rent_share !== undefined) { sets.push('rent_share = ?'); args.push(Number(rent_share) || 0); }
+        if (billing_cycle !== undefined) { sets.push('billing_cycle = ?'); args.push(billing_cycle || 'Anniversary'); }
+
         // --- SMART BILLING ENGINE ---
-        let nextRentDue = null;
+        // Only when a move-in date was actually supplied. Deriving a due date from a
+        // date nobody sent is what produced the NULL, and re-deriving one on an ordinary
+        // room move would drag the tenant's due date back to today — into a month they
+        // have already paid for — and have the cron chase them for it the next morning.
         if (move_in_date) {
             const [year, month, day] = move_in_date.split('-');
-            
+
             // Rent is due the day they move in
             let d = new Date(year, month - 1, day);
-            
+
             if (billing_cycle === '1st_of_month') {
                 // If they chose 1st of month, rent is due on the 1st of the CURRENT month
-                d = new Date(year, month - 1, 1); 
+                d = new Date(year, month - 1, 1);
             }
-            
+
             const dueYear = d.getFullYear();
             const dueMonth = String(d.getMonth() + 1).padStart(2, '0');
             const dueDay = String(d.getDate()).padStart(2, '0');
-            nextRentDue = `${dueYear}-${dueMonth}-${dueDay}`;
+            sets.push('move_in_date = ?', 'next_rent_due = ?');
+            args.push(move_in_date, `${dueYear}-${dueMonth}-${dueDay}`);
         }
 
-        // Update room, financials, dates, and reactivate the tenant!
-        const updateQuery = `
-            UPDATE tenants 
-            SET unit_id = ?, deposit = ?, rent_share = ?, status = 'Active', move_in_date = ?, billing_cycle = ?, next_rent_due = ?
-            WHERE id = ?
-        `;
-        const [result] = await db.query(updateQuery, [
-            unit_id, deposit || 0, rent_share || 0, 
-            move_in_date || null, billing_cycle || 'Anniversary', nextRentDue, 
-            tenantId
-        ]);
+        // Scoped by owner. Without it the WHERE named only the tenant id, so any signed-in
+        // landlord could pull any tenant row in the database into one of their own rooms —
+        // and the same UPDATE zeroed that person's rent and deposit on the way through.
+        const [result] = await db.query(
+            `UPDATE tenants SET ${sets.join(', ')} WHERE id = ? AND owner_id = ?`,
+            [...args, tenantId, req.user.id]
+        );
 
+        // Said the same way whether the tenant does not exist or belongs to somebody
+        // else — the same convention the ID and join flows use, so a refusal cannot be
+        // used to find out who is on the system.
         if (result.affectedRows === 0) return res.status(404).json({ message: "Tenant not found." });
 
         // Mark the new room as Occupied
