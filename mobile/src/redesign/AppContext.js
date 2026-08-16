@@ -3430,7 +3430,11 @@ function deriveVm(s, api) {
         nofcm: 'This build has no Firebase configuration, which is what Android needs to receive notifications. Nothing on this phone can fix that — the app has to be rebuilt with it.',
         failed: 'This phone could not be registered for notifications. Sign out and back in to try again.'
       }[s.pushState] || '';
-      const isTenant = s.role === 'tenant';
+      // `myRole`, not `s.role` — there is no `role` key in state and never was. Reading
+      // one gave undefined, so this was permanently false and every tenant was shown the
+      // landlord's phone field: the "box whose contents are silently discarded" that the
+      // comment below exists to forbid. The session is the only place the role lives.
+      const isTenant = myRole === 'tenant';
       return {
         // A tenant has nobody they are entitled to buzz, so they get no field — the
         // server ignores a number from them either way, and offering a box that is
@@ -5994,7 +5998,11 @@ export function AppProvider({ children }) {
   const sendTestPush = useCallback(async () => {
     const cur = stateRef.current.pt || {};
     if (cur.busy) return;
-    const role = stateRef.current.role;
+    // From the SESSION. `state.role` does not exist, so this was always undefined and
+    // every tenant's test went to the landlord endpoint, where requireOwner answered
+    // 403 "This is a landlord endpoint" — a sentence about signing in as a landlord,
+    // shown to a tenant, on the one control whose job is to explain what went wrong.
+    const role = (stateRef.current.session && stateRef.current.session.role) || 'owner';
     const phone = String(cur.phone || '').trim();
     setState({ pt: { ...cur, busy: true, said: '', tone: '' } });
     try {
@@ -6539,7 +6547,14 @@ export function AppProvider({ children }) {
     try {
       const token = pushRef.current;
       if (token) {
-        const bind = stateRef.current.role === 'tenant' ? apiPortal : apiOwner;
+        // The SESSION's role. This read `state.role`, which does not exist — so every
+        // tenant's sign-out called the landlord endpoint, was refused 403, and had the
+        // refusal swallowed by the catch below. The token survived, and the phone kept
+        // receiving that tenant's rent and payment notifications after they signed out.
+        // Exactly the outcome this block was written to prevent, silently.
+        const bind = stateRef.current.session && stateRef.current.session.role === 'tenant'
+          ? apiPortal
+          : apiOwner;
         await bind.dropPushToken(token);
       }
     } catch (e) { /* signing out must never fail on this */ }
