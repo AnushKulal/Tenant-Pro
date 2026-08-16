@@ -1,7 +1,7 @@
 // File: backend/src/routes/ownerRoutes.js
 const express = require('express');
 const router = express.Router();
-const { updateProfile, getDashboardStats, getAllTransactions, getPulse } = require('../controllers/ownerController');
+const { updateProfile, verifyProfileContact, getDashboardStats, getAllTransactions, getPulse } = require('../controllers/ownerController');
 const {
     getRequests,
     updateStatus,
@@ -28,6 +28,11 @@ const upload = require('../middleware/uploadMiddleware');
 // 2. Parse Form Data and save Image (upload.single)
 // 3. Execute logic (updateProfile)
 router.put('/profile', protect, upload.single('profile_pic'), updateProfile);
+
+// The other half of a profile save: a phone number or email address does not move onto
+// the account until a code sent TO IT comes back. Both are sign-in identifiers, so an
+// unproved change is somebody moving their account onto an address they may not hold.
+router.put('/profile/verify', protect, verifyProfileContact);
 
 // Polled every few seconds while the app is open, so it must stay cheap: counts and
 // a stamp, nothing else. The client only reloads the real data when the stamp moves.

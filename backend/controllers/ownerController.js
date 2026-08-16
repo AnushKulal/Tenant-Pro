@@ -2,10 +2,21 @@
 const db = require('../config/db');
 const bcrypt = require('bcryptjs');
 const { getFileUrl } = require('../middleware/uploadMiddleware');
+const { forSignup, phoneTaken } = require('../utils/signupPhone');
+const { requestCode, confirmCode, canonical } = require('../services/verifyService');
+
+// Is this email address on any account? Both tables, because the two portals are
+// mutually exclusive — one address belongs to a landlord OR a tenant, never both.
+const emailTaken = async (email) => {
+    const [a] = await db.query('SELECT id FROM owners WHERE LOWER(email) = ? LIMIT 1', [email]);
+    if (a.length) return true;
+    const [b] = await db.query('SELECT id FROM tenant_users WHERE LOWER(email) = ? LIMIT 1', [email]);
+    return b.length > 0;
+};
 
 const updateProfile = async (req, res) => {
     const ownerId = req.user.id; // Extracted from token via authMiddleware
-    const { name, phone, currentPassword, newPassword } = req.body;
+    const { name, phone, email, currentPassword, newPassword } = req.body;
     
     // If an image was uploaded, create the public URL path
     const profilePicPath = getFileUrl(req.file);
@@ -41,38 +52,141 @@ const updateProfile = async (req, res) => {
             hashedPassword = await bcrypt.hash(newPassword, 10);
         }
 
-        // 3. Build the Update Query dynamically
-        let updateQuery = 'UPDATE owners SET name = ?, phone = ?, password_hash = ?';
-        let queryParams = [name, phone || null, hashedPassword];
+        // 3. Build the update from what was actually SENT.
+        //
+        // The form is prefilled and posts every field, but "unchanged" and "cleared"
+        // are different intentions and this used to write both the same way: `phone`
+        // went in as `phone || null`, so a save from any caller that omitted it wiped
+        // the number off the account. Same class of bug as the room-move that zeroed a
+        // tenant's rent.
+        const sets = ['password_hash = ?'];
+        const args = [hashedPassword];
+        if (name !== undefined) { sets.push('name = ?'); args.push(String(name).trim()); }
+        if (profilePicPath) { sets.push('profile_pic = ?'); args.push(profilePicPath); }
 
-        if (profilePicPath) {
-            updateQuery += ', profile_pic = ?';
-            queryParams.push(profilePicPath);
+        // 4. Phone and email are SIGN-IN IDENTIFIERS, so they do not change here.
+        //
+        // Login matches on both, password reset sends a code to them, and the tenant
+        // phone-match links an account to a landlord's records by number. Writing a new
+        // one straight from the form would let somebody move their account onto an
+        // address they do not hold — which is the hole that was just closed at
+        // registration, reachable through a different door.
+        //
+        // So a changed value is not written: a code goes to it, and it lands on the
+        // account when that code comes back (see verifyProfileContact below).
+        const pending = [];
+        const wants = [
+            ['phone', phone, owner.phone],
+            ['email', email, owner.email]
+        ];
+        for (const [channel, next, current] of wants) {
+            if (next === undefined || next === null || String(next).trim() === '') continue;
+            const canon = canonical(channel, next);
+            const currentCanon = canonical(channel, current);
+            // Unchanged is not a change. Compared canonically so retyping the same
+            // number with a +91 on the front does not start a pointless verification.
+            if (canon && canon === currentCanon) continue;
+            if (!canon) {
+                pending.push({ channel, ok: false, code: 'BAD_VALUE', message: channel === 'phone'
+                    ? 'That does not look like a mobile number.'
+                    : 'That does not look like an email address.' });
+                continue;
+            }
+            // Taken by somebody else — checked before a code is sent, so nobody is
+            // texted a code for a number they can never actually claim. Both tables,
+            // because the two portals are mutually exclusive.
+            const takenHere = channel === 'phone'
+                ? await phoneTaken(db, 'owners', canon) || await phoneTaken(db, 'tenant_users', canon)
+                : await emailTaken(canon);
+            if (takenHere) {
+                pending.push({ channel, ok: false, code: 'TAKEN', message: channel === 'phone'
+                    ? 'That mobile number is already on another account.'
+                    : 'That email address is already on another account.' });
+                continue;
+            }
+            const asked = await requestCode({ role: 'owner', accountId: ownerId, channel, value: canon });
+            pending.push({ channel, value: canon, ...asked });
         }
 
-        updateQuery += ' WHERE id = ?';
-        queryParams.push(ownerId);
+        // 5. Execute the update
+        await db.execute(`UPDATE owners SET ${sets.join(', ')} WHERE id = ?`, [...args, ownerId]);
 
-        // 4. Execute the update
-        await db.execute(updateQuery, queryParams);
-
-        // 5. Send back the updated owner data (NEVER send the password back)
+        // 6. Send back the updated owner data (NEVER send the password back)
         const updatedOwner = {
             id: owner.id,
-            name: name,
+            name: name !== undefined ? String(name).trim() : owner.name,
             email: owner.email,
-            phone: phone || null,
+            phone: owner.phone || null,
             profile_pic: profilePicPath || owner.profile_pic
         };
 
         res.status(200).json({
-            message: 'Profile updated successfully',
-            owner: updatedOwner
+            // Says what was saved AND what is still waiting, because "Profile updated"
+            // over a phone number that did not change is the lie this flow most easily
+            // tells.
+            message: pending.some((p) => p.ok)
+                ? 'Saved. Enter the code we sent to confirm the rest.'
+                : 'Profile updated successfully',
+            owner: updatedOwner,
+            pending
         });
 
     } catch (error) {
         console.error('Profile Update Error:', error);
         res.status(500).json({ message: 'Server error during profile update' });
+    }
+};
+
+// PUT /api/owner/profile/verify   { channel: 'phone' | 'email', code }
+//
+// The other half of a profile save. `updateProfile` sent a code to the new value and
+// left the account untouched; this redeems the code and writes it.
+//
+// The value written comes from the STORED verification row, never from this request.
+// Taking it from the body would let somebody request a code to an address they hold,
+// then submit a different address alongside the valid code — verifying one thing and
+// saving another, which is the whole flow defeated in one line.
+const verifyProfileContact = async (req, res) => {
+    const ownerId = req.user.id;
+    const channel = String(req.body?.channel || '').trim().toLowerCase();
+    if (!['phone', 'email'].includes(channel)) {
+        return res.status(400).json({ message: "Say which you are confirming: 'phone' or 'email'." });
+    }
+
+    try {
+        const result = await confirmCode({ role: 'owner', accountId: ownerId, channel, code: req.body?.code });
+        if (!result.ok) {
+            return res.status(result.code === 'WRONG_CODE' ? 401 : 409).json({
+                code: result.code, message: result.message
+            });
+        }
+
+        // Re-checked at the moment of writing, not just when the code was sent. Someone
+        // else could have registered that number or address during the ten minutes the
+        // code was alive, and the UNIQUE keys would then reject this with a 500.
+        const taken = channel === 'phone'
+            ? await phoneTaken(db, 'owners', result.value) || await phoneTaken(db, 'tenant_users', result.value)
+            : await emailTaken(result.value);
+        if (taken) {
+            return res.status(409).json({
+                code: 'TAKEN',
+                message: channel === 'phone'
+                    ? 'That mobile number was claimed by another account while you were confirming it.'
+                    : 'That email address was claimed by another account while you were confirming it.'
+            });
+        }
+
+        await db.execute(`UPDATE owners SET ${channel} = ? WHERE id = ?`, [result.value, ownerId]);
+        const [[owner]] = await db.execute(
+            'SELECT id, name, email, phone, profile_pic FROM owners WHERE id = ?', [ownerId]
+        );
+        res.status(200).json({
+            message: channel === 'phone' ? 'Mobile number confirmed and updated.' : 'Email address confirmed and updated.',
+            owner
+        });
+    } catch (error) {
+        console.error('Profile verify error:', error.message);
+        res.status(500).json({ message: 'Could not confirm that just now.' });
     }
 };
 
@@ -265,6 +379,7 @@ const getPulse = async (req, res) => {
 
 module.exports = {
     updateProfile,
+    verifyProfileContact,
     getDashboardStats,
     getAllTransactions,
     getPulse

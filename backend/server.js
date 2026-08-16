@@ -81,6 +81,8 @@ const { uploadMode } = require('./middleware/uploadMiddleware');
 // either does something or dead-ends, and from the outside those look identical
 // until somebody presses it. Reports only which variables are missing, never a value.
 const { pushMode, sweepOrphanTokens } = require('./services/pushService');
+const { smsMode } = require('./services/smsService');
+const { sweepVerifications } = require('./services/verifyService');
 const { googleConfigured, googleMissing } = require('./config/googleAuth');
 
 // WHICH COMMIT IS ACTUALLY RUNNING.
@@ -163,6 +165,9 @@ app.get('/healthz', async (req, res) => {
             // firing daily into nothing because mail is unconfigured, and there was no
             // way to see that from outside — which is how it stayed unnoticed.
             push: await pushMode(),
+            // Whether a new phone number can be PROVED before it becomes a sign-in
+            // identifier. Without this, a profile phone change has to be refused.
+            sms: smsMode(),
             time: new Date().toISOString()
         });
     } catch (e) {
@@ -233,6 +238,13 @@ app.listen(PORT, () => {
         await sweepOrphanTokens();
     } catch (err) {
         console.error('push: orphan sweep skipped -', err.message);
+    }
+    // Same treatment for finished verification codes: consumed or long expired, no
+    // further purpose, and nothing else ever removes them.
+    try {
+        await sweepVerifications();
+    } catch (err) {
+        console.error('verify: sweep skipped -', err.message);
     }
     initCronJobs();
 })();
