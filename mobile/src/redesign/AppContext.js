@@ -230,6 +230,16 @@ const BLANK_PAY = {
 
 
 
+// How many days before the due date a rent reminder first goes out.
+//
+// A COPY of LEAD_DAYS in backend/utils/rentReminder.js, which is the code that actually
+// decides. It is duplicated because the app has no endpoint that reports it and one
+// number on a settings row does not justify inventing one — but a copy drifts, so if
+// the schedule changes, this changes with it. The alternative was leaving the stale "3
+// DAYS" that was there before, which is how a settings screen ends up describing an app
+// that no longer exists.
+const REMINDER_LEAD = 2;
+
 const INITIAL_STATE = {
   route: 'boot', overlay: null, filter: 'all', who: 'amit', method: 'UPI', toast: '',
   // 'system' means follow the phone. RedesignRoot already reads useColorScheme for
@@ -3519,8 +3529,8 @@ function deriveVm(s, api) {
     },
 
     settingsRows: [
-      // Only the first row does anything yet; the rest are named but unbuilt, and
-      // say so when tapped rather than looking broken.
+      // Two of these do something; the rest are named but unbuilt, and say so when
+      // tapped rather than looking broken.
       {
         label: 'Payment settings',
         icon: 'card-outline',
@@ -3530,8 +3540,22 @@ function deriveVm(s, api) {
           ps: { upiId: PAY.upiId, upiNumber: PAY.upiNumber, error: '' }
         })
       },
-      { label: 'Notifications', icon: 'notifications-outline', meta: 'ON' },
-      { label: 'Rent reminders', icon: 'alarm-outline', meta: '3 DAYS' },
+      // There WAS a 'Notifications' row here reading "ON", which tapped to "not built
+      // yet". Both halves became false the day notifications shipped, and on one screen
+      // it now contradicted the card below it — a hardcoded "ON" directly above a panel
+      // explaining that this phone cannot receive anything. The card is the real
+      // control, so the stub is gone rather than duplicated.
+      {
+        label: 'Rent reminders',
+        icon: 'alarm-outline',
+        // These ARE sent — an 8am job, every day. The row said "3 DAYS" and, when
+        // tapped, "not built yet"; neither was true, and a landlord reading it would
+        // conclude their tenants are being chased when they are not, or the reverse.
+        // There is no settings screen behind it yet, so it states the schedule instead
+        // of pretending to open one.
+        meta: `${REMINDER_LEAD} DAYS BEFORE`,
+        go: () => flash(`Tenants are reminded ${REMINDER_LEAD} days before rent is due, on the day, then until it is paid.`)
+      },
       {
         label: 'App permissions',
         icon: 'shield-checkmark-outline',
@@ -4134,8 +4158,17 @@ function deriveVm(s, api) {
       { label: 'PhonePe', sub: 'UPI · 98123 45670', icon: 'phone-portrait-outline', tag: '' }
     ],
     tenantSettingsRows: [
-      { label: 'Rent reminders', icon: 'alarm-outline', meta: '3 DAYS' },
-      { label: 'Notifications', icon: 'notifications-outline', meta: 'ON' },
+      // Both halves of this used to be false, the same way the landlord's were: a
+      // hardcoded "3 DAYS" over a schedule that is really two, and "not built yet" for
+      // reminders that go out every morning. The 'Notifications' stub is gone entirely —
+      // the card above this list is the real one, and it says what this phone can
+      // actually do rather than asserting "ON".
+      {
+        label: 'Rent reminders',
+        icon: 'alarm-outline',
+        meta: `${REMINDER_LEAD} DAYS BEFORE`,
+        go: () => flash(`You are reminded ${REMINDER_LEAD} days before rent is due, on the day, then until it is paid.`)
+      },
       { label: 'Autopay', icon: 'repeat-outline', meta: 'OFF' },
       {
         label: 'App permissions',

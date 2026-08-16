@@ -59,6 +59,13 @@ export default function SettingsScreen() {
         <T w={400} s={12} lh={1.45} c={t.fg3} style={{ marginTop: 6 }}>{vm.upiCard.hint}</T>
       </View>
 
+      {/* Checking that a notification actually arrives. ABOVE the settings rows on
+          purpose: it replaced a "Notifications — ON" row that sat here, and putting the
+          real thing below six rows meant a landlord scrolled past a hardcoded "ON" to
+          reach the panel explaining that nothing can arrive. Temporary by intent — see
+          the card. */}
+      <PushTestCard pt={vm.pushTest} />
+
       {/* Settings rows */}
       <View style={{ borderRadius: 22, backgroundColor: t.ink2, borderWidth: 1, borderColor: t.line, overflow: 'hidden', marginBottom: 8 }}>
         {vm.settingsRows.map((s, i) => (
@@ -74,10 +81,6 @@ export default function SettingsScreen() {
           </Press>
         ))}
       </View>
-
-      {/* Checking that a notification actually arrives. Temporary by intent — see the
-          card — and above the demo block because it applies to every landlord. */}
-      <PushTestCard pt={vm.pushTest} />
 
       {/* Demo account — rendered only when the SERVER says this is the demo, so a
           real landlord is never shown a control that deletes their data. */}

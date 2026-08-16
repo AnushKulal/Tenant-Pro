@@ -66,6 +66,11 @@ export default function TenantSettingsScreen() {
                 ))}
             </View>
 
+            {/* Checking that a notification actually arrives. A tenant's test can only
+                ever reach their own phones — the card draws no number field for them.
+                Above the rows, where the "Notifications — ON" stub used to be. */}
+            <PushTestCard pt={vm.pushTest} />
+
             {/* Settings rows */}
             <View style={{ borderRadius: 22, backgroundColor: t.ink2, borderWidth: 1, borderColor: t.line, overflow: 'hidden', marginBottom: 8 }}>
                 {(vm.tenantSettingsRows || []).map((ts, i) => (
@@ -79,10 +84,6 @@ export default function TenantSettingsScreen() {
                     </Press>
                 ))}
             </View>
-
-            {/* Checking that a notification actually arrives. A tenant's test can only
-                ever reach their own phones — the card draws no number field for them. */}
-            <PushTestCard pt={vm.pushTest} />
 
             {/* Sign out */}
             <Press
