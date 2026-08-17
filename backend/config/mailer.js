@@ -84,13 +84,53 @@ const maskAddress = (addr) => {
 // precisely the one where a user exists but the password does not.
 const mailUserHint = () => maskAddress(smtpUser || gmailUser);
 
+// Whether the credentials were ACCEPTED, not merely present.
+//
+// This is the difference that matters and the one that was invisible. Two variables
+// being non-empty says nothing about whether Google agreed to them — and a wrong app
+// password fails in precisely the same way as no password at all: the request
+// succeeds, the email never arrives. verifyMail() has always tested this at boot, but
+// only to the console, so the answer lived in a hosting dashboard's log tab. Kept here
+// so /healthz can say it.
+//
+//   pending    the boot check has not finished (or has not been run)
+//   ok         the provider accepted the login
+//   rejected   the provider refused it — the reason is attached
+let verifyState = 'pending';
+let verifyDetail = '';
+
+// Provider error text, made safe to publish.
+//
+// /healthz is a public URL and these strings come from someone else's server, so they
+// are treated as untrusted: any address is masked, anything resembling a credential is
+// dropped, and the whole thing is truncated. Gmail's 535 does not normally quote the
+// password, but "does not normally" is not a guarantee worth publishing against.
+const safeReason = (msg) => String(msg || '')
+    .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+/g, (m) => maskAddress(m) || '[address]')
+    // Long unbroken tokens are far likelier to be a secret than a sentence.
+    .replace(/\b[A-Za-z0-9/+_-]{20,}\b/g, '[redacted]')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 140);
+
+const noteVerify = (ok, err) => {
+    verifyState = ok ? 'ok' : 'rejected';
+    verifyDetail = ok ? '' : safeReason(err && err.message);
+};
+
 // The one line /healthz reports. Assembled here rather than at the two call sites in
 // server.js, which had drifted into saying it twice — so a change to the wording only
 // landed on the healthy branch and the degraded branch quietly kept the old answer.
 const mailStatus = () => {
-    if (isMailConfigured) return mailProvider;
-    const hint = mailUserHint();
-    return `not-configured (missing ${mailMissing().join(', ')}${hint ? `; user ${hint}` : ''})`;
+    if (!isMailConfigured) {
+        const hint = mailUserHint();
+        return `not-configured (missing ${mailMissing().join(', ')}${hint ? `; user ${hint}` : ''})`;
+    }
+    // Configured. Say whether it actually WORKS, because that is the live question
+    // once the variables are in place.
+    if (verifyState === 'ok') return `${mailProvider} (verified, sending as ${maskAddress(mailFrom) || mailFrom})`;
+    if (verifyState === 'rejected') return `${mailProvider} (CREDENTIALS REJECTED: ${verifyDetail || 'no reason given'})`;
+    return `${mailProvider} (configured, not yet verified)`;
 };
 
 // The address messages are sent FROM. On Gmail this is forced to the account itself
@@ -178,9 +218,11 @@ const verifyMail = async () => {
     }
     try {
         await transporter.verify();
+        noteVerify(true);
         console.log(`📧 Email ready via ${mailProvider}, sending as ${mailFrom}`);
         return true;
     } catch (err) {
+        noteVerify(false, err);
         console.error(
             `❌ Email credentials rejected by ${mailProvider}: ${err.message}. ` +
             (useGmail
