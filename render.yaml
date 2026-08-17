@@ -36,6 +36,22 @@ services:
       # Cloudinary keeps uploaded images alive across redeploys (recommended).
       - key: CLOUDINARY_URL
         sync: false
+      # Email over HTTPS. Free web services BLOCK outbound SMTP ports (25/465/587),
+      # so the EMAIL_*/SMTP_* variables below cannot work on the free plan — they
+      # time out. Set one API key instead; see backend/DEPLOY.md.
+      - key: BREVO_API_KEY
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: SENDGRID_API_KEY
+        sync: false
+      # Pin the provider while migrating between two keys. Optional.
+      - key: MAIL_PROVIDER
+        sync: false
+      # Must be an address verified with the provider above, or it refuses the send.
+      - key: MAIL_FROM
+        sync: false
+      # SMTP fallback — only usable on a paid instance type.
       - key: EMAIL_USER
         sync: false
       - key: EMAIL_PASS

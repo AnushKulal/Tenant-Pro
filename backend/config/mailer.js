@@ -1,20 +1,30 @@
-// Shared email transporter for password-reset codes.
+// Shared email sender for password-reset codes, contact verification and reminders.
 //
-// Two ways to configure it, checked in this order:
+// THREE transports, checked in this order:
 //
-//   1. Generic SMTP — SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS
-//      Use this for Brevo, Mailgun, Resend, Postmark, SES, anything. Preferred:
-//      transactional providers actually deliver, where a personal Gmail account
-//      gets rate-limited and spam-foldered.
+//   1. HTTPS API — BREVO_API_KEY, RESEND_API_KEY, SENDGRID_API_KEY (see mailProviders)
+//      Preferred, and first for a reason: many hosts — Render's free tier among them —
+//      block outbound SMTP ports outright, so options 2 and 3 cannot work there at all.
+//      HTTPS is never blocked. Pin one with MAIL_PROVIDER while migrating between them.
 //
-//   2. Gmail — EMAIL_USER, EMAIL_PASS
+//   2. Generic SMTP — SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS
+//      For a host that does allow outbound SMTP.
+//
+//   3. Gmail — EMAIL_USER, EMAIL_PASS
 //      EMAIL_PASS must be a 16-character App Password, NOT the account password.
 //      Google refuses plain passwords outright (SMTP 535), and App Passwords only
-//      exist once 2-Step Verification is on. This is the single most common reason
-//      reset emails silently never arrive.
+//      exist once 2-Step Verification is on.
 //
-// FROM address falls back to the SMTP/Gmail user when MAIL_FROM is unset.
+// An HTTPS key WINS over SMTP variables that are also set. That is deliberate: if both
+// are present, the one that works on a port-blocked host is the right answer, and a
+// half-finished migration should not silently keep using the transport being migrated
+// away from.
+//
+// FROM address falls back to the SMTP/Gmail user when MAIL_FROM is unset. On an HTTPS
+// provider the from address must be one you have VERIFIED with that provider, or it
+// will refuse the send — that refusal is reported by /healthz rather than swallowed.
 const nodemailer = require('nodemailer');
+const { pickProvider, providerSummary } = require('./mailProviders');
 
 const smtpHost = process.env.SMTP_HOST;
 const smtpUser = process.env.SMTP_USER;
@@ -22,14 +32,24 @@ const smtpPass = process.env.SMTP_PASS;
 const gmailUser = process.env.EMAIL_USER;
 const gmailPass = process.env.EMAIL_PASS;
 
-const useSmtp = !!(smtpHost && smtpUser && smtpPass);
-const useGmail = !useSmtp && !!(gmailUser && gmailPass);
+// Resolved once at load, like everything else here, so the transport cannot change
+// under a request mid-flight.
+const apiProvider = pickProvider();
+// A provider pinned by MAIL_PROVIDER but missing its key is NOT usable. Treated as
+// unconfigured rather than silently falling through to SMTP, so the health line can
+// say what is actually wrong.
+const useApi = !!(apiProvider && apiProvider.key);
 
-const isMailConfigured = useSmtp || useGmail;
+const useSmtp = !useApi && !!(smtpHost && smtpUser && smtpPass);
+const useGmail = !useApi && !useSmtp && !!(gmailUser && gmailPass);
+
+const isMailConfigured = useApi || useSmtp || useGmail;
 
 // Which provider (if any) is in play, so /healthz and the boot log can say so
 // without ever exposing a credential.
-const mailProvider = useSmtp ? `smtp:${smtpHost}` : useGmail ? 'gmail' : 'none';
+const mailProvider = useApi
+    ? `api:${apiProvider.id}`
+    : useSmtp ? `smtp:${smtpHost}` : useGmail ? 'gmail' : 'none';
 
 // WHICH variable is missing, not merely that mail is off.
 //
@@ -41,6 +61,8 @@ const mailProvider = useSmtp ? `smtp:${smtpHost}` : useGmail ? 'gmail' : 'none';
 //
 // Reported the way googleMissing() is, and for the same reason. Names only, never values.
 const mailMissing = () => {
+    // A provider pinned by name with no key behind it: the one thing to fix.
+    if (apiProvider && apiProvider.pinnedButKeyless) return [apiProvider.envKey];
     // Which pair the operator was reaching for, judged by what they have already set.
     // Listing both pairs would name six variables when two are wanted, and listing the
     // wrong pair would send them to configure a provider they are not using.
@@ -57,9 +79,11 @@ const mailMissing = () => {
             gmailPass ? null : 'EMAIL_PASS'
         ].filter(Boolean);
     }
-    // Nothing at all is set. Gmail is the shorter road for a single operator, so that
-    // is the pair named.
-    return ['EMAIL_USER', 'EMAIL_PASS'];
+    // Nothing at all is set. This used to name EMAIL_USER/EMAIL_PASS, which is now bad
+    // advice on the host this runs on: outbound SMTP is blocked there, so following it
+    // leads to a connection timeout rather than working email. The HTTPS key is the
+    // road that actually arrives.
+    return ['BREVO_API_KEY'];
 };
 
 // Enough of the configured address to RECOGNISE it, and not enough to use it.
@@ -164,10 +188,12 @@ const mailStatus = () => {
         return `${mailProvider} (CREDENTIALS REJECTED: ${verifyDetail || 'no reason given'})`;
     }
     if (verifyState === 'unreachable') {
-        // Named for what to go and check. The attempt count separates a cold-start
-        // blip from a host that simply does not allow the connection.
+        // Named for what to go and check, and that differs by transport: an HTTPS
+        // provider cannot be port-blocked, so pointing at outbound SMTP there would
+        // send somebody to look at the one thing that is definitely not the cause.
+        const where = useApi ? `check ${apiProvider.label} status` : 'check outbound SMTP';
         return `${mailProvider} (UNREACHABLE after ${verifyAttempts} attempt${verifyAttempts === 1 ? '' : 's'}`
-            + ` — credentials never tried, check outbound SMTP: ${verifyDetail || 'no reason given'})`;
+            + ` — credentials never tried, ${where}: ${verifyDetail || 'no reason given'})`;
     }
     return `${mailProvider} (configured, not yet verified)`;
 };
@@ -210,16 +236,55 @@ const NO_REPLY_FOOTER =
 // Single place every automated email goes through, so the no-reply identity (from,
 // reply-to, headers, footer) is applied consistently to OTPs and rent reminders
 // alike rather than re-specified — and differently — at each call site.
-const sendAppMail = ({ to, subject, html }) => transporter.sendMail({
-    from: `"${MAIL_FROM_NAME}" <${mailFrom}>`,
-    ...(mailReplyTo ? { replyTo: mailReplyTo } : {}),
-    to,
-    subject,
-    html: html + NO_REPLY_FOOTER,
-    headers: NO_REPLY_HEADERS
-});
+//
+// The transport is chosen here and nowhere else. authController, verifyService and
+// cronService call this and are entirely unaware of whether the message left over
+// HTTPS or SMTP — which is the whole point: switching provider touches this file only.
+//
+// Rejects on failure, exactly as transporter.sendMail always has, so existing callers'
+// try/catch keeps working. An HTTPS provider answers with a status rather than throwing,
+// so its refusal is turned into an Error carrying the provider's own explanation —
+// "sender not verified" is worth propagating verbatim.
+const sendAppMail = async ({ to, subject, html }) => {
+    const body = html + NO_REPLY_FOOTER;
 
-const transporter = isMailConfigured
+    if (useApi) {
+        const r = await apiProvider.send({
+            key: apiProvider.key,
+            fromName: MAIL_FROM_NAME,
+            from: mailFrom,
+            to,
+            subject,
+            html: body,
+            replyTo: mailReplyTo,
+            headers: NO_REPLY_HEADERS
+        });
+        if (!r.ok) {
+            const err = new Error(`${apiProvider.label} refused the message (HTTP ${r.status}): ${r.reason || 'no reason given'}`);
+            // Carried so a caller — or a future retry policy — can tell "this will never
+            // work" from "try again later" without parsing the message.
+            err.fatal = !!r.fatal;
+            err.status = r.status;
+            throw err;
+        }
+        return { accepted: [to], provider: apiProvider.id };
+    }
+
+    return transporter.sendMail({
+        from: `"${MAIL_FROM_NAME}" <${mailFrom}>`,
+        ...(mailReplyTo ? { replyTo: mailReplyTo } : {}),
+        to,
+        subject,
+        html: body,
+        headers: NO_REPLY_HEADERS
+    });
+};
+
+// Built only for the SMTP transports. On an HTTPS provider there is no socket to open,
+// so this stays a stub — and a stub that throws is better than a live transporter
+// nobody uses, because it makes an accidental direct call fail loudly instead of
+// quietly bypassing the chosen provider.
+const transporter = (isMailConfigured && !useApi)
     ? nodemailer.createTransport(
         useSmtp
             ? {
@@ -233,7 +298,16 @@ const transporter = isMailConfigured
     )
     // A stub so callers can import this unconditionally; every send rejects with a
     // message that says exactly what is missing.
-    : { sendMail: async () => { throw new Error('Email is not configured on this server.'); } };
+    : {
+        sendMail: async () => {
+            throw new Error(useApi
+                ? `Email goes out through ${apiProvider.label}'s HTTPS API on this server — use sendAppMail, not transporter.`
+                : 'Email is not configured on this server.');
+        },
+        // verifyMail calls this; on an HTTPS provider the equivalent check is the
+        // provider's own authenticated endpoint, handled in verifyMail itself.
+        verify: async () => { throw new Error('No SMTP transport on this server.'); }
+    };
 
 // Credentials that are present but WRONG behave identically to no credentials at
 // all from the outside: the request succeeds, the email never arrives, and nothing
@@ -256,6 +330,23 @@ const verifyMail = async () => {
         return false;
     }
     try {
+        if (useApi) {
+            // The provider's own authenticated endpoint. A 401/403 is a bad key — that
+            // is a credential problem. A thrown fetch error (DNS, timeout, abort) means
+            // we never reached them. Anything else — a 500, a rate limit — is also
+            // "not their answer about our key", so it counts as unreachable rather than
+            // condemning a key that may be perfectly valid.
+            const r = await apiProvider.verify({ key: apiProvider.key });
+            if (r.ok) {
+                noteVerify(true);
+                console.log(`📧 Email ready via ${apiProvider.label} HTTPS API, sending as ${mailFrom}`);
+                return true;
+            }
+            const e = new Error(`HTTP ${r.status}: ${r.reason || 'no reason given'}`);
+            // Only an auth status maps to EAUTH; everything else stays connection-shaped.
+            e.code = r.auth ? 'EAUTH' : 'EPROVIDER';
+            throw e;
+        }
         await transporter.verify();
         noteVerify(true);
         console.log(`📧 Email ready via ${mailProvider}, sending as ${mailFrom}`);
@@ -267,19 +358,25 @@ const verifyMail = async () => {
         // most misleading thing this function could say.
         if (verifyState === 'unreachable') {
             console.error(
-                `❌ Cannot REACH the mail server (${mailProvider}): ${err.message}. ` +
+                `❌ Cannot REACH the mail provider (${mailProvider}): ${err.message}. ` +
                 'The credentials were never presented, so they are not the problem yet. ' +
-                'Most hosts block outbound SMTP — check whether this platform allows ' +
-                'port 465/587 outbound, or switch to a provider with an HTTPS API.'
+                (useApi
+                    // HTTPS is not port-blocked anywhere, so this is the provider being
+                    // down or rate-limiting — genuinely worth retrying, which we do.
+                    ? `${apiProvider.label}'s API did not give a verdict on the key. Usually their outage or a rate limit; retrying.`
+                    : 'Many hosts block outbound SMTP — Render\'s free tier blocks ports 25/465/587 outright. ' +
+                      'Either move to an instance type that allows it, or set an HTTPS provider key (BREVO_API_KEY).')
             );
             scheduleRecheck();
         } else {
             console.error(
                 `❌ Email credentials REJECTED by ${mailProvider}: ${err.message}. ` +
-                (useGmail
-                    ? 'For Gmail this is almost always a non-App-Password: turn on 2-Step ' +
-                      'Verification and generate a 16-character App Password.'
-                    : 'Check SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASS.')
+                (useApi
+                    ? `Check ${apiProvider.envKey} — the key was refused. A revoked or mistyped key looks exactly like this.`
+                    : useGmail
+                        ? 'For Gmail this is almost always a non-App-Password: turn on 2-Step ' +
+                          'Verification and generate a 16-character App Password.'
+                        : 'Check SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASS.')
             );
         }
         return false;
@@ -309,5 +406,8 @@ const scheduleRecheck = () => {
 
 module.exports = {
     transporter, sendAppMail, isMailConfigured, mailProvider, mailFrom, verifyMail,
-    mailMissing, mailUserHint, mailStatus
+    mailMissing, mailUserHint, mailStatus,
+    // For DEPLOY.md tooling and any future admin view: which providers exist and
+    // whether each key is set. Never the keys.
+    providerSummary
 };
