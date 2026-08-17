@@ -39,6 +39,18 @@ const smsMode = () => {
     const p = provider();
     if (p === 'msg91') return 'ready (msg91)';
     if (p === 'twilio') return 'ready (twilio)';
+    // Twilio needs THREE variables, and two of three reads as "nothing set" — the same
+    // trap that made the mail line useless (see mailMissing in config/mailer). Somebody
+    // who has pasted the SID and the token and not yet bought a number would otherwise
+    // be told to start over.
+    if (TWILIO_SID || TWILIO_TOKEN || TWILIO_FROM) {
+        const missing = [
+            TWILIO_SID ? null : 'TWILIO_ACCOUNT_SID',
+            TWILIO_TOKEN ? null : 'TWILIO_AUTH_TOKEN',
+            TWILIO_FROM ? null : 'TWILIO_FROM'
+        ].filter(Boolean);
+        return `not-configured (missing ${missing.join(', ')})`;
+    }
     return 'not-configured (no MSG91_AUTH_KEY or TWILIO_* set)';
 };
 const isSmsConfigured = () => provider() !== null;
