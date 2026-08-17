@@ -70,7 +70,7 @@ const { protect, requireOwner } = require('./middleware/authMiddleware');
 const { initCronJobs, checkAndSendRentReminders } = require('./services/cronService');
 const initDb = require('./config/initDb');
 const { ensureDemoAccount } = require('./config/seedDemo');
-const { mailProvider, isMailConfigured, verifyMail } = require('./config/mailer');
+const { isMailConfigured, verifyMail, mailStatus } = require('./config/mailer');
 // Which storage the uploader chose. Reported by /healthz because the difference is
 // otherwise invisible until it hurts: in disk mode every uploaded photo and ID lives on
 // the host's ephemeral filesystem and is DELETED by the next deploy, and there is no
@@ -153,11 +153,12 @@ app.get('/healthz', async (req, res) => {
         await db.query('SELECT 1');
         // `mail` is reported because a missing email configuration is invisible
         // otherwise: password reset simply never arrives and nothing on the client
-        // can tell you why. Only the provider name is exposed, never a credential.
+        // can tell you why. Only the provider name and the MISSING variable names are
+        // exposed — never a credential, and never a whole address.
         res.status(200).json({
             status: 'ok',
             db: 'up',
-            mail: isMailConfigured ? mailProvider : 'not-configured',
+            mail: mailStatus(),
             commit: runningCommit(),
             uploads: uploadMode(),
             google: googleConfigured() ? 'ready' : `not-configured (missing ${googleMissing().join(', ')})`,
@@ -178,7 +179,7 @@ app.get('/healthz', async (req, res) => {
         res.status(500).json({
             status: 'degraded',
             db: 'down',
-            mail: isMailConfigured ? mailProvider : 'not-configured',
+            mail: mailStatus(),
             commit: runningCommit(),
             uploads: uploadMode(),
             google: googleConfigured() ? 'ready' : `not-configured (missing ${googleMissing().join(', ')})`,

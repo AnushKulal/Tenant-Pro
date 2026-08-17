@@ -31,6 +31,68 @@ const isMailConfigured = useSmtp || useGmail;
 // without ever exposing a credential.
 const mailProvider = useSmtp ? `smtp:${smtpHost}` : useGmail ? 'gmail' : 'none';
 
+// WHICH variable is missing, not merely that mail is off.
+//
+// "not-configured" on its own sent us round a loop that cost real time: mail needs a
+// PAIR of variables, and half a pair looks exactly like no pair from outside. Somebody
+// who has set EMAIL_USER and not EMAIL_PASS, or who set both and later cleared one,
+// gets the identical word — so the only way to find out was to open the hosting
+// dashboard, which the person debugging often cannot do.
+//
+// Reported the way googleMissing() is, and for the same reason. Names only, never values.
+const mailMissing = () => {
+    // Which pair the operator was reaching for, judged by what they have already set.
+    // Listing both pairs would name six variables when two are wanted, and listing the
+    // wrong pair would send them to configure a provider they are not using.
+    if (smtpHost || smtpUser || smtpPass) {
+        return [
+            smtpHost ? null : 'SMTP_HOST',
+            smtpUser ? null : 'SMTP_USER',
+            smtpPass ? null : 'SMTP_PASS'
+        ].filter(Boolean);
+    }
+    if (gmailUser || gmailPass) {
+        return [
+            gmailUser ? null : 'EMAIL_USER',
+            gmailPass ? null : 'EMAIL_PASS'
+        ].filter(Boolean);
+    }
+    // Nothing at all is set. Gmail is the shorter road for a single operator, so that
+    // is the pair named.
+    return ['EMAIL_USER', 'EMAIL_PASS'];
+};
+
+// Enough of the configured address to RECOGNISE it, and not enough to use it.
+//
+// The question this answers is "which of my accounts is this?", asked by somebody who
+// has three and cannot remember which one they typed into a dashboard months ago. The
+// domain is kept whole because that is usually the whole answer; the local part is
+// reduced to its first and last character, because /healthz is a public URL and
+// publishing a full working address there is how it ends up scraped.
+const maskAddress = (addr) => {
+    const s = String(addr || '').trim();
+    const at = s.lastIndexOf('@');
+    if (at < 1) return null;
+    const local = s.slice(0, at);
+    const domain = s.slice(at);
+    if (local.length <= 2) return `${'*'.repeat(local.length)}${domain}`;
+    return `${local[0]}${'*'.repeat(local.length - 2)}${local[local.length - 1]}${domain}`;
+};
+
+// The masked login, whichever provider it belongs to, or null when no user is set at
+// all. Deliberately independent of isMailConfigured: the case worth reporting is
+// precisely the one where a user exists but the password does not.
+const mailUserHint = () => maskAddress(smtpUser || gmailUser);
+
+// The one line /healthz reports. Assembled here rather than at the two call sites in
+// server.js, which had drifted into saying it twice — so a change to the wording only
+// landed on the healthy branch and the degraded branch quietly kept the old answer.
+const mailStatus = () => {
+    if (isMailConfigured) return mailProvider;
+    const hint = mailUserHint();
+    return `not-configured (missing ${mailMissing().join(', ')}${hint ? `; user ${hint}` : ''})`;
+};
+
 // The address messages are sent FROM. On Gmail this is forced to the account itself
 // no matter what MAIL_FROM says — Google rewrites anything else — so a no-reply
 // sender address only truly takes effect once MAIL_FROM points at a domain you own
@@ -99,8 +161,16 @@ const transporter = isMailConfigured
 // says why. Verifying once at boot turns that into a log line you can act on.
 const verifyMail = async () => {
     if (!isMailConfigured) {
+        const hint = mailUserHint();
         console.warn(
-            '⚠️  Email is NOT configured — password reset codes cannot be sent. ' +
+            `⚠️  Email is NOT configured — missing ${mailMissing().join(', ')}. ` +
+            'Password reset codes and contact-verification codes cannot be sent. ' +
+            (hint
+                // Half a pair set is a materially different situation from none, and
+                // the old wording ("set all of these") told somebody who had already
+                // set the user to set it again.
+                ? `A login IS set (${hint}) — so it is the password half that is absent. `
+                : '') +
             'Set SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASS, or EMAIL_USER/EMAIL_PASS ' +
             '(Gmail App Password, not the account password).'
         );
@@ -122,4 +192,7 @@ const verifyMail = async () => {
     }
 };
 
-module.exports = { transporter, sendAppMail, isMailConfigured, mailProvider, mailFrom, verifyMail };
+module.exports = {
+    transporter, sendAppMail, isMailConfigured, mailProvider, mailFrom, verifyMail,
+    mailMissing, mailUserHint, mailStatus
+};
