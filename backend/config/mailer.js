@@ -93,11 +93,20 @@ const mailUserHint = () => maskAddress(smtpUser || gmailUser);
 // only to the console, so the answer lived in a hosting dashboard's log tab. Kept here
 // so /healthz can say it.
 //
-//   pending    the boot check has not finished (or has not been run)
-//   ok         the provider accepted the login
-//   rejected   the provider refused it — the reason is attached
+// There are THREE outcomes, not two, and conflating two of them is actively harmful:
+//
+//   pending      the boot check has not finished (or has not been run)
+//   ok           the provider accepted the login
+//   rejected     the provider answered and REFUSED the credentials — regenerate them
+//   unreachable  we never got far enough to present credentials at all
+//
+// The first version of this reported a connection timeout as "CREDENTIALS REJECTED",
+// which is a lie that costs an afternoon: it sends somebody to regenerate an app
+// password when the password was never tried and the real problem is that the host
+// blocks outbound SMTP. The two need opposite fixes, so they get separate states.
 let verifyState = 'pending';
 let verifyDetail = '';
+let verifyAttempts = 0;
 
 // Provider error text, made safe to publish.
 //
@@ -113,9 +122,31 @@ const safeReason = (msg) => String(msg || '')
     .trim()
     .slice(0, 140);
 
+// Did we get an ANSWER from the provider, or never reach it?
+//
+// nodemailer sets a code on the error, and the codes divide cleanly along exactly the
+// line that matters. EAUTH means the server replied and said no — that is a credential
+// problem. Everything connection-shaped means the credentials were never presented.
+// An unrecognised code falls through to 'unreachable', which is the safer wrong answer:
+// it points at reachability without accusing a password that may be perfectly good.
+const CONNECTION_CODES = ['ETIMEDOUT', 'ECONNECTION', 'ESOCKET', 'ECONNREFUSED', 'EDNS', 'EHOSTUNREACH', 'ENOTFOUND'];
+
 const noteVerify = (ok, err) => {
-    verifyState = ok ? 'ok' : 'rejected';
-    verifyDetail = ok ? '' : safeReason(err && err.message);
+    verifyAttempts += 1;
+    if (ok) {
+        verifyState = 'ok';
+        verifyDetail = '';
+        return;
+    }
+    const code = String((err && err.code) || '').toUpperCase();
+    const msg = String((err && err.message) || '');
+    // Some transports report a timeout in the message without setting a code.
+    const looksConnection = CONNECTION_CODES.includes(code)
+        || /timeout|timed out|refused|unreachable|getaddrinfo|network/i.test(msg);
+    verifyState = (code === 'EAUTH' || (!looksConnection && /invalid login|password not accepted|5\.7\.\d/i.test(msg)))
+        ? 'rejected'
+        : 'unreachable';
+    verifyDetail = safeReason(code ? `${code}: ${msg}` : msg);
 };
 
 // The one line /healthz reports. Assembled here rather than at the two call sites in
@@ -129,7 +160,15 @@ const mailStatus = () => {
     // Configured. Say whether it actually WORKS, because that is the live question
     // once the variables are in place.
     if (verifyState === 'ok') return `${mailProvider} (verified, sending as ${maskAddress(mailFrom) || mailFrom})`;
-    if (verifyState === 'rejected') return `${mailProvider} (CREDENTIALS REJECTED: ${verifyDetail || 'no reason given'})`;
+    if (verifyState === 'rejected') {
+        return `${mailProvider} (CREDENTIALS REJECTED: ${verifyDetail || 'no reason given'})`;
+    }
+    if (verifyState === 'unreachable') {
+        // Named for what to go and check. The attempt count separates a cold-start
+        // blip from a host that simply does not allow the connection.
+        return `${mailProvider} (UNREACHABLE after ${verifyAttempts} attempt${verifyAttempts === 1 ? '' : 's'}`
+            + ` — credentials never tried, check outbound SMTP: ${verifyDetail || 'no reason given'})`;
+    }
     return `${mailProvider} (configured, not yet verified)`;
 };
 
@@ -223,15 +262,49 @@ const verifyMail = async () => {
         return true;
     } catch (err) {
         noteVerify(false, err);
-        console.error(
-            `❌ Email credentials rejected by ${mailProvider}: ${err.message}. ` +
-            (useGmail
-                ? 'For Gmail this is almost always a non-App-Password: turn on 2-Step ' +
-                  'Verification and generate a 16-character App Password.'
-                : 'Check SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASS.')
-        );
+        // Two different failures, two different sentences. Telling somebody to
+        // regenerate an app password when the connection never opened is the single
+        // most misleading thing this function could say.
+        if (verifyState === 'unreachable') {
+            console.error(
+                `❌ Cannot REACH the mail server (${mailProvider}): ${err.message}. ` +
+                'The credentials were never presented, so they are not the problem yet. ' +
+                'Most hosts block outbound SMTP — check whether this platform allows ' +
+                'port 465/587 outbound, or switch to a provider with an HTTPS API.'
+            );
+            scheduleRecheck();
+        } else {
+            console.error(
+                `❌ Email credentials REJECTED by ${mailProvider}: ${err.message}. ` +
+                (useGmail
+                    ? 'For Gmail this is almost always a non-App-Password: turn on 2-Step ' +
+                      'Verification and generate a 16-character App Password.'
+                    : 'Check SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASS.')
+            );
+        }
         return false;
     }
+};
+
+// A boot check that runs while the container is still wiring up its network can fail
+// for reasons that have nothing to do with the configuration, and a one-shot check
+// would then report UNREACHABLE for the lifetime of the process. So connection
+// failures are retried on a widening delay.
+//
+// Only connection failures. A refused password will not start working on its own, and
+// hammering AUTH at Gmail is a good way to get an account locked.
+const RECHECK_DELAYS_MS = [30_000, 60_000, 120_000, 300_000];
+
+const scheduleRecheck = () => {
+    const delay = RECHECK_DELAYS_MS[verifyAttempts - 1];
+    if (delay === undefined) {
+        // Out of retries. The state stands, and the attempt count in /healthz is what
+        // distinguishes this from a single unlucky cold start.
+        console.error(`❌ Mail still unreachable after ${verifyAttempts} attempts — giving up until next restart.`);
+        return;
+    }
+    // unref: a pending retry must never be the reason the process stays alive.
+    setTimeout(() => { verifyMail().catch(() => {}); }, delay).unref();
 };
 
 module.exports = {
