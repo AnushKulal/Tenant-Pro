@@ -144,7 +144,12 @@ const safeReason = (msg) => String(msg || '')
     .replace(/\b[A-Za-z0-9/+_-]{20,}\b/g, '[redacted]')
     .replace(/\s+/g, ' ')
     .trim()
-    .slice(0, 140);
+    // 320, not 140. The first real failure this caught in production was Brevo saying
+    // "We have detected you are using an unrecognised IP address 74.220.48.219. If you
+    // performed this action make sure to add the" — truncated one word before the fix.
+    // A reason cut off before its verb is barely better than no reason: the whole point
+    // of publishing the provider's own words is that they say what to go and do.
+    .slice(0, 320);
 
 // Did we get an ANSWER from the provider, or never reach it?
 //
