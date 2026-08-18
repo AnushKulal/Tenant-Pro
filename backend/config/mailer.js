@@ -217,14 +217,50 @@ const mailReplyTo = process.env.MAIL_REPLY_TO || null;
 
 // Standard, machine-readable "this is an automated message, do not reply" markers.
 // Auto-Submitted (RFC 3834) tells mail servers and out-of-office autoresponders not
-// to reply; the others suppress auto-acknowledgements. This is what actually makes a
-// message "no-reply" at the protocol level, independent of the from address — so it
-// works today on Gmail and keeps working on a custom domain later.
+// to reply; X-Auto-Response-Suppress is Microsoft's equivalent. This is what actually
+// makes a message "no-reply" at the protocol level, independent of the from address.
+//
+// 'Precedence: bulk' USED to be here and was removed deliberately. Its only real job —
+// suppressing vacation autoresponders — is already done properly and standardly by
+// Auto-Submitted above, so it was redundant. What it was NOT free of is a cost: it is
+// a non-standard header that filters read as "this is bulk mail", and a password reset
+// code is the opposite of bulk. Volunteering a bulk signal on the one message a locked-
+// out person is refreshing their inbox for is a bad trade for a duplicate of a header
+// we already send.
 const NO_REPLY_HEADERS = {
     'Auto-Submitted': 'auto-generated',
-    'X-Auto-Response-Suppress': 'OOF, AutoReply, All',
-    'Precedence': 'bulk'
+    'X-Auto-Response-Suppress': 'OOF, AutoReply, All'
 };
+
+// A plain-text version of the message, derived from the HTML.
+//
+// Every mail this app sends was HTML-only, and an HTML-only message is a mild spam
+// signal on its own: real correspondence is multipart, and bulk senders are the ones
+// who cannot be bothered. It also matters to the people reading in a text-only client,
+// a screen reader, or a watch preview — the alternative to a text part is not "no text
+// part", it is the client generating a worse one.
+//
+// Deliberately simple. These templates are a handful of paragraphs and one big code;
+// a full HTML-to-text converter would be a dependency and a parsing surface for no gain.
+const htmlToText = (html) => String(html || '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<head[\s\S]*?<\/head>/gi, '')
+    // Block-level ends become line breaks, so paragraphs survive as paragraphs.
+    .replace(/<\/(p|div|h[1-6]|tr|li)>/gi, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&quot;/g, '"')
+    // Tidy the whitespace the tags left behind, without collapsing paragraph breaks.
+    .split('\n')
+    .map((line) => line.replace(/[ \t]+/g, ' ').trim())
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 
 // A short line the recipient can see, since headers are invisible to humans. Every
 // automated email ends with this.
@@ -245,8 +281,11 @@ const NO_REPLY_FOOTER =
 // try/catch keeps working. An HTTPS provider answers with a status rather than throwing,
 // so its refusal is turned into an Error carrying the provider's own explanation —
 // "sender not verified" is worth propagating verbatim.
-const sendAppMail = async ({ to, subject, html }) => {
+const sendAppMail = async ({ to, subject, html, text }) => {
     const body = html + NO_REPLY_FOOTER;
+    // A caller may supply its own wording; otherwise it is derived. Never empty — an
+    // empty text part is worse than none, because clients will show it.
+    const plain = (text && String(text).trim()) || htmlToText(body);
 
     if (useApi) {
         const r = await apiProvider.send({
@@ -256,6 +295,7 @@ const sendAppMail = async ({ to, subject, html }) => {
             to,
             subject,
             html: body,
+            text: plain,
             replyTo: mailReplyTo,
             headers: NO_REPLY_HEADERS
         });
@@ -275,6 +315,7 @@ const sendAppMail = async ({ to, subject, html }) => {
         ...(mailReplyTo ? { replyTo: mailReplyTo } : {}),
         to,
         subject,
+        text: plain,
         html: body,
         headers: NO_REPLY_HEADERS
     });

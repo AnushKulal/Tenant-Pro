@@ -75,7 +75,7 @@ const PROVIDERS = [
         // than requiring you to own and verify a domain — which is why it is first.
         // Everything else here needs a domain before it will send to strangers.
         needsDomain: false,
-        send: async ({ key, fromName, from, to, subject, html, replyTo, headers }) => {
+        send: async ({ key, fromName, from, to, subject, html, text, replyTo, headers }) => {
             const r = await call('https://api.brevo.com/v3/smtp/email', {
                 method: 'POST',
                 headers: { 'api-key': key, 'content-type': 'application/json', accept: 'application/json' },
@@ -84,6 +84,7 @@ const PROVIDERS = [
                     to: [{ email: to }],
                     subject,
                     htmlContent: html,
+                    ...(text ? { textContent: text } : {}),
                     ...(replyTo ? { replyTo: { email: replyTo } } : {}),
                     headers
                 })
@@ -102,7 +103,7 @@ const PROVIDERS = [
         envKey: 'RESEND_API_KEY',
         free: '3,000 emails/month',
         needsDomain: true,
-        send: async ({ key, fromName, from, to, subject, html, replyTo, headers }) => {
+        send: async ({ key, fromName, from, to, subject, html, text, replyTo, headers }) => {
             const r = await call('https://api.resend.com/emails', {
                 method: 'POST',
                 headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
@@ -111,6 +112,7 @@ const PROVIDERS = [
                     to: [to],
                     subject,
                     html,
+                    ...(text ? { text } : {}),
                     ...(replyTo ? { reply_to: replyTo } : {}),
                     headers
                 })
@@ -128,7 +130,7 @@ const PROVIDERS = [
         envKey: 'SENDGRID_API_KEY',
         free: '100 emails/day',
         needsDomain: true,
-        send: async ({ key, fromName, from, to, subject, html, replyTo, headers }) => {
+        send: async ({ key, fromName, from, to, subject, html, text, replyTo, headers }) => {
             const r = await call('https://api.sendgrid.com/v3/mail/send', {
                 method: 'POST',
                 headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
@@ -136,7 +138,12 @@ const PROVIDERS = [
                     personalizations: [{ to: [{ email: to }] }],
                     from: { email: from, name: fromName },
                     subject,
-                    content: [{ type: 'text/html', value: html }],
+                    // text/plain MUST come first: SendGrid requires the content array
+                    // in ascending order of preference and rejects the reverse.
+                    content: [
+                        ...(text ? [{ type: 'text/plain', value: text }] : []),
+                        { type: 'text/html', value: html }
+                    ],
                     ...(replyTo ? { reply_to: { email: replyTo } } : {}),
                     headers
                 })
