@@ -418,12 +418,24 @@ const verifyMail = async () => {
             console.error(
                 `❌ Email credentials REJECTED by ${mailProvider}: ${err.message}. ` +
                 (useApi
-                    ? `Check ${apiProvider.envKey} — the key was refused. A revoked or mistyped key looks exactly like this.`
+                    ? `Check ${apiProvider.envKey} — the key was refused. A revoked or mistyped key looks exactly like this, ` +
+                      'and so does an account-level block such as an IP allowlist.'
                     : useGmail
                         ? 'For Gmail this is almost always a non-App-Password: turn on 2-Step ' +
                           'Verification and generate a 16-character App Password.'
                         : 'Check SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASS.')
             );
+            // A rejection on an HTTPS provider is worth re-probing, slowly. Not every 401
+            // means a bad key: an IP allowlist, an account still being reviewed, a key
+            // pending activation all answer 401 and are all fixed on the PROVIDER'S side,
+            // where nothing tells this process it has happened. Without a re-probe the
+            // health line keeps reporting a failure that was resolved twenty minutes ago,
+            // and the only way to correct it is a deploy nobody should have to do.
+            //
+            // NOT extended to SMTP. Repeated failed AUTH against a mail server is exactly
+            // the pattern abuse protections watch for, and Gmail will lock an account over
+            // it. A REST endpoint answering 401 has no such trap — it is a stateless read.
+            if (useApi) scheduleRecheck(REJECT_DELAYS_MS);
         }
         return false;
     }
@@ -438,12 +450,23 @@ const verifyMail = async () => {
 // hammering AUTH at Gmail is a good way to get an account locked.
 const RECHECK_DELAYS_MS = [30_000, 60_000, 120_000, 300_000];
 
-const scheduleRecheck = () => {
-    const delay = RECHECK_DELAYS_MS[verifyAttempts - 1];
+// Slower, and spread over about an hour. A rejection is not urgent the way an unreachable
+// provider is — nobody is waiting on the next 30 seconds — but somebody who has just
+// fixed an allowlist or activated a key should see the health line correct itself while
+// they are still looking at it, rather than after the next deploy.
+const REJECT_DELAYS_MS = [60_000, 300_000, 900_000, 1_800_000, 1_800_000];
+
+const scheduleRecheck = (schedule = RECHECK_DELAYS_MS) => {
+    const delay = schedule[verifyAttempts - 1];
     if (delay === undefined) {
         // Out of retries. The state stands, and the attempt count in /healthz is what
         // distinguishes this from a single unlucky cold start.
-        console.error(`❌ Mail still unreachable after ${verifyAttempts} attempts — giving up until next restart.`);
+        // Worded from the state rather than assuming "unreachable" — this scheduler now
+        // serves rejections too, and telling somebody their mail is unreachable when the
+        // provider has been refusing their key for an hour points at the wrong thing.
+        console.error(
+            `❌ Mail still ${verifyState} after ${verifyAttempts} attempts — giving up until next restart.`
+        );
         return;
     }
     // unref: a pending retry must never be the reason the process stays alive.
