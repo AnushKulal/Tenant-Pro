@@ -52,21 +52,8 @@ export default function MyProfileScreen() {
                     {vm.profileSubtitle}
                 </Eyebrow>
 
-                {/* The way in. Every field below used to carry its own edit button
-                    wired to "Not wired in this prototype"; one form that opens
-                    prefilled is both honest and less tapping. */}
-                <Press
-                    onPress={vm.openEditProfile}
-                    style={{
-                        marginTop: 16, paddingVertical: 11, paddingHorizontal: 22,
-                        borderRadius: 999, borderWidth: 1, borderColor: t.accent, backgroundColor: t.vsoft
-                    }}
-                >
-                    <Row gap={8}>
-                        <Glyph name="create-outline" size={15} color={t.accent} />
-                        <T w={700} s={13} lh={1} c={t.accent}>Edit profile</T>
-                    </Row>
-                </Press>
+                {/* No edit button here any more. It lives in the header of the card
+                    below, next to the fields it actually changes — see the note there. */}
             </View>
 
             {/* Something is waiting on a code. Shown here rather than only in the
@@ -102,45 +89,75 @@ export default function MyProfileScreen() {
                     marginBottom: 8
                 }}
             >
-                {vm.profileFields.map((pf, i) => (
-                    <View
-                        key={i}
+                {/* ONE edit button, and it lives here rather than on each row.
+                    Every row used to carry its own EDIT chip — four of them, all
+                    opening the same form. That is a false affordance: a button beside
+                    MOBILE reads as "edit the number", when what it opens is the whole
+                    profile including the password. Four identical controls also cost
+                    four times the width and read as four decisions.
+                    Sitting in the header, one button governs exactly the card beneath
+                    it, which is what it has always actually done. */}
+                <Row
+                    gap={12}
+                    style={{
+                        paddingVertical: 13,
+                        paddingHorizontal: 16,
+                        borderBottomWidth: 1,
+                        borderBottomColor: t.line
+                    }}
+                >
+                    <Eyebrow s={10} ls={0.12} c={t.fg3} style={{ flex: 1 }}>ACCOUNT DETAILS</Eyebrow>
+                    <Press
+                        onPress={vm.openEditProfile}
                         style={{
-                            flexDirection: 'row',
-                            alignItems: 'center',
-                            columnGap: 13,
-                            paddingVertical: 14,
-                            paddingHorizontal: 16,
-                            borderBottomWidth: 1,
-                            borderBottomColor: t.line
+                            paddingVertical: 8,
+                            paddingHorizontal: 15,
+                            borderRadius: 999,
+                            borderWidth: 1,
+                            borderColor: t.accent,
+                            backgroundColor: t.vsoft
                         }}
                     >
-                        <View style={{ flex: 1, minWidth: 0 }}>
-                            <T mono w={600} s={9} ls={0.1} c={t.fg3}>
-                                {pf.label}
-                            </T>
-                            <T w={500} s={14} lh={1.2} c={t.fg} style={{ marginTop: 7 }}>
+                        <Row gap={7}>
+                            <Glyph name="create-outline" size={14} color={t.accent} />
+                            <T w={700} s={12.5} lh={1} c={t.accent}>Edit</T>
+                        </Row>
+                    </Press>
+                </Row>
+
+                {vm.profileFields.map((pf, i) => {
+                    // The chip used to carry this: a dash where a field could not be
+                    // changed. With the chips gone the information still has to land
+                    // somewhere, or a locked field looks identical to an editable one
+                    // until somebody opens the form and hunts for it.
+                    const locked = pf.editable === false;
+                    const last = i === vm.profileFields.length - 1;
+                    return (
+                        <View
+                            key={i}
+                            style={{
+                                paddingVertical: 14,
+                                paddingHorizontal: 16,
+                                // The last row's border sat directly on the card edge and
+                                // doubled it. Nothing follows it, so it needs no divider.
+                                borderBottomWidth: last ? 0 : 1,
+                                borderBottomColor: t.line
+                            }}
+                        >
+                            <Row gap={7}>
+                                <T mono w={600} s={9} ls={0.1} c={t.fg3}>
+                                    {pf.label}
+                                </T>
+                                {locked ? <Glyph name="lock-closed" size={10} color={t.fg3} /> : null}
+                            </Row>
+                            {/* Full width now that nothing sits to its right — a long
+                                email no longer has to squeeze past a button. */}
+                            <T w={500} s={14} lh={1.2} c={locked ? t.fg3 : t.fg} style={{ marginTop: 7 }}>
                                 {pf.value}
                             </T>
                         </View>
-                        <Press
-                            onPress={pf.editable === false ? undefined : vm.openEditProfile}
-                            disabled={pf.editable === false}
-                            style={{
-                                paddingVertical: 7,
-                                paddingHorizontal: 12,
-                                borderRadius: 999,
-                                backgroundColor: t.ink3,
-                                borderWidth: 1,
-                                borderColor: t.line
-                            }}
-                        >
-                            <T mono w={600} s={9} ls={0.08} c={pf.editable === false ? t.fg3 : t.fg2}>
-                                {pf.editable === false ? '—' : 'EDIT'}
-                            </T>
-                        </Press>
-                    </View>
-                ))}
+                    );
+                })}
             </View>
 
             {/* There was a "Save changes" button here, wired to nothing, under fields

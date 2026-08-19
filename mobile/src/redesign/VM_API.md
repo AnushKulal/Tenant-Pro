@@ -260,7 +260,7 @@ date:string, fg:token, icon:string, iconBg:token, iconFg:token }`.
 | key | type | notes |
 |---|---|---|
 | `menuRows` | array | `{ label:string, icon:string, go:action, fg:token, bg:token, ifg:token }` |
-| `profileFields` | array | `{ label:string, value:string }` |
+| `profileFields` | array | `{ label:string, value:string, editable:boolean }` — read-only rows; the ONE edit button lives in the card header, not per row. `editable:false` renders a lock and mutes the value |
 | `themeModes` | array | `{ label:string, icon:string, bg:token, fg:token, bd:token, go:action }` |
 | `settingsRows` | array | `{ label:string, icon:string, meta:string }` |
 
