@@ -3,11 +3,13 @@
     "name": "TenantPro",
     "slug": "mobile",
     "owner": "anush_kulal",
-    "version": "1.3.0",
+    "version": "1.4.0",
     "orientation": "portrait",
-    "icon": "./assets/logo.png",
+    "icon": "./assets/icon-tp.png",
     "userInterfaceStyle": "automatic",
-    "runtimeVersion": "1.0.0",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
     "updates": {
       "enabled": true,
       "url": "https://u.expo.dev/3b258101-bef2-412f-8be0-53af8b224dfb",
@@ -15,34 +17,55 @@
       "fallbackToCacheTimeout": 0
     },
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/splash-tp.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#08080A"
     },
     "ios": {
       "supportsTablet": true
     },
     "android": {
       "package": "com.anushkulal.tenantpro",
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/logo.png",
-        "backgroundColor": "#ffffff"
+        "foregroundImage": "./assets/adaptive-tp-foreground.png",
+        "backgroundColor": "#C8F751"
       }
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/favicon-tp.png"
     },
     "plugins": [
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "TenantPro uses the camera to scan a property's invite QR code."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "TenantPro uses your location only while you are placing a property on the map, so the pin can start where you are standing.",
+          "locationWhenInUsePermission": "TenantPro uses your location only while you are placing a property on the map, so the pin can start where you are standing.",
+          "isAndroidBackgroundLocationEnabled": false
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#C8F751"
+        }
+      ]
     ],
     "extra": {
       "eas": {
         "projectId": "3b258101-bef2-412f-8be0-53af8b224dfb"
       },
-      "whatsNew": "Add glass design system: theme tokens, UI kit, navigation flow helpers\nFix OTA pointing app at dead LAN IP — use hosted backend\nFail fast when DB is down + add back button to role login screens\nFix login instability and add guest login + auto-OTA\nShow a 'What's new' changelog in the in-app update popup\nTenant portal Phase 1: role selection + tenant accounts",
+      "whatsNew": "Add glass design system: theme tokens, UI kit, navigation flow helpers\nFix OTA pointing app at dead LAN IP \u2014 use hosted backend\nFail fast when DB is down + add back button to role login screens\nFix login instability and add guest login + auto-OTA\nShow a 'What's new' changelog in the in-app update popup\nTenant portal Phase 1: role selection + tenant accounts",
       "releaseNotes": [
         "Add glass design system: theme tokens, UI kit, navigation flow helpers",
-        "Fix OTA pointing app at dead LAN IP — use hosted backend",
+        "Fix OTA pointing app at dead LAN IP \u2014 use hosted backend",
         "Fail fast when DB is down + add back button to role login screens",
         "Fix login instability and add guest login + auto-OTA",
         "Show a 'What's new' changelog in the in-app update popup",

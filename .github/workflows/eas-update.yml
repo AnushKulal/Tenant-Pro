@@ -62,6 +62,23 @@ jobs:
           # MUST match the build profiles' API URL. Without this the OTA bundle
           # would fall back to a LAN IP and the app couldn't reach the backend.
           EXPO_PUBLIC_API_URL: https://tenantpro-backend.onrender.com
+          # The map tile provider. EXPO_PUBLIC_* values are inlined into the bundle
+          # at export time, so a key that only lives in a local .env never reaches an
+          # OTA update — the map would silently fall back to the development tile
+          # server. From repo secrets, so the key is never committed.
+          #
+          # Unset is survivable, not fatal: the app falls back to OpenStreetMap's own
+          # servers, which work but are not licensed for a distributed app. Add the
+          # secrets and the next update picks them up.
+          # Defaults to maptiler so there is only ONE thing to paste: the key.
+          # The provider NAME is not a secret — it is the word "maptiler" — and
+          # asking for it in a box labelled "Secret" invites pasting the key there
+          # instead. Set the secret only to switch to another provider.
+          EXPO_PUBLIC_MAP_PROVIDER: ${{ secrets.EXPO_PUBLIC_MAP_PROVIDER || 'maptiler' }}
+          EXPO_PUBLIC_MAP_KEY: ${{ secrets.EXPO_PUBLIC_MAP_KEY }}
+          EXPO_PUBLIC_MAP_TILE_URL: ${{ secrets.EXPO_PUBLIC_MAP_TILE_URL }}
+          EXPO_PUBLIC_MAP_TILE_URL_DARK: ${{ secrets.EXPO_PUBLIC_MAP_TILE_URL_DARK }}
+          EXPO_PUBLIC_MAP_ATTRIBUTION: ${{ secrets.EXPO_PUBLIC_MAP_ATTRIBUTION }}
           # Commit messages and workflow inputs are arbitrary text. Interpolating
           # ${{ ... }} straight into the script body pastes that text into the
           # shell, so a multi-line message — or one containing a quote — breaks

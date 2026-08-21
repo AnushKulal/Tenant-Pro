@@ -1,0 +1,192 @@
+import React from 'react';
+import { View, ScrollView, Image, RefreshControl, Dimensions } from 'react-native';
+import { useVm } from '../AppContext';
+import { TileMap, ATTRIBUTION } from '../maps';
+import { useT } from '../ThemeContext';
+import { T, Eyebrow, Row, Divider, Press, Glyph, IconChip } from '../ui';
+
+export default function PropertyScreen() {
+    const vm = useVm();
+    const t = useT();
+    // The tile grid needs a pixel width to lay out; measured rather than assumed so
+    // it is right on any screen.
+    const [mapW, setMapW] = React.useState(() => Dimensions.get('window').width - 36);
+    const place = vm.place;
+    if (!place) return null;
+
+    return (
+        <ScrollView contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 22 }} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={vm.refreshing} onRefresh={vm.refresh} tintColor={t.fg2} colors={[t.lime]} progressBackgroundColor={t.ink2} />}>
+            {/* Hero card */}
+            <View style={{ borderRadius: 26, overflow: 'hidden', backgroundColor: t.ink2, borderWidth: 1, borderColor: t.line, marginBottom: 8 }}>
+                <View style={{ position: 'relative' }}>
+                    <Image source={{ uri: place.img }} style={{ width: '100%', height: 150, backgroundColor: t.ink3 }} resizeMode="cover" />
+                    <Row gap={5} style={{ position: 'absolute', top: 12, right: 12, paddingVertical: 6, paddingHorizontal: 11, borderRadius: 999, backgroundColor: 'rgba(8,8,10,.66)' }}>
+                        <Glyph name="star" size={12} color={t.lime} />
+                        <T w={700} s={12} lh={1} c="#F4F3F7">{place.rating}</T>
+                        <T mono w={600} s={9} lh={1} ls={0.06} c="rgba(244,243,247,.6)">{place.reviews}</T>
+                    </Row>
+                </View>
+                <View style={{ paddingTop: 16, paddingHorizontal: 18, paddingBottom: 18 }}>
+                    <Row gap={7} wrap>
+                        <T mono w={600} s={10} lh={1} ls={0.1} c={t.fg3}>{place.type}</T>
+                        <Row gap={5} style={{ paddingVertical: 4, paddingHorizontal: 9, borderRadius: 999, backgroundColor: t.vsoft }}>
+                            <Glyph name={place.policyIcon} size={12} color={t.accent} />
+                            <T mono w={600} s={9} lh={1} ls={0.06} c={t.accent}>{place.policy}</T>
+                        </Row>
+                    </Row>
+                    {/* Long names wrap to two lines and then truncate, rather than
+                        pushing the rest of the card around. */}
+                    <T w={700} s={26} lh={1.1} numberOfLines={2} style={{ letterSpacing: -1.1, marginTop: 9 }}>{place.name}</T>
+                    <Row align="flex-start" gap={8} style={{ marginTop: 11 }}>
+                        <Glyph name="location-outline" size={15} color={t.fg3} style={{ marginTop: 2 }} />
+                        <T w={400} s={13} lh={1.5} c={t.fg2} style={{ flex: 1 }}>{place.address}</T>
+                    </Row>
+                    <Row gap={9} style={{ marginTop: 16, paddingTop: 15, borderTopWidth: 1, borderTopColor: t.line }}>
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                            <Eyebrow s={9} ls={0.1} c={t.fg3}>PROPERTY ID</Eyebrow>
+                            <T w={700} s={14} lh={1} c={t.fg} style={{ marginTop: 6, letterSpacing: 0.5 }}>{place.code}</T>
+                        </View>
+                        <Press onPress={place.invite}>
+                            <Row gap={7} style={{ paddingVertical: 10, paddingHorizontal: 14, borderRadius: 999, backgroundColor: t.lime }}>
+                                <Glyph name="qr-code" size={15} color={t.on} />
+                                <T w={600} s={11} lh={1} c={t.on}>Invite tenant</T>
+                            </Row>
+                        </Press>
+                    </Row>
+
+                    {/* Edit and delete. Both endpoints existed from the start; nothing
+                        in the app called them, so a landlord could add a property and
+                        then never correct its name, address or photo, or remove it. */}
+                    <Row gap={8} style={{ marginTop: 12 }}>
+                        <Press onPress={vm.openEditProperty} style={{ flex: 1 }}>
+                            <Row gap={7} justify="center" style={{ paddingVertical: 12, borderRadius: 13, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line }}>
+                                <Glyph name="create-outline" size={15} color={t.accent} />
+                                <T w={600} s={11.5} lh={1} c={t.fg}>Edit property</T>
+                            </Row>
+                        </Press>
+                        <Press onPress={vm.askDeleteProperty}>
+                            <Row gap={6} justify="center" style={{ paddingVertical: 12, paddingHorizontal: 15, borderRadius: 13, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line }}>
+                                <Glyph name="trash-outline" size={15} color={t.coral} />
+                                <T w={600} s={11.5} lh={1} c={t.coral}>Delete</T>
+                            </Row>
+                        </Press>
+                    </Row>
+                </View>
+            </View>
+
+            {/* ── Where it is ──────────────────────────────────────────────
+                This was an <Image> pointed at OpenStreetMap's embed PAGE — HTML, not
+                an image, so it rendered as a grey box — with two buttons under it
+                that both called vm.noop. And for any real property the URL contained
+                the literal string "null", because nothing stored coordinates.
+
+                Now: a real map when the property has been pinned, an honest prompt
+                when it has not, and Directions rather than "open the map". */}
+            {place.pinned ? (
+                <View
+                    style={{ borderRadius: 22, overflow: 'hidden', backgroundColor: t.ink2, borderWidth: 1, borderColor: t.line, marginBottom: 8 }}
+                    onLayout={(e) => setMapW(Math.round(e.nativeEvent.layout.width))}
+                >
+                    <View style={{ height: 190 }}>
+                        <TileMap lat={place.lat} lon={place.lon} zoom={16} width={mapW} height={190} />
+                        <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}>
+                            <Glyph name="location" size={34} color={t.coral} style={{ marginTop: -16 }} />
+                        </View>
+                        <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, paddingVertical: 3, paddingHorizontal: 7, backgroundColor: 'rgba(4,4,6,0.55)' }}>
+                            <T mono w={600} s={7} lh={1.4} ls={0.04} c="#FFFFFF" style={{ opacity: 0.85 }}>{ATTRIBUTION}</T>
+                        </View>
+                    </View>
+                    <Row gap={7} style={{ padding: 12 }}>
+                        <Press onPress={place.directions} style={{ flex: 1 }}>
+                            <Row gap={7} justify="center" style={{ paddingVertical: 12, borderRadius: 13, backgroundColor: t.lime }}>
+                                <Glyph name="navigate" size={15} color={t.on} />
+                                <T w={600} s={12} lh={1} c={t.on}>{place.directionsLabel}</T>
+                            </Row>
+                        </Press>
+                        <Press onPress={vm.openEditProperty}>
+                            <Row gap={6} justify="center" style={{ paddingVertical: 12, paddingHorizontal: 14, borderRadius: 13, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line }}>
+                                <Glyph name="pin-outline" size={14} color={t.fg2} />
+                                <T w={600} s={11.5} lh={1} c={t.fg2}>Move pin</T>
+                            </Row>
+                        </Press>
+                    </Row>
+                </View>
+            ) : (
+                <Press onPress={place.pinIt} style={{ marginBottom: 8 }}>
+                    <Row gap={12} align="flex-start" style={{ borderRadius: 22, backgroundColor: t.ink2, borderWidth: 1, borderStyle: 'dashed', borderColor: t.line2, paddingVertical: 18, paddingHorizontal: 16 }}>
+                        <View style={{ width: 38, height: 38, borderRadius: 13, backgroundColor: t.asoft, alignItems: 'center', justifyContent: 'center' }}>
+                            <Glyph name="map-outline" size={17} color={t.amber} />
+                        </View>
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                            <T w={600} s={14} lh={1.2}>{place.pinCta}</T>
+                            <T w={400} s={12} lh={1.45} c={t.fg3} style={{ marginTop: 4 }}>{place.unpinnedLine}</T>
+                        </View>
+                        <Glyph name="chevron-forward" size={16} color={t.fg3} />
+                    </Row>
+                </Press>
+            )}
+
+            {/* Amenities */}
+            <View style={{ borderRadius: 22, backgroundColor: t.ink2, borderWidth: 1, borderColor: t.line, paddingVertical: 16, paddingHorizontal: 18, marginBottom: 8 }}>
+                <Eyebrow s={10} ls={0.12} c={t.fg3} style={{ marginBottom: 14 }}>AMENITIES</Eyebrow>
+                <Row wrap gap={12}>
+                    {(place.amenities || []).map((a, i) => (
+                        <Row key={i} gap={10} style={{ flexBasis: '46%', flexGrow: 1, marginBottom: 2 }}>
+                            <IconChip name={a.icon} size={15} box={30} radius={10} bg={t.vsoft} color={t.accent} />
+                            <T w={500} s={13} lh={1.2} c={t.fg2} style={{ flex: 1 }}>{a.label}</T>
+                        </Row>
+                    ))}
+                </Row>
+            </View>
+
+            {/* Food */}
+            <Row align="flex-start" gap={13} style={{ borderRadius: 22, backgroundColor: t.ink2, borderWidth: 1, borderColor: t.line, paddingVertical: 16, paddingHorizontal: 18, marginBottom: 8 }}>
+                <View style={{ width: 38, height: 38, borderRadius: 12, backgroundColor: t.lsoft, alignItems: 'center', justifyContent: 'center' }}>
+                    <Glyph name="restaurant" size={18} color={t.pos} />
+                </View>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                    <Eyebrow s={10} ls={0.12} c={t.fg3}>FOOD</Eyebrow>
+                    <T w={600} s={14} lh={1.25} c={t.fg} style={{ marginTop: 8 }}>{place.food}</T>
+                    <T w={400} s={12} lh={1.45} c={t.fg2} style={{ marginTop: 5 }}>{place.foodNote}</T>
+                </View>
+            </Row>
+
+            {/* Units here */}
+            <View style={{ borderRadius: 22, backgroundColor: t.ink2, borderWidth: 1, borderColor: t.line, paddingVertical: 16, paddingHorizontal: 18 }}>
+                <Row justify="space-between" align="flex-start" style={{ marginBottom: 12 }}>
+                    <View style={{ flex: 1 }}>
+                        <Eyebrow s={10} ls={0.12} c={t.fg3}>ROOMS HERE</Eyebrow>
+                        <T w={400} s={12} lh={1.4} c={t.fg2} style={{ marginTop: 5 }}>{place.roomsLine}</T>
+                    </View>
+                    <Press onPress={place.viewUnits}>
+                        <View style={{ paddingVertical: 6, paddingHorizontal: 11, borderRadius: 999, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line }}>
+                            <T mono w={600} s={9} lh={1} ls={0.08} c={t.fg2}>SEE ALL</T>
+                        </View>
+                    </Press>
+                </Row>
+                {/* Each room, tappable, with a red mark and the amount when whoever
+                    lives there is behind on rent. */}
+                {(place.units || []).map((pu, i) => (
+                    <Press key={i} onPress={pu.open}>
+                        <Row gap={11} style={{ paddingVertical: 10, borderTopWidth: i ? 1 : 0, borderTopColor: t.line }}>
+                            <T w={700} s={16} lh={1} c={t.fg} style={{ width: 36 }}>{pu.no}</T>
+                            <View style={{ flex: 1, minWidth: 0 }}>
+                                <T w={500} s={13} lh={1.2} c={t.fg2} numberOfLines={1}>{pu.type}</T>
+                                {pu.dues ? (
+                                    <Row align="center" gap={4} style={{ marginTop: 5, alignSelf: 'flex-start', paddingVertical: 2, paddingHorizontal: 6, borderRadius: 999, backgroundColor: t.coral }}>
+                                        <Glyph name="alert-circle" size={9} color={t.ink} />
+                                        <T mono w={700} s={8} lh={1} ls={0.04} c={t.ink}>{pu.duesLine}</T>
+                                    </Row>
+                                ) : null}
+                            </View>
+                            <View style={{ alignItems: 'flex-end' }}>
+                                <T w={600} s={13} lh={1} c={t.fg}>{pu.rent}</T>
+                                <T mono w={600} s={9} lh={1} ls={0.06} c={t[pu.fg]} style={{ marginTop: 5 }}>{pu.state}</T>
+                            </View>
+                        </Row>
+                    </Press>
+                ))}
+            </View>
+        </ScrollView>
+    );
+}
