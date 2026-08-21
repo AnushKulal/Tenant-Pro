@@ -8,6 +8,7 @@ const { protect, requireLiveStay } = require('../middleware/authMiddleware');
 const upload = require('../middleware/uploadMiddleware');
 const {
     getMe,
+    markAlertsSeen,
     getLeavePlan,
     giveNotice,
     withdrawNotice,
@@ -35,6 +36,11 @@ const { savePushToken, dropPushToken, sendTestPush } = require('../controllers/p
 router.use(protect);
 
 router.get('/me', getMe);
+
+// Clearing the bell. Registered above requireLiveStay alongside /me, because a tenant
+// whose stay has ended still has alerts worth reading — a deposit to settle, a final
+// receipt — and a bell that cannot be cleared would sit there unread for ever.
+router.post('/alerts/seen', markAlertsSeen);
 
 // Upgrading a guest to a full account. Registered HERE, above the expiry guard, and
 // the reason is in the note below: an expired guest must be able to take the one

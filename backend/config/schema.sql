@@ -247,6 +247,11 @@ CREATE TABLE IF NOT EXISTS `tenant_users` (
   `status` enum('Unlinked','Pending','Linked') DEFAULT 'Unlinked',
   `is_guest` tinyint(1) NOT NULL DEFAULT 0,
   `guest_code` varchar(16) DEFAULT NULL,
+  -- When this tenant last opened their alerts. The alert list is derived from data
+  -- the app already holds, so it needs no table; what derivation cannot know is
+  -- whether the person has SEEN any of it. NULL = never opened, which correctly
+  -- leaves everything unread on first run.
+  `alerts_seen_at` datetime DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   PRIMARY KEY (`id`),
   UNIQUE KEY `email` (`email`),
