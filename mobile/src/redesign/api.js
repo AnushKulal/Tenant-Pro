@@ -180,6 +180,10 @@ export const portal = {
     // Counts and a stamp, polled while the app is open. See `owner.pulse` for why.
     pulse: () => body(http.get('/tenant-portal/pulse')),
     payments: () => body(http.get('/tenant-portal/payments')),
+    // Clearing the bell. Takes no timestamp on purpose — the server stamps NOW(), so a
+    // phone with a wrong clock (or a curious one) cannot silence its own alerts by
+    // claiming to have read them in the year 3000.
+    markAlertsSeen: () => body(http.post('/tenant-portal/alerts/seen', {})),
     // "I have paid this." Records a CLAIM, not money received — the landlord confirms
     // it, and only that clears the month. The server validates the amount against the
     // rent, refuses future dates, and allows one outstanding claim at a time.

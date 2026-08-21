@@ -48,6 +48,7 @@ const loadTenantContext = async (userId) => {
             tu.phone         AS account_phone,
             tu.is_guest      AS is_guest,
             tu.guest_code    AS guest_code,
+            tu.alerts_seen_at AS alerts_seen_at,
             t.id             AS tenant_id,
             t.name, t.phone, t.email, t.company, t.image_url,
             t.deposit, t.rent_share, t.credit_score, t.move_in_date,
@@ -139,7 +140,13 @@ const getMe = async (req, res) => {
                 },
                 guest,
                 id_proof: idProof,
-                documents
+                documents,
+                // Carried on the UNLINKED branch too, and it is not an afterthought:
+                // somebody waiting to be linked is the tenant with the most to be
+                // alerted about — a join request pending a landlord's answer, a guest
+                // account that expires, an ID being asked for. Omitting it here meant
+                // their bell could never clear, which the e2e test caught.
+                alerts_seen_at: ctx.alerts_seen_at ? new Date(ctx.alerts_seen_at).toISOString() : null
             });
         }
 
@@ -223,7 +230,13 @@ const getMe = async (req, res) => {
             },
             guest,
             id_proof: idProof,
-            documents
+            documents,
+            // When this tenant last opened their alerts, so the app can tell an alert
+            // that is NEWS from one that is merely still true. Sent as an ISO string
+            // (or null for "never opened") rather than a computed unread count: the
+            // alert list is derived on the client from this same payload, so counting
+            // here would mean deriving it twice and letting the two answers drift.
+            alerts_seen_at: ctx.alerts_seen_at ? new Date(ctx.alerts_seen_at).toISOString() : null
         });
     } catch (err) {
         console.error('Tenant portal getMe error:', err.message);
@@ -474,10 +487,33 @@ const getRequests = async (req, res) => {
         const ctx = await loadTenantContext(req.user.id);
         if (!ctx?.tenant_id) return res.status(200).json({ requests: [] });
 
+        // Last activity, and WHO caused it.
+        //
+        // Without these, "your landlord replied" is underivable: the row carries only
+        // when the tenant raised it, so a request answered an hour ago and one ignored
+        // for a fortnight look identical. The role matters as much as the time — a
+        // tenant's own last message must never come back to them as a notification.
+        //
+        // GROUP_CONCAT + SUBSTRING_INDEX is the portable way to take "the value from
+        // the newest row per group" without a window function, which this MariaDB
+        // version cannot be assumed to have.
         const [requests] = await db.query(
-            `SELECT id, category, title, description, priority, status, image_url, created_at
-             FROM maintenance_requests WHERE tenant_id = ?
-             ORDER BY created_at DESC LIMIT 50`,
+            `SELECT r.id, r.category, r.title, r.description, r.priority, r.status,
+                    r.image_url, r.created_at,
+                    COALESCE(m.last_at, r.created_at) AS last_activity_at,
+                    m.last_role AS last_message_role,
+                    m.last_kind AS last_message_kind
+             FROM maintenance_requests r
+             LEFT JOIN (
+                 SELECT request_id,
+                        MAX(created_at) AS last_at,
+                        SUBSTRING_INDEX(GROUP_CONCAT(sender_role ORDER BY created_at DESC), ',', 1) AS last_role,
+                        SUBSTRING_INDEX(GROUP_CONCAT(kind ORDER BY created_at DESC), ',', 1) AS last_kind
+                 FROM maintenance_messages
+                 GROUP BY request_id
+             ) m ON m.request_id = r.id
+             WHERE r.tenant_id = ?
+             ORDER BY r.created_at DESC LIMIT 50`,
             [ctx.tenant_id]
         );
         res.status(200).json({ requests });
@@ -757,8 +793,40 @@ const withdrawNotice = async (req, res) => {
     }
 };
 
+// Mark this tenant's alerts as seen, right now.
+//
+// Deliberately takes no timestamp from the client. A caller could otherwise send a
+// time in the future and permanently silence their own alerts — and more mundanely,
+// a phone with a wrong clock would do the same by accident. The server's clock is the
+// only one that can be trusted to move forward.
+const markAlertsSeen = async (req, res) => {
+    try {
+        if (req.user.role !== 'tenant') {
+            return res.status(403).json({ message: 'Tenants only.' });
+        }
+        const [r] = await db.query(
+            'UPDATE tenant_users SET alerts_seen_at = NOW() WHERE id = ?',
+            [req.user.id]
+        );
+        if (!r.affectedRows) return res.status(404).json({ message: 'Account not found.' });
+        // The new stamp is returned so the app can update without another round trip
+        // to /me — the bell clearing needs to feel immediate.
+        const [[row]] = await db.query(
+            'SELECT alerts_seen_at FROM tenant_users WHERE id = ?',
+            [req.user.id]
+        );
+        res.status(200).json({
+            alerts_seen_at: row && row.alerts_seen_at ? new Date(row.alerts_seen_at).toISOString() : null
+        });
+    } catch (err) {
+        console.error('Tenant portal markAlertsSeen error:', err.message);
+        res.status(500).json({ message: 'Could not update your alerts.' });
+    }
+};
+
 module.exports = {
     getMe,
+    markAlertsSeen,
     getLeavePlan,
     giveNotice,
     withdrawNotice,

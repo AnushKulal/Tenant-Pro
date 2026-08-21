@@ -1867,6 +1867,64 @@ export default function Sheets() {
                     </View>
                 )}
 
+                {/* ── The tenant's alerts ─────────────────────────────── */}
+                {/* Same layout as the owner's above, deliberately. Two notification
+                    sheets that look different teach people that the app has two
+                    personalities. The one addition is the unread rule: a row that is
+                    genuinely NEW is marked, because "your payment was confirmed" and
+                    "your rent is due Friday" are both true and only one is news. */}
+                {vm.isTAlerts && (
+                    <View>
+                        <Row justify="space-between" align="flex-start" style={{ marginBottom: 16 }}>
+                            <View style={{ flex: 1 }}>
+                                <T w={700} s={20} lh={1} style={{ letterSpacing: -0.8 }}>Notifications</T>
+                                <Eyebrow s={10} ls={0.08} style={{ marginTop: 7 }}>
+                                    {vm.tUnreadCount
+                                        ? `${vm.tUnreadCount} NEW`
+                                        : vm.hasTAlerts ? 'NOTHING NEW' : 'ALL CLEAR'}
+                                </Eyebrow>
+                            </View>
+                            <Glyph name={vm.hasTAlerts ? 'notifications' : 'notifications-off-outline'} size={20} color={vm.hasTAlerts ? t.accent : t.fg3} />
+                        </Row>
+
+                        {vm.hasTAlerts ? (
+                            <View style={{ rowGap: 8, marginBottom: 14 }}>
+                                {vm.tAlerts.map((a, i) => (
+                                    <Press key={i} onPress={a.go}>
+                                        <Row gap={13} style={{ padding: 14, borderRadius: 18, backgroundColor: t.ink3, borderWidth: 1, borderColor: a.new ? col(a.tone) : t.line }}>
+                                            <View style={{ width: 38, height: 38, borderRadius: 12, backgroundColor: col(a.tone) === t.coral ? t.csoft : col(a.tone) === t.amber ? t.asoft : t.vsoft, alignItems: 'center', justifyContent: 'center' }}>
+                                                <Glyph name={a.icon} size={17} color={col(a.tone)} />
+                                            </View>
+                                            <View style={{ flex: 1, minWidth: 0 }}>
+                                                <Row gap={7}>
+                                                    <T w={600} s={14} lh={1.25} c={t.fg} style={{ flex: 1 }}>{a.title}</T>
+                                                    {/* A dot, not the word "NEW": the row is already
+                                                        outlined in its own colour, and a second label
+                                                        would compete with the thing it describes. */}
+                                                    {a.new ? <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: col(a.tone) }} /> : null}
+                                                </Row>
+                                                <T w={400} s={12} lh={1.4} c={t.fg2} style={{ marginTop: 4 }}>{a.sub}</T>
+                                            </View>
+                                            <Glyph name="chevron-forward" size={16} color={t.fg3} />
+                                        </Row>
+                                    </Press>
+                                ))}
+                            </View>
+                        ) : (
+                            <View style={{ alignItems: 'center', paddingVertical: 26, paddingHorizontal: 10, marginBottom: 6 }}>
+                                <View style={{ width: 52, height: 52, borderRadius: 18, backgroundColor: t.lsoft, alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
+                                    <Glyph name="checkmark-circle" size={26} color={t.pos} />
+                                </View>
+                                <T w={400} s={13} lh={1.5} c={t.fg2} style={{ textAlign: 'center' }}>{vm.tAlertsEmptyLine}</T>
+                            </View>
+                        )}
+
+                        <Press onPress={vm.closeOverlay} style={{ paddingVertical: 15, borderRadius: 999, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line, alignItems: 'center' }}>
+                            <T w={600} s={14} c={t.fg}>Close</T>
+                        </Press>
+                    </View>
+                )}
+
                 {/* ── Add a property ──────────────────────────────────── */}
                 {/* ── Edit a property ────────────────────────────────── */}
                 {vm.isEditProperty && vm.editProperty && (

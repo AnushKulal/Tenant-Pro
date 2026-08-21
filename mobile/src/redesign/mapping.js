@@ -193,7 +193,16 @@ export function mapPortalRequest(r) {
         status: display.toUpperCase(),
         dot: REQ_DOT[r.status] || 'fg2',
         raised: d ? `${d.getDate()} ${MON_TITLE[d.getMonth()]} ${d.getFullYear()}` : '',
-        photos: r.image_url ? [mediaUrl(r.image_url)] : []
+        photos: r.image_url ? [mediaUrl(r.image_url)] : [],
+        // When something last happened on this request, and who caused it. The bell
+        // needs both: a time alone cannot tell "your landlord replied" from "you wrote
+        // this yourself a fortnight ago", and notifying somebody about their own
+        // message is the fastest way to make a bell worth ignoring.
+        //
+        // Dates, not strings — the alert list compares them against alerts_seen_at.
+        lastAt: asDate(r.last_activity_at) || d,
+        lastRole: r.last_message_role || null,
+        lastKind: r.last_message_kind || null
     };
 }
 

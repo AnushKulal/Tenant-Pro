@@ -5,6 +5,7 @@ import { View } from 'react-native';
 import { useVm } from './AppContext';
 import { useT } from './ThemeContext';
 import { T, Row, Press, Glyph } from './ui';
+import AlertBell from './AlertBell';
 
 const BTN = { flexBasis: 36, flexGrow: 0, flexShrink: 0, width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center' };
 
@@ -68,47 +69,14 @@ export default function Header() {
 
             {/* The bell used to open the account menu, making it a duplicate of
                 tapping your own avatar. It now opens the alerts sheet, and its dot
-                only appears when there is genuinely something to see. */}
-            <Press onPress={vm.openAlerts} style={{ ...BTN, borderWidth: 1, borderColor: t.line }}>
-                <Glyph name={vm.hasAlerts ? 'notifications' : 'notifications-outline'} size={18} color={vm.hasAlerts ? t.fg : t.fg2} />
-                {/* A count when people are waiting on a decision — "how many want
-                    in" is answerable without opening anything — and a plain dot when
-                    the alerts are only things to look at. */}
-                {vm.bellUrgent ? (
-                    <View
-                        style={{
-                            position: 'absolute',
-                            top: 3,
-                            right: 2,
-                            minWidth: 16,
-                            height: 16,
-                            paddingHorizontal: 4,
-                            borderRadius: 8,
-                            backgroundColor: t.lime,
-                            borderWidth: 1.5,
-                            borderColor: t.ink,
-                            alignItems: 'center',
-                            justifyContent: 'center'
-                        }}
-                    >
-                        <T mono w={700} s={8} lh={1} c={t.on}>{vm.bellCount}</T>
-                    </View>
-                ) : vm.hasAlerts ? (
-                    <View
-                        style={{
-                            position: 'absolute',
-                            top: 8,
-                            right: 9,
-                            width: 7,
-                            height: 7,
-                            borderRadius: 4,
-                            backgroundColor: t.coral,
-                            borderWidth: 1.5,
-                            borderColor: t.ink
-                        }}
-                    />
-                ) : null}
-            </Press>
+                only appears when there is genuinely something to see.
+                Drawing lives in AlertBell, shared with the tenant side. */}
+            <AlertBell
+                onPress={vm.openAlerts}
+                has={vm.hasAlerts}
+                urgent={vm.bellUrgent}
+                count={vm.bellCount}
+            />
         </Row>
     );
 }

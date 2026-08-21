@@ -998,6 +998,221 @@ function deriveVm(s, api) {
     }
     return bands;
   })();
+  // ── The tenant's bell ───────────────────────────────────────────────────────
+  // Same idea as the landlord's ALERTS below, and deliberately the same shape:
+  // { icon, tone, title, sub, go } derived from data the app already holds. No new
+  // list endpoint, no polling, and nothing that can disagree with the screens.
+  //
+  // The ONE thing derivation cannot know is whether any of it is NEWS. Current state
+  // says "your payment was confirmed"; it cannot say "and you have not seen that yet".
+  // So each row may carry an `at` — when the thing happened — and anything newer than
+  // the server's alerts_seen_at counts as unread. Rows with no meaningful moment (rent
+  // is due on Friday) carry none and are never "new": a standing fact should not
+  // light up a bell every time the app is opened.
+  // A Date or null, never an Invalid Date. mapping.js has its own asDate but does not
+  // export it, and every comparison below would silently be false against a NaN time —
+  // which would show as a bell that simply never lights up.
+  const aDate = (v) => {
+    if (!v) return null;
+    const d = v instanceof Date ? v : new Date(v);
+    return isNaN(d.getTime()) ? null : d;
+  };
+  // The tenant's own next-due date, formatted. Computed HERE rather than reusing the
+  // module's `myDue`, which is declared several hundred lines further down: this block
+  // runs immediately, so reaching forward for it is a temporal-dead-zone crash that
+  // would take the whole tenant app down at render.
+  const tDueLabel = TLIVE && TD && TD.me && TD.me.rent ? fmtDay(TD.me.rent.next_due) : '';
+  // How far back the bell remembers. Something settled six months ago is history, not
+  // a notification — but a confirmation from last week is still worth being able to
+  // re-read, which is why the row survives being marked seen.
+  const ALERT_WINDOW_MS = 30 * 86400000;
+  // Read once so every comparison in the list uses the same instant.
+  const tNow = Date.now();
+
+  const T_SEEN = (() => {
+    const raw = TD && TD.me && TD.me.alerts_seen_at;
+    const d = raw ? new Date(raw) : null;
+    return d && !isNaN(d.getTime()) ? d : null;
+  })();
+  // Never seen anything => everything with a moment is new. That is the honest
+  // default: swallowing a tenant's first alerts is worse than showing one twice.
+  const tFresh = (at) => !!at && (!T_SEEN || at.getTime() > T_SEEN.getTime());
+
+  const TENANT_ALERTS = (() => {
+    if (!TLIVE) return [];
+    const rows = [];
+    const rent = (TD.me && TD.me.rent) || {};
+    const days = rent.days_until_due;
+    const amount = rent.amount != null ? money(rent.amount) : '';
+    const push = (r) => rows.push({ tone: 'fg2', ...r, new: tFresh(r.at || null) });
+
+    // ── Money ───────────────────────────────────────────────────────────────
+    // A claim waiting on the landlord leads everything. This is the one failure in
+    // the app that costs the tenant money: they have paid, nobody has confirmed it,
+    // and every other screen still calls them overdue. Above the overdue row on
+    // purpose, for the same reason the landlord sees claims above accusations.
+    if (myAwaiting) {
+      push({
+        icon: 'hourglass-outline',
+        tone: 'amber',
+        title: `You said you paid ${money(myAwaiting.amount_paid)}`,
+        sub: 'Waiting for your landlord to confirm it',
+        at: aDate(myAwaiting.declared_at || myAwaiting.payment_date),
+        go: () => go('treceipts')
+      });
+    }
+    // A decision is news exactly once — but it stays READABLE afterwards.
+    //
+    // The first version filtered these out unless they were fresh, so a confirmation
+    // disappeared the instant the sheet marked it seen: you could watch it vanish
+    // while looking at it, and never read it again. Freshness decides the DOT, not
+    // whether the row exists. RECENCY decides existence, so the list does not grow
+    // into a year of history.
+    const decided = MY_PAYMENTS
+      .filter((p) => p.status === 'Confirmed' || p.status === 'Rejected')
+      .map((p) => ({ p, at: aDate(p.decided_at || p.payment_date) }))
+      .filter((x) => x.at && (tNow - x.at.getTime()) <= ALERT_WINDOW_MS)
+      .sort((a, b) => (b.at ? b.at.getTime() : 0) - (a.at ? a.at.getTime() : 0));
+    if (decided.length) {
+      const { p, at } = decided[0];
+      // Only count the OTHERS as "more" when they are also unread — a tally that
+      // includes months of settled history reads as unfinished business.
+      const extra = decided.filter((x, i) => i > 0 && tFresh(x.at)).length;
+      const more = extra ? ` · +${extra} more` : '';
+      push(p.status === 'Confirmed'
+        ? {
+          icon: 'checkmark-circle',
+          tone: 'pos',
+          title: `${money(p.amount_paid)} confirmed`,
+          sub: `${p.payment_method || 'Payment'} received${more}`,
+          at,
+          go: () => go('treceipts')
+        }
+        : {
+          icon: 'close-circle',
+          tone: 'coral',
+          title: `${money(p.amount_paid)} was not accepted`,
+          // The reason is the whole point. A claim that vanished without one is
+          // what makes a tenant phone their landlord in a panic.
+          sub: p.decision_note || 'No reason was given — ask your landlord',
+          at,
+          go: () => go('treceipts')
+        });
+    }
+    // Rent itself. No `at`: a due date is a standing fact, not an event, so it must
+    // never mark the bell unread — it would be "new" every single day.
+    if (typeof days === 'number') {
+      if (days < 0) {
+        push({
+          icon: 'alert-circle',
+          tone: 'coral',
+          title: `${amount} is ${Math.abs(days)} ${Math.abs(days) === 1 ? 'day' : 'days'} late`,
+          sub: myAwaiting ? 'Your claim is still waiting to be confirmed' : 'Pay now to clear it',
+          go: () => setState({ overlay: 'tpay' })
+        });
+      } else if (days === 0) {
+        push({ icon: 'card', tone: 'amber', title: `${amount} is due today`, sub: tDueLabel ? `Due ${tDueLabel}` : '', go: () => setState({ overlay: 'tpay' }) });
+      } else if (days <= REMINDER_LEAD) {
+        // The same lead the email reminder uses — one constant, so the bell and the
+        // inbox can never tell a tenant two different things.
+        push({
+          icon: 'time-outline',
+          tone: 'accent',
+          title: `${amount} due in ${days} ${days === 1 ? 'day' : 'days'}`,
+          sub: tDueLabel ? `Due ${tDueLabel}` : '',
+          go: () => setState({ overlay: 'tpay' })
+        });
+      }
+    }
+
+    // ── Where they stand with the landlord ──────────────────────────────────
+    if (MY_PENDING_JOIN) {
+      push({
+        icon: 'person-add',
+        tone: 'accent',
+        title: 'Waiting to be confirmed',
+        sub: `${MY_PENDING_JOIN.property || 'Your landlord'} has your request`,
+        at: aDate(MY_PENDING_JOIN.created_at),
+        go: () => go('tfind')
+      });
+    }
+    // Decided join requests, announced once each.
+    const joinDecided = ((TD.joins) || [])
+      .map((j) => ({ j, at: aDate(j.decided_at || j.updated_at) }))
+      // Recent, not merely unseen — same reason as the payment decisions above.
+      .filter((x) => ['Accepted', 'Rejected'].includes(String(x.j.status))
+        && x.at && (tNow - x.at.getTime()) <= ALERT_WINDOW_MS);
+    if (joinDecided.length) {
+      const { j, at } = joinDecided[0];
+      push(String(j.status) === 'Accepted'
+        ? { icon: 'home', tone: 'pos', title: "You're in", sub: `${j.property_name || 'Your property'} confirmed you`, at, go: () => go('portal') }
+        : { icon: 'close-circle', tone: 'coral', title: 'Your request was not accepted', sub: 'You can look for another place', at, go: () => go('tfind') });
+    }
+    // The landlord asking for a government ID. Uses the SERVER's decision about
+    // whether to still be asking — it stops after three weeks rather than nagging
+    // a screen that has ignored it twenty-one times.
+    const idReqs = ((s.myDocs && s.myDocs.requests) || []).filter((r) => r && r.show);
+    if (idReqs.length) {
+      push({
+        icon: 'shield-outline',
+        tone: 'amber',
+        title: idReqs[0].title || 'Your landlord asked for your ID',
+        sub: idReqs[0].landlordName ? `From ${idReqs[0].landlordName}` : 'Tap to add it',
+        at: aDate(idReqs[0].requestedAt || idReqs[0].created_at),
+        go: () => { api.loadMyDocs(); go('tdocs'); }
+      });
+    }
+
+    // ── Requests and replies ────────────────────────────────────────────────
+    // The closest thing this app has to a chat: activity inside a maintenance
+    // thread. Only when somebody ELSE caused it — a tenant does not want their own
+    // message notified back at them.
+    const answered = REQUESTS
+      .filter((r) => r.lastAt && r.lastRole && r.lastRole !== 'tenant'
+        && (tNow - r.lastAt.getTime()) <= ALERT_WINDOW_MS)
+      .sort((a, b) => b.lastAt.getTime() - a.lastAt.getTime());
+    if (answered.length) {
+      const r = answered[0];
+      const extra = answered.filter((x, i) => i > 0 && tFresh(x.lastAt)).length;
+      const more = extra ? ` · +${extra} more` : '';
+      push(r.lastKind === 'status'
+        ? { icon: 'sync-outline', tone: 'accent', title: `${r.title} → ${r.status}`, sub: `Your landlord moved it${more}`, at: r.lastAt, go: () => go('thelp') }
+        : { icon: 'chatbubble-ellipses', tone: 'accent', title: `New reply on "${r.title}"`, sub: `From your landlord${more}`, at: r.lastAt, go: () => go('thelp') });
+    }
+
+    // ── The tenancy itself ──────────────────────────────────────────────────
+    const noticeOn = TD.me && TD.me.profile && TD.me.profile.notice;
+    if (noticeOn && noticeOn.given && noticeOn.leaving_on) {
+      const leave = aDate(noticeOn.leaving_on);
+      if (leave) {
+        const midnight = new Date(); midnight.setHours(0, 0, 0, 0);
+        const left = Math.round((leave - midnight) / 86400000);
+        push({
+          icon: 'exit-outline',
+          tone: 'amber',
+          title: left >= 0 ? `You leave in ${left} ${left === 1 ? 'day' : 'days'}` : 'Your last day has passed',
+          sub: `Last day ${fmtDay(leave)} · rent runs until then`,
+          go: () => go('tstay')
+        });
+      }
+    }
+
+    // ── The account ─────────────────────────────────────────────────────────
+    // A guest is tied to one stay and cannot recover the account if the phone is
+    // lost. No `at`: it is a standing condition until they fix it.
+    const g = (TD.me && TD.me.guest) || null;
+    if (g && g.is_guest) {
+      push({ icon: 'ticket-outline', tone: 'amber', title: 'Finish setting up your account', sub: 'A guest account cannot be recovered if you lose this phone', go: () => go('tme') });
+    }
+    // A phone or email change waiting on its code — the profile edit flow.
+    const pv = s.pv || BLANK_PROFILE_VERIFY;
+    if (pv.channel && pv.value) {
+      push({ icon: 'time-outline', tone: 'amber', title: `${pv.value} is waiting to be confirmed`, sub: 'Enter the code to finish the change', go: () => setState({ overlay: 'verifycontact' }) });
+    }
+
+    return rows;
+  })();
+
   // What actually needs the landlord's attention, built from data already on
   // hand: no new endpoint and no polling. Derived once so the bell's dot and the
   // sheet's contents are the same list.
@@ -4050,6 +4265,29 @@ function deriveVm(s, api) {
       };
     })(),
 
+    // ── The tenant's bell ─────────────────────────────────────────────────────
+    // Same surface as the landlord's, so Header.js and the alerts sheet can render
+    // either side without knowing which one they are looking at.
+    openTAlerts: () => {
+      setState({ overlay: 'talerts' });
+      // Marked seen on OPEN, not on close. Somebody who opens the sheet and swipes
+      // away has still seen it, and a bell that only clears when you dismiss it
+      // "correctly" is a bell people learn to distrust. Fire-and-forget: a failed
+      // write costs one repeated alert, which is the harmless direction to fail.
+      api.markAlertsSeen();
+    },
+    isTAlerts: s.overlay === 'talerts',
+    tAlerts: TENANT_ALERTS,
+    hasTAlerts: TENANT_ALERTS.length > 0,
+    // The dot is driven by UNREAD, not by the list being non-empty. Rent being due on
+    // Friday is worth listing and not worth a red dot every morning.
+    tUnreadCount: TENANT_ALERTS.filter((a) => a.new).length,
+    tBellUrgent: TENANT_ALERTS.some((a) => a.new),
+    tBellCount: TENANT_ALERTS.filter((a) => a.new).length
+      ? String(TENANT_ALERTS.filter((a) => a.new).length)
+      : '',
+    tAlertsEmptyLine: 'Nothing needs you right now. Your rent is on track and nobody is waiting on you.',
+
     isTMe: s.route === 'tme',
     tenantSide: ['portal', 'tfind', 'thelp', 'tstay', 'tme', 'tcheckout', 'tsettings', 'tdocs', 'tagreement'].includes(s.route),
     showTenantDock: ['portal', 'tfind', 'thelp', 'tstay', 'tme', 'tsettings'].includes(s.route)
@@ -6230,6 +6468,26 @@ export function AppProvider({ children }) {
 
   // Redeem the code, which is the only thing that moves a new number or address onto
   // the account.
+  // Mark the tenant's alerts as read. Fire-and-forget by design: the sheet is already
+  // open, and blocking it on a network round trip to dim a dot would be worse than the
+  // dot staying lit. On success the new stamp is written straight into tdata so the
+  // bell clears without waiting for the next /me.
+  const markAlertsSeen = useCallback(async () => {
+    const td = stateRef.current.tdata;
+    if (!td || !td.me) return;
+    try {
+      const res = await apiPortal.markAlertsSeen();
+      const stamp = (res && res.alerts_seen_at) || new Date().toISOString();
+      const cur = stateRef.current.tdata;
+      // Re-read from the ref: a refresh may have swapped tdata while this was in
+      // flight, and writing a stale object back would undo it.
+      if (cur && cur.me) setState({ tdata: { ...cur, me: { ...cur.me, alerts_seen_at: stamp } } });
+    } catch (e) {
+      // A failed write costs one repeated alert. That is the harmless direction to
+      // fail, and not worth a toast that interrupts what they opened the bell to read.
+    }
+  }, [setState]);
+
   const verifyContactCode = useCallback(async () => {
     const pv = stateRef.current.pv || {};
     if (pv.busy || !pv.channel) return;
@@ -6891,7 +7149,7 @@ export function AppProvider({ children }) {
       decideJoin, decidePayment, requestToJoin, holdJoinCode, askPermission, finishPermits,
       loadDocs, decideDoc, loadMyDocs, pickDocPhoto, addMyDoc, removeMyDoc,
       requestId, cancelIdRequest,
-      lookupProperty, scanQrFromImage, resetDemo, sendTestPush, saveProfile, verifyContactCode, openUpiPayment, declareMyPayment,
+      lookupProperty, scanQrFromImage, resetDemo, sendTestPush, saveProfile, verifyContactCode, markAlertsSeen, openUpiPayment, declareMyPayment,
       startGoogleSignIn, finishGoogleSignUp, cancelGoogleSignIn,
       openLeave, confirmLeave, withdrawLeave,
       submitClaim,
@@ -6906,7 +7164,7 @@ export function AppProvider({ children }) {
       decideJoin, decidePayment, requestToJoin, holdJoinCode, askPermission, finishPermits,
       loadDocs, decideDoc, loadMyDocs, pickDocPhoto, addMyDoc, removeMyDoc,
       requestId, cancelIdRequest,
-      lookupProperty, scanQrFromImage, resetDemo, sendTestPush, saveProfile, verifyContactCode, openUpiPayment, declareMyPayment,
+      lookupProperty, scanQrFromImage, resetDemo, sendTestPush, saveProfile, verifyContactCode, markAlertsSeen, openUpiPayment, declareMyPayment,
       startGoogleSignIn, finishGoogleSignUp, cancelGoogleSignIn,
       openLeave, confirmLeave, withdrawLeave,
       submitClaim,

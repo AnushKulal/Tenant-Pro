@@ -276,6 +276,18 @@ const initDb = async () => {
         // first.
         await ensureColumn(conn, 'owners', 'google_sub', 'varchar(64) DEFAULT NULL');
         await ensureColumn(conn, 'tenant_users', 'google_sub', 'varchar(64) DEFAULT NULL');
+
+        // When this tenant last opened their alerts.
+        //
+        // The alert list itself is DERIVED from data the app already holds — rent due,
+        // a pending join, a landlord's reply — so it needs no table of its own. What
+        // derivation cannot know is whether the person has SEEN any of it: current
+        // state says "your payment was confirmed", it cannot say "and that is news".
+        // Without this column an unread dot would either never appear or never clear.
+        //
+        // NULL means "never opened", which correctly makes everything unread on the
+        // first run rather than silently swallowing a tenant's first alerts.
+        await ensureColumn(conn, 'tenant_users', 'alerts_seen_at', 'datetime DEFAULT NULL');
         await ensureUniqueIndex(conn, 'owners', 'google_sub', '(`google_sub`)');
         await ensureUniqueIndex(conn, 'tenant_users', 'google_sub', '(`google_sub`)');
 

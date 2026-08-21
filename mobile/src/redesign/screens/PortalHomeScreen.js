@@ -3,6 +3,7 @@ import { View, ScrollView } from 'react-native';
 import { useVm } from '../AppContext';
 import { useT } from '../ThemeContext';
 import { T, Eyebrow, Card, Row, Pill, Press, Glyph, IconChip, Face, Avatar } from '../ui';
+import AlertBell from '../AlertBell';
 
 export default function PortalHomeScreen() {
     const vm = useVm();
@@ -25,6 +26,15 @@ export default function PortalHomeScreen() {
                         {me.name || 'Welcome'}
                     </T>
                 </View>
+                {/* Same bell the landlord has, same component. On the tenant's home
+                    screen because this is where they land — an alert they have to go
+                    hunting for is one they will not see. */}
+                <AlertBell
+                    onPress={vm.openTAlerts}
+                    has={vm.hasTAlerts}
+                    urgent={vm.tBellUrgent}
+                    count={vm.tBellCount}
+                />
                 <Press
                     onPress={vm.askSignOut}
                     style={{
