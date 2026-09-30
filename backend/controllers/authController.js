@@ -1,6 +1,11 @@
 // File: backend/controllers/authController.js
 const db = require('../config/db');
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
+
+// How many wrong guesses a single reset code tolerates before it is destroyed.
+// Matches services/verifyService, so the two code flows behave the same way.
+const RESET_MAX_ATTEMPTS = 5;
 const { forSignup, phoneTaken } = require('../utils/signupPhone');
 const jwt = require('jsonwebtoken');
 const { sendAppMail, isMailConfigured } = require('../config/mailer');
@@ -264,16 +269,29 @@ const forgotPassword = async (req, res) => {
             // anything supplied in the request — so a reset cannot be redirected by
             // asking for it with someone else's address.
             const accountEmail = owners[0].email;
-            const code = String(Math.floor(100000 + Math.random() * 900000)); // 6 digits
+            // crypto.randomInt, not Math.random. This code is a CREDENTIAL: it is the
+            // whole of what stands between a stranger and somebody's account for the
+            // next fifteen minutes. Math.random is a fast PRNG, not a secure one — its
+            // internal state can be recovered from a handful of observed outputs, and
+            // an attacker is free to observe as many as they like by requesting codes
+            // for an account they own. The identical job in services/verifyService is
+            // already done this way; this call site was simply older.
+            const code = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
 
             // Replace any previous codes for this email AND role, then store the new
             // one (15 min TTL). Scoped by role so requesting an owner code does not
             // invalidate a tenant code for the same address.
+            // Hashed, like a password, because that is what it is for fifteen minutes.
+            // Stored in plain text, anyone who can read this table — a leaked backup, a
+            // read-only reporting login, an injection anywhere else in the app — can
+            // take over every account with a reset in flight. verifyService already
+            // hashes its codes; this table was the odd one out.
+            const codeHash = await bcrypt.hash(code, 10);
             await db.query('DELETE FROM password_resets WHERE email = ? AND role = ?', [accountEmail, target.role]);
             await db.query(
                 `INSERT INTO password_resets (email, role, code, expires_at)
                  VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL 15 MINUTE))`,
-                [accountEmail, target.role, code]
+                [accountEmail, target.role, codeHash]
             );
 
             {
@@ -364,15 +382,38 @@ const resetPassword = async (req, res) => {
         const accountEmail = accounts[0].email;
 
         // The role is part of the match, so a code issued for one account type can
-        // never reset the other.
+        // never reset the other. The code can no longer be matched in SQL now that it
+        // is hashed, so the row is fetched and compared in Node — one row per
+        // (email, role) is guaranteed by the delete-then-insert above.
         const [rows] = await db.query(
-            `SELECT id FROM password_resets
-             WHERE email = ? AND role = ? AND code = ? AND expires_at > NOW()
+            `SELECT id, code, attempts FROM password_resets
+             WHERE email = ? AND role = ? AND expires_at > NOW()
              ORDER BY created_at DESC LIMIT 1`,
-            [accountEmail, target.role, code]
+            [accountEmail, target.role]
         );
 
         if (rows.length === 0) {
+            return res.status(400).json({ message: 'Invalid or expired code.' });
+        }
+
+        // A per-CODE guess budget, on top of the per-IP limiter on this route. The
+        // limiter counts requests from one address; this counts guesses at one code,
+        // so rotating IPs buys an attacker nothing. Six digits is a million
+        // possibilities, which is plenty against five guesses and not nearly enough
+        // against unlimited ones.
+        if (Number(rows[0].attempts) >= RESET_MAX_ATTEMPTS) {
+            await db.query('DELETE FROM password_resets WHERE id = ?', [rows[0].id]);
+            return res.status(400).json({
+                message: 'Too many incorrect attempts. Request a new code.'
+            });
+        }
+
+        const codeOk = await bcrypt.compare(String(code), String(rows[0].code));
+        if (!codeOk) {
+            await db.query('UPDATE password_resets SET attempts = attempts + 1 WHERE id = ?', [rows[0].id]);
+            // Deliberately the same sentence as an expired or missing code. Telling
+            // somebody "that code is wrong but it does exist" confirms a reset is in
+            // flight for an account they do not own.
             return res.status(400).json({ message: 'Invalid or expired code.' });
         }
 
