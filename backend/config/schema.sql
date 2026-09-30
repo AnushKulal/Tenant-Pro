@@ -338,7 +338,13 @@ CREATE TABLE IF NOT EXISTS `password_resets` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `email` varchar(100) NOT NULL,
   `role` varchar(10) NOT NULL DEFAULT 'owner',
-  `code` varchar(10) NOT NULL,
+  -- A bcrypt hash of the code, not the code: for the fifteen minutes it is alive this
+  -- value is a credential, and anyone who can read this table could otherwise take
+  -- over every account with a reset in flight. 255 because bcrypt is 60.
+  `code` varchar(255) NOT NULL,
+  -- Guesses against this one code. Bounds brute force independently of the per-IP
+  -- limiter, which an attacker can sidestep by changing address.
+  `attempts` int(11) NOT NULL DEFAULT 0,
   `expires_at` datetime NOT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   PRIMARY KEY (`id`),

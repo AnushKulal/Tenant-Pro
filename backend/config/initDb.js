@@ -160,6 +160,17 @@ const initDb = async () => {
         // need the column added rather than the table recreated.
         await ensureColumn(conn, 'password_resets', 'role', "varchar(10) NOT NULL DEFAULT 'owner'");
 
+        // Reset codes are now stored as a bcrypt HASH rather than in plain text, and a
+        // bcrypt hash is 60 characters. varchar(10) held the old six-digit code exactly;
+        // left alone it would silently truncate every hash to its first 10 characters,
+        // and bcrypt.compare would then reject every correct code — a password reset
+        // that can never succeed. Widened before the controller change can reach a row.
+        await ensureColumnType(conn, 'password_resets', 'code', 'varchar(255)', 'varchar(255) NOT NULL');
+        // Guesses against one code, so rotating IP addresses does not buy an attacker
+        // more attempts than the per-IP limiter allows. Existing rows start at 0, which
+        // is correct for them.
+        await ensureColumn(conn, 'password_resets', 'attempts', 'int(11) NOT NULL DEFAULT 0');
+
         // Maintenance requests gained an optional photo of the problem. The table
         // already exists on every deployed database, so CREATE TABLE IF NOT EXISTS
         // will not add the column — this will.
