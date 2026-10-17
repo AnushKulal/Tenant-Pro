@@ -138,6 +138,22 @@ function Shell() {
         return () => sub.remove();
     }, [vm.goBackOneStep]);
 
+    // ── Why the early returns below carry the updater with them ───────────────
+    // <UpdateSheet /> renders near the bottom of this component, AFTER every early
+    // return. It is what checks for and downloads an over-the-air update — so on any
+    // screen that returns early, the app stops looking for updates entirely.
+    //
+    // On a loading screen that is merely wasteful. On the DATA ERROR screen it is a
+    // trap: the app cannot fetch the fix for the thing that is blocking it. A session
+    // that expired on an old bundle showed "Couldn't load your data" above a Try
+    // again that re-sent the same dead token, and the update containing the fix could
+    // not arrive, because arriving required getting past that screen. The only way
+    // out was a grey SIGN OUT the user had to think to press.
+    //
+    // So every early return goes through this. An app's own repair mechanism must not
+    // live behind the failure it repairs.
+    const held = (node) => (<>{node}<UpdateSheet /></>);
+
     // Hold the whole app on an ink field until the two typefaces are ready, so
     // nothing renders in a fallback system font and then reflows.
     if (!fontsLoaded) return <View style={{ flex: 1, backgroundColor: t.ink }} />;
@@ -146,7 +162,7 @@ function Shell() {
     // once on mount). Hold on the brand mark rather than flashing a screen the
     // user may not be entitled to.
     if (state.route === 'boot') {
-        return <Loading line="TENANTPRO" />;
+        return held(<Loading line="TENANTPRO" />);
     }
 
     // An owner's real data has not arrived yet. `state.data` still holds the seed
@@ -156,10 +172,10 @@ function Shell() {
     // were theirs.
     const awaitingOwnerData = vm.isOwner && !vm.live;
     if (awaitingOwnerData && vm.dataLoading) {
-        return <Loading line="LOADING YOUR PORTFOLIO" />;
+        return held(<Loading line="LOADING YOUR PORTFOLIO" />);
     }
     if (awaitingOwnerData && vm.hasDataError) {
-        return (
+        return held(
             <View style={{ flex: 1, backgroundColor: t.ink, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32, rowGap: 14 }}>
                 <Glyph name="cloud-offline-outline" size={30} color={t.coral} />
                 <T w={700} s={19} c={t.fg} style={{ letterSpacing: -0.5, textAlign: 'center' }}>Couldn’t load your data</T>
@@ -183,10 +199,10 @@ function Shell() {
     // exactly what made a failed load look like a working app.
     const awaitingTenantData = vm.isTenantSession && !vm.tenantDataReady;
     if (awaitingTenantData && vm.dataLoading) {
-        return <Loading line="LOADING YOUR TENANCY" />;
+        return held(<Loading line="LOADING YOUR TENANCY" />);
     }
     if (awaitingTenantData && vm.hasDataError) {
-        return (
+        return held(
             <View style={{ flex: 1, backgroundColor: t.ink, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32, rowGap: 14 }}>
                 <Glyph name="cloud-offline-outline" size={30} color={t.coral} />
                 <T w={700} s={19} c={t.fg} style={{ letterSpacing: -0.5, textAlign: 'center' }}>Couldn’t load your tenancy</T>
