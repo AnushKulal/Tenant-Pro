@@ -32,6 +32,45 @@ http.interceptors.request.use((cfg) => {
     return cfg;
 });
 
+// ── An expired session ────────────────────────────────────────────────────────
+// Tokens are signed with a 7-day life, so every signed-in user's token dies once a
+// week whether or not they did anything wrong. Nothing here noticed: a 401 fell
+// through to the same handler as a flaky network, and the app showed "Couldn't load
+// your data" above a Try again button that re-sent the same dead token and could
+// never succeed. The only way out was a small grey SIGN OUT the user had to spot.
+//
+// A 401 is not a retryable condition. It means the credential is finished, and the
+// app knows it — so it ends the session rather than pretending another attempt
+// might help.
+let onAuthFailure = null;
+export function setOnAuthFailure(fn) { onAuthFailure = typeof fn === 'function' ? fn : null; }
+
+// The sign-in endpoints answer 401 for a WRONG PASSWORD. Signing somebody out for
+// mistyping their password on the login screen — which is where they already are —
+// would be absurd, so the public auth routes are exempt: their 401 is an answer to a
+// question, not an expired credential.
+const PUBLIC_AUTH = /\/(auth|tenant-auth)\/(login|register|forgot-password|reset-password|google)/;
+
+// Guarded so a burst of parallel calls — the dashboard fires eleven at once — raises
+// one sign-out, not eleven.
+let handlingAuthFailure = false;
+
+http.interceptors.response.use(
+    (res) => res,
+    (error) => {
+        const status = error && error.response && error.response.status;
+        const url = (error && error.config && error.config.url) || '';
+        if (status === 401 && !PUBLIC_AUTH.test(url) && onAuthFailure && !handlingAuthFailure) {
+            handlingAuthFailure = true;
+            try { onAuthFailure(); } catch (e) { /* never mask the original error */ }
+            // Released on the next tick: the flag exists to collapse one burst, not to
+            // stop the NEXT expiry from being noticed.
+            setTimeout(() => { handlingAuthFailure = false; }, 0);
+        }
+        return Promise.reject(error);
+    }
+);
+
 const body = (p) => p.then((r) => r.data);
 const MULTIPART = { headers: { 'Content-Type': 'multipart/form-data' } };
 // FormData is only defined at runtime; guard so this is safe in any environment.

@@ -18,7 +18,7 @@ import {
 import {
   auth as apiAuth, owner as apiOwner, properties as apiProps,
   units as apiUnits, tenants as apiTenants, portal as apiPortal, payments as apiPayments, places as apiPlaces,
-  setToken, mediaUrl
+  setToken, setOnAuthFailure, mediaUrl
 } from './api';
 import { mapOwnerData, mapPortalRequest, mapDocument, mapMyPlace } from './mapping';
 import { hasPin, roundCoord, DEFAULT_CENTER, openDirections, MIN_ZOOM, MAX_ZOOM } from './maps';
@@ -38,8 +38,23 @@ import {
 // ({target:{value}}), matching how the prototype's setQ/setPq were called.
 // Pull a human-readable message out of an axios error, preferring the API's own
 // { message } body over the generic network text.
+// An expired session, said in words a tenant can act on.
+//
+// The server's own phrasing is "Not authorized, token failed", which is correct for a
+// log and useless on a phone — it reached a real screen and told somebody nothing
+// except that something was broken. The interceptor in api.js normally signs them out
+// before any message is rendered, but a 401 can still land in a `dataError` during
+// that same tick, so the wording is fixed here too rather than relying on the race.
+const AUTH_MSG = 'Your session expired. Please sign in again.';
+const isAuthFail = (e) => {
+  const status = e && e.response && e.response.status;
+  const msg = String((e && e.response && e.response.data && e.response.data.message) || '');
+  return status === 401 || /not authorized/i.test(msg);
+};
+
 const errText = (e, fallback) =>
-  (e && e.response && e.response.data && (e.response.data.message || e.response.data.error))
+  (isAuthFail(e) ? AUTH_MSG : null)
+  || (e && e.response && e.response.data && (e.response.data.message || e.response.data.error))
   || (e && e.message === 'Network Error' ? 'Cannot reach the server. Check your connection.' : null)
   || fallback;
 
@@ -7089,6 +7104,30 @@ export function AppProvider({ children }) {
     setToken(null);
     setState({ ...INITIAL_STATE, route: 'role', session: null, data: SEED, live: false, theme: stateRef.current.theme });
   }, [setState]);
+
+  // What to do when the server says this token is finished.
+  //
+  // Signs out rather than retrying, because a 401 on an authenticated route is not a
+  // transient failure — the credential is dead and every retry sends the same dead
+  // credential. Routed to the sign-in screen with a sentence that says what happened:
+  // the alternative, which is what shipped, was a tenant staring at "Not authorized,
+  // token failed" above a button that could not work.
+  //
+  // Guarded on there BEING a session: a 401 arriving after sign-out has already
+  // happened should not bounce somebody off the login screen they are using.
+  useEffect(() => {
+    setOnAuthFailure(async () => {
+      if (!stateRef.current.session) return;
+      // AWAITED before the message, not fired alongside it. signOut ends with
+      // setState({ ...INITIAL_STATE }), which clears `toast` along with everything
+      // else — so a flash raised before that resolves is wiped by the sign-out it was
+      // explaining. The browser pass caught exactly this: the app landed on the
+      // sign-in screen correctly and said nothing about why.
+      await signOut();
+      flash('Your session expired. Please sign in again.');
+    });
+    return () => setOnAuthFailure(null);
+  }, [signOut, flash]);
 
   // Resolve the stored session once, on mount.
   useEffect(() => { resolveSession(); }, [resolveSession]);
