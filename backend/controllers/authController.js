@@ -2,6 +2,7 @@
 const db = require('../config/db');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
+const { SESSION_TTL } = require('../config/session');
 
 // How many wrong guesses a single reset code tolerates before it is destroyed.
 // Matches services/verifyService, so the two code flows behave the same way.
@@ -143,7 +144,7 @@ const loginOwner = async (req, res) => {
         const token = jwt.sign(
             { id: owner.id, email: owner.email }, 
             process.env.JWT_SECRET,               
-            { expiresIn: '7d' }                   
+            { expiresIn: SESSION_TTL }
         );
 
         // Send back all necessary user profile data
