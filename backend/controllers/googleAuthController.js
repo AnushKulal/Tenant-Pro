@@ -24,12 +24,18 @@
 // Both are single-use and expire in ten minutes.
 
 const crypto = require('crypto');
+const { SESSION_TTL } = require('../config/session');
 const db = require('../config/db');
 const jwt = require('jsonwebtoken');
 const { googleConfigured, googleMissing, authUrl, exchangeCode } = require('../config/googleAuth');
 const { tryProposeLinks } = require('../services/tenantLinkService');
 
-const SESSION_TTL_MS = 10 * 60 * 1000;
+// How long a pending Google handshake stays collectable. NOT a session length —
+// it was called SESSION_TTL_MS, which read as one, and now sits beside the real
+// SESSION_TTL imported above. Ten minutes is how long the app may poll for the
+// result of a browser round trip; the session the handshake ends up minting lasts
+// thirty days.
+const CLAIM_TTL_MS = 10 * 60 * 1000;
 
 // 403, not 404: the route exists and the server is working — the deployment is
 // missing a credential. A 404 would send somebody hunting for a typo in the URL.
@@ -77,7 +83,7 @@ const startGoogle = async (req, res) => {
             claim,
             auth_url: authUrl(state),
             // So the app stops polling at the same moment the server stops caring.
-            expires_in: Math.round(SESSION_TTL_MS / 1000)
+            expires_in: Math.round(CLAIM_TTL_MS / 1000)
         });
     } catch (error) {
         console.error('Google start failed:', error.message);
@@ -224,7 +230,7 @@ const resolveAccount = async (identity, role) => {
 const issueToken = (id, email, role) => jwt.sign(
     role === 'tenant' ? { id, email, role: 'tenant' } : { id, email },
     process.env.JWT_SECRET,
-    { expiresIn: '7d' }
+    { expiresIn: SESSION_TTL }
 );
 
 // POST /api/auth/google/poll   { claim }

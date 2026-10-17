@@ -45,21 +45,26 @@ const { guestDisplayName } = require('../utils/guestCode');
 // gets logged out types an email and a password they chose. A guest who gets
 // logged out has to produce a six-character code they never chose and have not
 // looked at since the day they joined — and there is no reset, because there is
-// no email to send one to. At seven days that was not an edge case, it was a
-// weekly event: most guests would have been locked out of their own tenancy,
-// documents and payment history inside a fortnight.
+// no email to send one to. At the ordinary session length that was not an edge
+// case, it was routine: most guests would have been locked out of their own
+// tenancy, documents and payment history within a month or two.
 //
 // The trade is deliberate. A longer-lived token on a weaker credential is more
 // exposure if the phone is stolen — but the blast radius is bounded to the single
 // tenancy a landlord accepted them into (see the header), and it is bounded the
-// same way at seven days as at ninety. Being permanently locked out is both the
+// same way at thirty days as at ninety. Being permanently locked out is both the
 // worse outcome and the far likelier one.
 //
 // Keyed on the email rather than on is_guest so it cannot drift: the moment a
 // guest completes their profile they have real credentials and a real way back
-// in, and they drop to the ordinary week on their next token.
-const GUEST_SESSION = '90d';
-const TENANT_SESSION = '7d';
+// in, and they drop to the ordinary session length on their next token.
+//
+// Both lengths come from config/session so this file cannot disagree with the four
+// controllers that mint ordinary sessions — which is exactly what happened while
+// every one of them wrote '7d' by hand.
+const { SESSION_TTL, GUEST_SESSION_TTL } = require('../config/session');
+const GUEST_SESSION = GUEST_SESSION_TTL;
+const TENANT_SESSION = SESSION_TTL;
 const signTenantToken = (user) => jwt.sign(
     { id: user.id, email: user.email || null, role: 'tenant' },
     process.env.JWT_SECRET,

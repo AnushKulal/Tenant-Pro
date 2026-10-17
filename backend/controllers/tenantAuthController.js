@@ -1,6 +1,7 @@
 // File: backend/controllers/tenantAuthController.js
 // Auth for TENANT accounts (separate from owner/landlord accounts).
 const db = require('../config/db');
+const { SESSION_TTL } = require('../config/session');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { tryProposeLinks } = require('../services/tenantLinkService');
@@ -63,7 +64,7 @@ const registerTenant = async (req, res) => {
         const token = jwt.sign(
             { id: result.insertId, email, role: 'tenant' },
             process.env.JWT_SECRET,
-            { expiresIn: '7d' }
+            { expiresIn: SESSION_TTL }
         );
 
         // The landlord may already have typed this person into a room. If so, put a
@@ -147,7 +148,7 @@ const loginTenant = async (req, res) => {
         const token = jwt.sign(
             { id: user.id, email: user.email, role: 'tenant' },
             process.env.JWT_SECRET,
-            { expiresIn: '7d' }
+            { expiresIn: SESSION_TTL }
         );
 
         // Also matched at LOGIN, not just registration. Two ordinary situations need
