@@ -96,7 +96,13 @@ const COPY = {
             : 'They need a photo of a government ID.'
     }),
     rent_due: (d) => ({
-        title: d.days === 0 ? 'Rent is due today' : `Rent due in ${d.days} ${d.days === 1 ? 'day' : 'days'}`,
+        // "tomorrow" rather than "in 1 day", so this agrees word-for-word with the
+        // email, SMS and WhatsApp wording in utils/rentReminder. They were saying
+        // different things about the same morning, which is the whole class of bug
+        // that fix was about; "in 1 day" was simply the smallest remaining instance.
+        title: d.days === 0
+            ? 'Rent is due today'
+            : d.days === 1 ? 'Rent is due tomorrow' : `Rent due in ${d.days} days`,
         body: [money(d.amount), d.property, d.unit && `room ${d.unit}`].filter(Boolean).join(' · ')
     }),
     rent_overdue: (d) => ({

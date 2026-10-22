@@ -57,6 +57,43 @@ const shouldRemind = (daysPastDue) => {
 // today" wording on day thirty would read as though nothing had happened since.
 const reminderKind = (daysPastDue) => (Number(daysPastDue) > 0 ? 'rent_overdue' : 'rent_due');
 
+// The same sentence, for the channels that are not push.
+//
+// reminderKind above has always picked the right WORDING for a notification, and the
+// comment above it has always said why. The email, SMS and WhatsApp bodies never read
+// it: all three hardcoded "is due today" and sent that to somebody two days early and
+// to somebody thirty days late alike. Because push got it right, one event could put
+// "Rent is 12 days overdue" on a lock screen and "your rent is due today" in the same
+// person's inbox, minutes apart.
+//
+// So the phrase is derived here, once, next to the rule that decides which day it is.
+// Three channels writing their own version of this is exactly how they drifted.
+//
+//   -2 → "due in 2 days"      0 → "due today"      1 → "1 day overdue"
+//   -1 → "due tomorrow"                           12 → "12 days overdue"
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+const rentWhen = (daysPastDue) => {
+    const d = Number(daysPastDue);
+    // Not a number means no due date on file. shouldRemind already refuses to send in
+    // that case, so this is only reached if a caller skips the schedule — and a vague
+    // phrase is the safe thing to say, never a confident wrong one.
+    if (!Number.isFinite(d)) return 'due';
+    if (d > 0) return `${plural(d, 'day')} overdue`;
+    if (d === 0) return 'due today';
+    if (d === -1) return 'due tomorrow';
+    return `due in ${plural(Math.abs(d), 'day')}`;
+};
+
+// What the email subject line says. Overdue leads with the fact, because a subject
+// that reads "Rent Reminder" on day thirty is how a thread gets muted.
+const rentSubject = (daysPastDue, { property, unit } = {}) => {
+    const d = Number(daysPastDue);
+    const place = [property, unit ? `Unit ${unit}` : null].filter(Boolean).join(' · ');
+    const lead = Number.isFinite(d) && d > 0 ? `Rent ${plural(d, 'day')} overdue` : 'Rent reminder';
+    return place ? `${lead}: ${place}` : lead;
+};
+
 // Whole days between the due date and today, both floored to midnight.
 //
 // Floored because the comparison is between two DATES, not two instants: a due date
@@ -73,4 +110,4 @@ const daysPastDue = (dueDate, now = new Date()) => {
     return Math.round((today - due) / 86400000);
 };
 
-module.exports = { shouldRemind, reminderKind, daysPastDue, EARLY, WEEKLY_EVERY, LEAD_DAYS };
+module.exports = { shouldRemind, reminderKind, rentWhen, rentSubject, daysPastDue, EARLY, WEEKLY_EVERY, LEAD_DAYS };

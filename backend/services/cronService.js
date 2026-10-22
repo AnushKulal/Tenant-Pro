@@ -11,7 +11,7 @@ const db = require('../config/db');
 // One transporter, one place to configure, one boot check that covers both.
 const { sendAppMail, isMailConfigured } = require('../config/mailer');
 // When a reminder is due, kept pure and tested rather than expressed as a WHERE clause.
-const { shouldRemind, reminderKind, daysPastDue, LEAD_DAYS } = require('../utils/rentReminder');
+const { shouldRemind, reminderKind, rentWhen, rentSubject, daysPastDue, LEAD_DAYS } = require('../utils/rentReminder');
 const { notify } = require('./pushService');
 
 // --- 2. TWILIO SETUP (SMS & WhatsApp) ---
@@ -97,8 +97,13 @@ const checkAndSendRentReminders = async () => {
             // describe a room. A push goes to a device belonging to a person; somebody
             // who does not want them turns them off in the OS, which is the control they
             // already understand.
+            // Hoisted out of the push block below, where it used to live. The email,
+            // SMS and WhatsApp bodies could not see it, which is the whole reason they
+            // resorted to hardcoding "due today".
+            const past = daysPastDue(tenant.next_rent_due, now);
+            const whenStr = rentWhen(past);
+
             try {
-                const past = daysPastDue(tenant.next_rent_due, now);
                 const [accounts] = await db.query(
                     'SELECT id FROM tenant_users WHERE tenant_id = ?',
                     [tenant.tenant_id]
@@ -134,11 +139,11 @@ const checkAndSendRentReminders = async () => {
             if (tenant.notify_email && tenant.tenant_email) {
                 const mailOptions = {
                     to: tenant.tenant_email,
-                    subject: `Rent Reminder: ${tenant.property_name} - Unit ${tenant.unit_number}`,
+                    subject: rentSubject(past, { property: tenant.property_name, unit: tenant.unit_number }),
                     html: `
                         <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
                             <h2>Hello ${tenant.tenant_name},</h2>
-                            <p>This is a gentle reminder that your rent of <strong>${amountStr}</strong> is due today.</p>
+                            <p>This is a reminder that your rent of <strong>${amountStr}</strong> is ${whenStr}.</p>
                             
                             <div style="background: #f8fafc; padding: 15px; border-radius: 8px; margin: 20px 0;">
                                 <h3 style="margin-top: 0; color: #3b82f6;">Payment Details</h3>
@@ -171,7 +176,7 @@ const checkAndSendRentReminders = async () => {
             // 📱 2. SEND SMS (Only if switch is ON)
             // ==============================================
             if (tenant.notify_sms && tenant.tenant_phone) {
-                const smsMessage = `Hi ${tenant.tenant_name}, your rent of ${amountStr} for ${tenant.property_name} is due today. UPI: ${tenant.upi_id || 'N/A'}. Thank you!`;
+                const smsMessage = `Hi ${tenant.tenant_name}, your rent of ${amountStr} for ${tenant.property_name} is ${whenStr}. UPI: ${tenant.upi_id || 'N/A'}. Thank you!`;
                 
                 if (twilioClient) {
                     try {
@@ -193,7 +198,10 @@ const checkAndSendRentReminders = async () => {
             // 🟩 3. SEND WHATSAPP (Only if switch is ON)
             // ==============================================
             if (tenant.notify_whatsapp && tenant.tenant_phone) {
-                const waMessage = `*Rent Due Today!*\nHi ${tenant.tenant_name},\nYour rent of *${amountStr}* is due.\nUPI: ${tenant.upi_id || 'N/A'}\nQR Code: ${qrLink}`;
+                // The heading carries the status, so the body does not repeat it —
+                // "*Rent 2 days overdue* / Your rent is 2 days overdue" reads as a
+                // template someone forgot to finish.
+                const waMessage = `*Rent ${whenStr}*\nHi ${tenant.tenant_name},\n*${amountStr}* for ${tenant.property_name}.\nUPI: ${tenant.upi_id || 'N/A'}\nQR Code: ${qrLink}`;
                 
                 if (twilioClient) {
                     try {
