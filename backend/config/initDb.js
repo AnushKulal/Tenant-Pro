@@ -238,6 +238,14 @@ const initDb = async () => {
         // the information was never recorded, so those payments cannot be scored.
         await ensureColumn(conn, 'payments', 'due_date', 'date DEFAULT NULL');
         await ensureColumn(conn, 'payments', 'gateway_ref', 'varchar(120) DEFAULT NULL');
+
+        // A landlord's own gateway credentials. The secret is sealed by utils/secretBox
+        // before it reaches this column — 512 because an AES-GCM envelope is iv:tag:
+        // ciphertext in hex, several times the length of the key it wraps.
+        await ensureColumn(conn, 'payment_settings', 'gateway', 'varchar(20) DEFAULT NULL');
+        await ensureColumn(conn, 'payment_settings', 'gateway_key_id', 'varchar(120) DEFAULT NULL');
+        await ensureColumn(conn, 'payment_settings', 'gateway_secret', 'varchar(512) DEFAULT NULL');
+        await ensureColumn(conn, 'payment_settings', 'gateway_enabled', 'tinyint(1) NOT NULL DEFAULT 0');
         await ensureIndex(conn, 'payments', 'gateway_ref', '(`gateway_ref`)');
 
         // ── Guest accounts ────────────────────────────────────────────────────

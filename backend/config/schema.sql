@@ -196,6 +196,17 @@ CREATE TABLE IF NOT EXISTS `payment_settings` (
   `upi_id` varchar(100) DEFAULT NULL,
   `upi_number` varchar(15) DEFAULT NULL,
   `qr_code_url` varchar(255) DEFAULT NULL,
+  -- ── The landlord's OWN payment gateway ──────────────────────────────────────
+  -- Each landlord connects their own merchant account, so rent moves tenant →
+  -- landlord and never through this application. That is deliberate and not merely
+  -- tidy: collecting other people's rent into one account and paying it out is
+  -- operating as a payment aggregator, which in India needs RBI authorisation.
+  `gateway` varchar(20) DEFAULT NULL,
+  `gateway_key_id` varchar(120) DEFAULT NULL,
+  -- AES-256-GCM sealed by utils/secretBox. Never returned to any client, and
+  -- useless without CREDENTIALS_KEY, which lives in the environment rather than here.
+  `gateway_secret` varchar(512) DEFAULT NULL,
+  `gateway_enabled` tinyint(1) NOT NULL DEFAULT 0,
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   PRIMARY KEY (`id`),
   UNIQUE KEY `owner_id` (`owner_id`),

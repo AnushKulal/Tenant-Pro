@@ -28,6 +28,11 @@ const { planNotice, NOTICE_DAYS } = require('../utils/noticePeriod');
 // Date formatting shared with the confirmation side, so a declared payment and the
 // due date it eventually moves are written by the same code.
 const { toSqlDate } = require('../utils/rentDates');
+// Paying online goes through the landlord's OWN gateway, and settles through the SAME
+// function the landlord's Confirm tap uses — see the note above startOnlinePayment for
+// why that matters more than it sounds.
+const { credentialsFor } = require('../services/gatewayService');
+const { settlePayment } = require('./paymentController');
 
 // Three things a tenant does here reach the landlord and nothing else does: declaring a
 // payment, raising a repair, giving notice. All three sit in a queue the landlord has
@@ -58,7 +63,14 @@ const loadTenantContext = async (userId) => {
             p.id AS property_id, p.name AS property_name, p.address, p.locality, p.city, p.image_url AS property_image,
             p.property_type, p.latitude AS property_lat, p.longitude AS property_lon,
             o.id AS owner_id, o.name AS owner_name, o.phone AS owner_phone, o.email AS owner_email,
-            ps.upi_id, ps.upi_number, ps.qr_code_url
+            ps.upi_id, ps.upi_number, ps.qr_code_url,
+            -- The landlord's gateway, for paying by card or netbanking. The sealed
+            -- secret is selected because this file is where a payment link gets made
+            -- and the credential is needed to make one. It is never put in a response:
+            -- getMe sends payment.online, which carries whether the option exists and
+            -- nothing about how it works. The ONLY reason that holds is that nothing in
+            -- this file spreads ctx into a response -- every handler names its fields.
+            ps.gateway, ps.gateway_key_id, ps.gateway_secret, ps.gateway_enabled
          FROM tenant_users tu
          LEFT JOIN tenants t   ON tu.tenant_id = t.id
          LEFT JOIN units u     ON t.unit_id = u.id
@@ -226,7 +238,22 @@ const getMe = async (req, res) => {
             payment: {
                 upi_id: ctx.upi_id,
                 upi_number: ctx.upi_number,
-                qr_code_url: ctx.qr_code_url
+                qr_code_url: ctx.qr_code_url,
+                // Whether paying online is on the table at all, and what it is called.
+                //
+                // A boolean and a brand name — nothing about the credentials behind it.
+                // The tenant does not pay a gateway fee and is not told about one: the
+                // amount they are charged is the rent, and the landlord's gateway takes
+                // its cut from the landlord's settlement.
+                //
+                // UPI stays first in the screen regardless. It is free for everyone and
+                // it already works; this is the option for a tenant who wants to put
+                // rent on a card, or who would rather not wait for a landlord to notice
+                // a claim.
+                online: {
+                    available: !!(ctx.gateway && ctx.gateway_enabled && ctx.gateway_key_id),
+                    provider: ctx.gateway && ctx.gateway_enabled ? ctx.gateway : null
+                }
             },
             guest,
             id_proof: idProof,
@@ -475,6 +502,316 @@ const declarePayment = async (req, res) => {
     } catch (err) {
         console.error('Tenant portal declarePayment error:', err.message);
         res.status(500).json({ message: 'Could not send that to your landlord.' });
+    }
+};
+
+// ── PAYING ONLINE, THROUGH THE LANDLORD'S OWN GATEWAY ────────────────────────
+//
+// Two handlers, and the split between them is the point.
+//
+// `startOnlinePayment` creates the claim and the payment link together. `checkOnlinePayment`
+// asks the GATEWAY whether that link was paid, and settles only on its word.
+//
+// What the tenant's phone can do is trigger the question. It cannot answer it. That is
+// the same rule the rest of this file lives by — a payment is real once something other
+// than the tenant vouches for it — with the gateway standing in for the landlord's tap.
+// It is strictly better than the UPI flow for the tenant, because the voucher answers in
+// seconds rather than whenever their landlord next opens the app.
+//
+// The amount charged is the rent. The gateway's fee comes out of the landlord's
+// settlement, at the landlord's own account, and is never added to what the tenant pays.
+
+// How much rent is outstanding, rounded to paise, with the same ceiling declarePayment
+// uses. Shared so the two routes cannot disagree about what a plausible amount is.
+const payableAmount = (ctx, raw) => {
+    const amount = Math.round(Number(raw) * 100) / 100;
+    if (!Number.isFinite(amount) || amount <= 0) {
+        return { ok: false, message: 'Enter the amount you want to pay.' };
+    }
+    // A gateway's own floor. Razorpay refuses anything under ₹1, and its error for that
+    // is not one a tenant should have to read.
+    if (amount < 1) {
+        return { ok: false, message: 'The smallest online payment is ₹1.' };
+    }
+    const ceiling = Math.max(Number(ctx.rent_share || 0) * 10, 500000);
+    if (amount > ceiling) {
+        return { ok: false, message: 'That amount looks too large — check it and try again.' };
+    }
+    return { ok: true, amount };
+};
+
+// POST /api/tenant-portal/payments/online   { amount }
+const startOnlinePayment = async (req, res) => {
+    try {
+        if (req.user?.role !== 'tenant') {
+            return res.status(403).json({ message: 'Tenant access only.' });
+        }
+        const ctx = await loadTenantContext(req.user.id);
+        if (!ctx?.tenant_id) {
+            return res.status(400).json({ message: 'Your account is not linked to a unit yet.' });
+        }
+
+        const creds = credentialsFor(ctx);
+        if (!creds.ok) {
+            // Said in the tenant's terms, not ours. They cannot fix any of these and
+            // should not be shown a reason code — but "pay by UPI instead" is a real
+            // instruction and the UPI details are already on the same screen.
+            const message = creds.reason === 'unreadable'
+                ? 'Online payments are temporarily unavailable. Please pay by UPI, or ask your landlord to reconnect their gateway.'
+                : 'Your landlord is not taking online payments. You can still pay by UPI.';
+            return res.status(409).json({ message, fallback: 'upi' });
+        }
+
+        const want = payableAmount(ctx, req.body?.amount ?? ctx.rent_share);
+        if (!want.ok) return res.status(400).json({ message: want.message });
+        const { amount } = want;
+
+        // One claim at a time, exactly as declarePayment enforces — but here an existing
+        // claim is usually the tenant coming BACK, not a double tap. Three cases, and
+        // conflating any two of them is a bug with money in it:
+        //
+        //   · it already has a link, and the gateway says paid  → settle it now
+        //   · it already has a link, still open                 → hand back the SAME url
+        //   · its link has expired or was cancelled             → drop it, make a new one
+        //   · it is a hand-typed UPI claim with no link          → refuse, as before
+        //
+        // Handing back the same url matters more than it looks: a tenant who closed the
+        // browser and tapped Pay again would otherwise get a second live link for the
+        // same rent, and both of them work.
+        //
+        // And dropping a dead one matters just as much in the other direction. Razorpay
+        // links expire; a tenant who starts a payment, wanders off, and comes back next
+        // week holds a Declared row pointing at a page that will never be paid. Leaving
+        // it there blocks the one-claim-at-a-time slot — which would cost them the free
+        // UPI route as well — over a payment that provably did not happen.
+        const [pending] = await db.query(
+            "SELECT id, amount_paid, gateway_ref, reference_id FROM payments WHERE tenant_id = ? AND status = 'Declared' LIMIT 1",
+            [ctx.tenant_id]
+        );
+        if (pending.length) {
+            const row = pending[0];
+            if (!row.gateway_ref) {
+                return res.status(409).json({
+                    message: 'You already have a payment waiting for your landlord to confirm.',
+                    existing_id: row.id
+                });
+            }
+            const link = await creds.provider.readLink(creds.creds, row.gateway_ref);
+            if (!link.ok) {
+                // The gateway will not talk about a link we are holding. Nothing good
+                // comes of creating a second one against a claim we cannot read, so this
+                // stops rather than guessing: a wrong guess here is a tenant paying the
+                // same rent twice.
+                return res.status(502).json({
+                    message: 'Could not reach the payment gateway. Try again in a minute, or pay by UPI.',
+                    fallback: 'upi'
+                });
+            }
+            if (link.paid) {
+                const settled = await settleFromGateway(row.id, link, creds.provider.id);
+                return res.status(200).json({
+                    message: settled.ok ? 'That payment already went through.' : settled.message,
+                    paid: true,
+                    payment_id: row.id,
+                    next_rent_due: settled.ok ? settled.next_rent_due : undefined
+                });
+            }
+            if (link.status === 'expired' || link.status === 'cancelled') {
+                // Safe to delete only because the gateway has just told us this page can
+                // never be paid. The DELETE re-checks the status so a confirmation that
+                // landed in between — a webhook, a landlord's tap — is not thrown away.
+                await db.query("DELETE FROM payments WHERE id = ? AND status = 'Declared'", [row.id]);
+            } else if (link.url) {
+                return res.status(200).json({
+                    message: 'Picking up where you left off.',
+                    payment_id: row.id,
+                    amount: Number(row.amount_paid),
+                    provider: creds.provider.id,
+                    // The SAME reference, read back off the row rather than recomputed.
+                    // It is what the landlord will see against the credit, so the app
+                    // must show this one and not a fresh UPI-style reference.
+                    reference: row.reference_id || `TP${row.id}`,
+                    url: link.url
+                });
+            } else {
+                // Readable, not paid, not dead, and no url to send them back to. Should
+                // not happen; refusing beats inventing a second link for the same rent.
+                return res.status(502).json({
+                    message: 'Could not reopen that payment. Try again in a minute, or pay by UPI.',
+                    fallback: 'upi'
+                });
+            }
+        }
+
+        // The claim comes FIRST, and the link second, against our own row id.
+        //
+        // That ordering is deliberate: the reference we hand the gateway has to be
+        // unique and ours, and `TP<id>` is both. The old free-text reference was
+        // whatever the tenant typed, which is exactly the ambiguity webhookController
+        // has to refuse to settle on.
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+        const [inserted] = await db.query(
+            `INSERT INTO payments
+                (tenant_id, amount_paid, payment_date, payment_method, status, declared_by, due_date)
+             VALUES (?, ?, ?, 'Online', 'Declared', ?, ?)`,
+            [ctx.tenant_id, amount, toSqlDate(today), ctx.user_id, ctx.next_rent_due || null]
+        );
+        const paymentId = inserted.insertId;
+        const reference = `TP${paymentId}`;
+
+        const link = await creds.provider.createLink(creds.creds, {
+            amount,
+            description: `Rent${ctx.unit_number ? ` · Unit ${ctx.unit_number}` : ''}${ctx.property_name ? ` · ${ctx.property_name}` : ''}`,
+            reference,
+            customer: {
+                name: ctx.name || ctx.account_name,
+                email: ctx.email || ctx.account_email,
+                phone: ctx.phone || ctx.account_phone
+            }
+        });
+
+        if (!link.ok) {
+            // The claim is deleted, not left behind. A Declared row with no link is a
+            // payment the tenant never made, sitting in the landlord's confirm queue AND
+            // blocking the tenant's one-claim-at-a-time slot — so the failure would cost
+            // them the UPI route as well as this one.
+            await db.query("DELETE FROM payments WHERE id = ? AND status = 'Declared'", [paymentId]);
+            console.error(`Gateway link failed for owner ${ctx.owner_id}: ${link.reason}`);
+            return res.status(502).json({
+                message: 'Could not start that payment. Try again, or pay by UPI.',
+                fallback: 'upi'
+            });
+        }
+
+        await db.query('UPDATE payments SET gateway_ref = ?, reference_id = ? WHERE id = ?',
+            [link.ref, reference, paymentId]);
+
+        // The landlord is NOT notified here, and that is the difference from
+        // declarePayment. There is nothing for them to do: either the gateway confirms
+        // this in the next few minutes and they get a receipt, or the tenant abandoned a
+        // link and there was never a payment. Telling them about a claim they must not
+        // act on would train them to confirm rows by hand that the gateway is about to
+        // confirm properly.
+        res.status(201).json({
+            message: 'Opening the payment page.',
+            payment_id: paymentId,
+            amount,
+            provider: creds.provider.id,
+            // Sent so the screen can print the reference the LANDLORD will see against
+            // this credit. The UPI route makes its own client-side reference; an online
+            // payment's is ours and server-issued, and showing the wrong one is how a
+            // landlord fails to match a payment that did arrive.
+            reference,
+            url: link.url
+        });
+    } catch (err) {
+        console.error('Tenant portal startOnlinePayment error:', err.message);
+        res.status(500).json({ message: 'Could not start that payment.' });
+    }
+};
+
+// Settle a row because the GATEWAY said it was paid. One place, so the two callers
+// above and below cannot differ on what that means — and it goes through the same
+// settlePayment the landlord's tap uses, which is what keeps due dates consistent.
+const settleFromGateway = (paymentId, link, providerId) => settlePayment({
+    paymentId,
+    status: 'Confirmed',
+    source: 'gateway',
+    // The underlying payment id if the gateway gave us one, so the row carries the
+    // reference a landlord can actually search for in their own dashboard. COALESCE in
+    // settlePayment keeps the link id when it did not.
+    gatewayRef: link.paymentId || null,
+    note: `Paid online and confirmed by ${providerId}.`
+});
+
+// POST /api/tenant-portal/payments/:id/check
+//
+// Called when the tenant comes back from the gateway's page. It settles nothing on their
+// word — it asks the gateway and acts on the answer — so there is no harm in the app
+// calling it eagerly, or twice.
+const checkOnlinePayment = async (req, res) => {
+    try {
+        if (req.user?.role !== 'tenant') {
+            return res.status(403).json({ message: 'Tenant access only.' });
+        }
+        const ctx = await loadTenantContext(req.user.id);
+        if (!ctx?.tenant_id) {
+            return res.status(400).json({ message: 'Your account is not linked to a unit yet.' });
+        }
+
+        // Scoped to the caller's own tenancy. Without the tenant_id clause any tenant
+        // could ask us to go and settle any payment id in the database.
+        const [rows] = await db.query(
+            'SELECT id, status, gateway_ref, amount_paid FROM payments WHERE id = ? AND tenant_id = ?',
+            [req.params.id, ctx.tenant_id]
+        );
+        if (!rows.length) {
+            return res.status(404).json({ message: 'Payment not found.' });
+        }
+        const row = rows[0];
+
+        // Already decided — by the landlord, a webhook, or an earlier call to this very
+        // route. Reported as the settled truth rather than re-asked, because asking
+        // again cannot change it and a second settle is refused anyway.
+        if (row.status !== 'Declared') {
+            return res.status(200).json({
+                status: row.status,
+                paid: row.status === 'Confirmed',
+                message: row.status === 'Confirmed' ? 'Payment confirmed.' : 'That payment was rejected.'
+            });
+        }
+        if (!row.gateway_ref) {
+            return res.status(200).json({
+                status: 'Declared',
+                paid: false,
+                message: 'Waiting for your landlord to confirm this.'
+            });
+        }
+
+        const creds = credentialsFor(ctx);
+        if (!creds.ok) {
+            // The landlord disconnected the gateway between the link being made and the
+            // tenant coming back. The money may well have arrived; what is gone is our
+            // ability to ask. The claim stays and the landlord can confirm it by hand,
+            // which is what the queue is for.
+            return res.status(200).json({
+                status: 'Declared',
+                paid: false,
+                message: 'Waiting for your landlord to confirm this.'
+            });
+        }
+
+        const link = await creds.provider.readLink(creds.creds, row.gateway_ref);
+        if (!link.ok) {
+            return res.status(502).json({ message: 'Could not reach the payment gateway. We will keep trying.' });
+        }
+        if (!link.paid) {
+            return res.status(200).json({
+                status: 'Declared',
+                paid: false,
+                // 'created' means the link was never opened or never completed. Said
+                // plainly, because the alternative is a spinner that never resolves.
+                message: link.status === 'expired' || link.status === 'cancelled'
+                    ? 'That payment page is no longer valid. Start again when you are ready.'
+                    : 'No payment on that page yet.'
+            });
+        }
+
+        const settled = await settleFromGateway(row.id, link, creds.provider.id);
+        if (!settled.ok) {
+            // 409: somebody else settled it in the last few seconds. Not a failure —
+            // the tenant's month is cleared either way, which is all they asked.
+            return res.status(200).json({ status: 'Confirmed', paid: true, message: settled.message });
+        }
+        res.status(200).json({
+            status: 'Confirmed',
+            paid: true,
+            message: `₹${Number(row.amount_paid).toLocaleString('en-IN')} received. Your rent is up to date.`,
+            next_rent_due: settled.next_rent_due
+        });
+    } catch (err) {
+        console.error('Tenant portal checkOnlinePayment error:', err.message);
+        res.status(500).json({ message: 'Could not check that payment.' });
     }
 };
 
@@ -833,6 +1170,8 @@ module.exports = {
     getPulse,
     getPayments,
     declarePayment,
+    startOnlinePayment,
+    checkOnlinePayment,
     getRequests,
     createRequest,
     getRequestMessages,
