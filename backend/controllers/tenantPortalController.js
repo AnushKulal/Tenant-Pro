@@ -585,7 +585,7 @@ const startOnlinePayment = async (req, res) => {
         // it there blocks the one-claim-at-a-time slot — which would cost them the free
         // UPI route as well — over a payment that provably did not happen.
         const [pending] = await db.query(
-            "SELECT id, amount_paid, gateway_ref FROM payments WHERE tenant_id = ? AND status = 'Declared' LIMIT 1",
+            "SELECT id, amount_paid, gateway_ref, reference_id FROM payments WHERE tenant_id = ? AND status = 'Declared' LIMIT 1",
             [ctx.tenant_id]
         );
         if (pending.length) {
@@ -627,6 +627,10 @@ const startOnlinePayment = async (req, res) => {
                     payment_id: row.id,
                     amount: Number(row.amount_paid),
                     provider: creds.provider.id,
+                    // The SAME reference, read back off the row rather than recomputed.
+                    // It is what the landlord will see against the credit, so the app
+                    // must show this one and not a fresh UPI-style reference.
+                    reference: row.reference_id || `TP${row.id}`,
                     url: link.url
                 });
             } else {
@@ -693,6 +697,11 @@ const startOnlinePayment = async (req, res) => {
             payment_id: paymentId,
             amount,
             provider: creds.provider.id,
+            // Sent so the screen can print the reference the LANDLORD will see against
+            // this credit. The UPI route makes its own client-side reference; an online
+            // payment's is ours and server-issued, and showing the wrong one is how a
+            // landlord fails to match a payment that did arrive.
+            reference,
             url: link.url
         });
     } catch (err) {

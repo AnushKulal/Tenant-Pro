@@ -442,7 +442,7 @@ export function mapPayment(row, tenantsByName, now) {
 
 // Build the whole `state.data` bundle from the five owner endpoints.
 // `now` is injected so the result is deterministic and testable.
-export function mapOwnerData({ dashboard, properties, units, tenants, transactions, requests, paySettings, joinRequests, declaredPayments }, now = new Date()) {
+export function mapOwnerData({ dashboard, properties, units, tenants, transactions, requests, paySettings, payGateway, joinRequests, declaredPayments }, now = new Date()) {
     const props = (properties || []).map(mapProperty);
     const us = (units || []).map(mapUnit);
 
@@ -471,13 +471,36 @@ export function mapOwnerData({ dashboard, properties, units, tenants, transactio
         declared: (declaredPayments || []).map((r) => mapDeclaredPayment(r, now)),
         // The owner's UPI details, as tenants will see them. Null until they set
         // them up — an empty state, not a missing one.
-        pay: paySettings
-            ? {
-                upiId: paySettings.upi_id || '',
-                upiNumber: paySettings.upi_number || '',
-                qr: paySettings.qr_code_url ? mediaUrl(paySettings.qr_code_url) : null
+        pay: {
+            upiId: (paySettings && paySettings.upi_id) || '',
+            upiNumber: (paySettings && paySettings.upi_number) || '',
+            qr: paySettings && paySettings.qr_code_url ? mediaUrl(paySettings.qr_code_url) : null,
+            // The landlord's own payment gateway, read from the TOP level of the
+            // response rather than from `settings`. That is deliberate: a landlord who
+            // has never saved any payment settings has no settings row at all, and they
+            // are exactly the person who needs to be told whether connecting a gateway
+            // is possible — so the server sends it either way.
+            //
+            // Nothing here is a credential. `keyHint` is the last four of the Key ID,
+            // which is the public half of the pair and already visible in the landlord's
+            // own dashboard; it is for recognition and nothing else.
+            gateway: {
+                connected: !!(payGateway && payGateway.connected),
+                enabled: !!(payGateway && payGateway.enabled),
+                provider: (payGateway && payGateway.provider) || null,
+                providerLabel: (payGateway && payGateway.provider_label) || '',
+                keyHint: (payGateway && payGateway.key_hint) || '',
+                // Whether the SERVER can store a credential at all. False means its
+                // encryption key is missing, which a landlord cannot fix and must not
+                // be left to discover by tapping Connect and watching it fail.
+                canConnect: !payGateway || payGateway.can_connect !== false,
+                blockedReason: (payGateway && payGateway.blocked_reason) || '',
+                // What each supported provider is called, and where in their dashboard
+                // the keys live — so the form does not hard-code the layout of
+                // somebody else's website.
+                providers: (payGateway && payGateway.providers) || []
             }
-            : { upiId: '', upiNumber: '', qr: null },
+        },
         // No owner-side endpoint exists for expenses yet.
         expenses: [],
         // Backend-authoritative figures, preferred by deriveVm when live.

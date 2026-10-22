@@ -210,7 +210,23 @@ export const payments = {
     // watching their claim silently disappear.
     decide: (id, decision, note) => body(
         http.put(`/payments/declared/${id}`, { decision, ...(note ? { note } : {}) })
-    )
+    ),
+    // ── The landlord's OWN payment gateway ────────────────────────────────────
+    // Connecting one lets tenants pay by card, netbanking or a UPI app that
+    // confirms itself. The merchant account is the landlord's, so the money goes
+    // straight to them and the gateway's fee is charged by their gateway to them —
+    // this app never holds anybody's rent and bills nobody.
+    //
+    // The secret goes UP and never comes back down. `getSettings` returns only
+    // whether a gateway is connected and the last four of the (public) Key ID, so
+    // there is nothing here to read it back with.
+    connectGateway: ({ provider, key_id, key_secret }) => body(
+        http.post('/payments/gateway', { provider, key_id, key_secret })
+    ),
+    // Pausing without surrendering the keys — for a gateway between KYC states, or a
+    // month the landlord would simply rather be paid by UPI.
+    setGatewayEnabled: (enabled) => body(http.put('/payments/gateway', { enabled })),
+    disconnectGateway: () => body(http.delete('/payments/gateway'))
 };
 
 // ── Tenant portal (tenant JWT) ────────────────────────────────────────────────
@@ -229,6 +245,18 @@ export const portal = {
     declarePayment: ({ amount, method, reference, date }) => body(
         http.post('/tenant-portal/payments', { amount, method, reference, date })
     ),
+    // ── Paying online, through the landlord's own gateway ─────────────────────
+    // Only offered when `me.payment.online.available` is true. Returns an https url
+    // for the gateway's hosted page, opened with Linking — no native SDK, which is
+    // what lets this ship over the air like everything else here.
+    //
+    // Calling it twice hands back the SAME link rather than a second live one, so a
+    // tenant who closes the browser and taps Pay again cannot end up with two valid
+    // pages for one month's rent.
+    startOnlinePayment: (amount) => body(http.post('/tenant-portal/payments/online', { amount })),
+    // "Did that go through?" — answered by the server ASKING the gateway, never by
+    // this app's word, which is why it is safe to call eagerly and repeatedly.
+    checkOnlinePayment: (id) => body(http.post(`/tenant-portal/payments/${id}/check`, {})),
     // ── Leaving a property ────────────────────────────────────────────────────
     // Three calls, because giving notice is a decision. `leavePlan` is what the
     // confirmation sheet prints — the real dates and disclosures, computed on the

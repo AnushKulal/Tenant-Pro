@@ -2383,6 +2383,166 @@ export default function Sheets() {
                     </View>
                 )}
 
+                {/* ── Online payments: the landlord's OWN gateway ─────── */}
+                {/* The merchant account is theirs. Rent lands in it directly, and the
+                    gateway charges its fee to them — which is exactly why the price is
+                    on the screen next to the pitch, and why this is off by default with
+                    the free UPI route untouched beside it. */}
+                {vm.isGateway && vm.gateway && (
+                    <View>
+                        <T w={700} s={20} lh={1} style={{ letterSpacing: -0.8 }}>Online payments</T>
+
+                        {vm.gateway.blocked ? (
+                            /* The server has no key to seal a credential with. Nothing a
+                               landlord can do about it, so the form is not drawn at all
+                               rather than offering a Connect that can only fail. */
+                            <>
+                                <Row gap={9} align="flex-start" style={{ marginTop: 14, paddingVertical: 12, paddingHorizontal: 13, borderRadius: 14, backgroundColor: t.asoft }}>
+                                    <Glyph name="information-circle-outline" size={15} color={t.amber} />
+                                    <T w={500} s={12.5} lh={1.45} c={t.amber} style={{ flex: 1 }}>{vm.gateway.blockedLine}</T>
+                                </Row>
+                                <Press onPress={vm.gateway.close} style={{ marginTop: 14, paddingVertical: 15, borderRadius: 999, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line, alignItems: 'center' }}>
+                                    <T w={600} s={13.5} c={t.fg2}>Close</T>
+                                </Press>
+                            </>
+                        ) : vm.gateway.confirming ? (
+                            /* Disconnecting cannot be undone by tapping back: the gateway
+                               shows a secret once, at generation, so recovering from this
+                               means making a new key. Hence the question. */
+                            <>
+                                <T w={400} s={12.5} lh={1.5} c={t.fg2} style={{ marginTop: 8, marginBottom: 14 }}>{vm.gateway.disconnectLine}</T>
+                                <Row gap={8}>
+                                    <Press onPress={vm.gateway.cancelDisconnect} style={{ paddingVertical: 15, paddingHorizontal: 20, borderRadius: 999, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line }}>
+                                        <T w={600} s={13.5} c={t.fg2}>Keep it</T>
+                                    </Press>
+                                    <Press onPress={vm.gateway.disconnect} style={{ flex: 1, paddingVertical: 15, borderRadius: 999, backgroundColor: t.csoft, borderWidth: 1, borderColor: t.coral, alignItems: 'center' }}>
+                                        <T w={700} s={14} c={t.coral}>Disconnect</T>
+                                    </Press>
+                                </Row>
+                            </>
+                        ) : vm.gateway.connected ? (
+                            <>
+                                <Row gap={9} style={{ marginTop: 12, marginBottom: 14 }}>
+                                    <Glyph
+                                        name={vm.gateway.enabled ? 'checkmark-circle' : 'pause-circle-outline'}
+                                        size={16}
+                                        color={vm.gateway.enabled ? t.lime : t.amber}
+                                    />
+                                    <T w={600} s={13} lh={1.3} c={vm.gateway.enabled ? t.lime : t.amber}>
+                                        {vm.gateway.enabled
+                                            ? `${vm.gateway.providerLabel} connected`
+                                            : `${vm.gateway.providerLabel} paused`}
+                                    </T>
+                                </Row>
+                                {/* Which key is connected, for recognition. The last four
+                                    of the Key ID — the public half of the pair. The secret
+                                    is not shown because the server will not return it. */}
+                                {!!vm.gateway.keyHint && (
+                                    <Row justify="space-between" style={{ paddingVertical: 13, paddingHorizontal: 14, borderRadius: 16, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line, marginBottom: 10 }}>
+                                        <T mono w={600} s={9} lh={1} ls={0.08} c={t.fg3}>KEY</T>
+                                        <T mono w={600} s={11} lh={1} c={t.fg}>{vm.gateway.keyHint}</T>
+                                    </Row>
+                                )}
+                                <T w={400} s={12.5} lh={1.5} c={t.fg2} style={{ marginBottom: 14 }}>
+                                    {vm.gateway.enabled ? vm.gateway.cost : vm.gateway.keepsUpi}
+                                </T>
+                                <Press
+                                    onPress={vm.gateway.enabled ? vm.gateway.pause : vm.gateway.resume}
+                                    disabled={vm.gateway.busy}
+                                    style={{ paddingVertical: 15, borderRadius: 999, backgroundColor: vm.gateway.enabled ? t.ink3 : t.lime, borderWidth: 1, borderColor: vm.gateway.enabled ? t.line : t.lime, alignItems: 'center', opacity: vm.gateway.busy ? 0.7 : 1 }}
+                                >
+                                    <T w={700} s={14} c={vm.gateway.enabled ? t.fg : t.on}>
+                                        {vm.gateway.enabled ? 'Pause online payments' : 'Turn online payments on'}
+                                    </T>
+                                </Press>
+                                <Press onPress={vm.gateway.askDisconnect} style={{ marginTop: 9, paddingVertical: 14, borderRadius: 999, alignItems: 'center' }}>
+                                    <T w={600} s={13} c={t.coral}>Disconnect {vm.gateway.providerLabel}</T>
+                                </Press>
+                            </>
+                        ) : (
+                            <>
+                                <T w={400} s={12.5} lh={1.5} c={t.fg2} style={{ marginTop: 8 }}>{vm.gateway.what}</T>
+                                {/* The price, right under the pitch. Quoting one without
+                                    the other is how somebody switches on a 2% fee without
+                                    noticing they did. */}
+                                <View style={{ marginTop: 12, padding: 14, borderRadius: 16, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line }}>
+                                    <Eyebrow s={9} ls={0.12} c={t.fg3} style={{ marginBottom: 8 }}>WHAT IT COSTS</Eyebrow>
+                                    <T w={400} s={12.5} lh={1.5} c={t.fg2}>{vm.gateway.cost}</T>
+                                    <T w={400} s={12.5} lh={1.5} c={t.fg2} style={{ marginTop: 9 }}>{vm.gateway.keepsUpi}</T>
+                                </View>
+
+                                {!!vm.gateway.whereLine && (
+                                    <Row gap={9} align="flex-start" style={{ marginTop: 12, paddingVertical: 11, paddingHorizontal: 13, borderRadius: 14, backgroundColor: t.vsoft }}>
+                                        <Glyph name="key-outline" size={15} color={t.accent} />
+                                        <T w={500} s={12} lh={1.45} c={t.fg2} style={{ flex: 1 }}>{vm.gateway.whereLine}</T>
+                                    </Row>
+                                )}
+
+                                {vm.gateway.hasError ? (
+                                    <Row gap={9} align="flex-start" style={{ marginTop: 12, paddingVertical: 11, paddingHorizontal: 13, borderRadius: 14, backgroundColor: t.csoft }}>
+                                        <Glyph name="alert-circle-outline" size={15} color={t.coral} />
+                                        <T w={500} s={12} lh={1.45} c={t.coral} style={{ flex: 1 }}>{vm.gateway.error}</T>
+                                    </Row>
+                                ) : null}
+
+                                <View style={{ height: 14 }} />
+                                <Field
+                                    label={vm.gateway.keyLabel}
+                                    icon="key-outline"
+                                    value={vm.gateway.keyId}
+                                    onChangeText={vm.gateway.setKeyId}
+                                    placeholder={vm.gateway.keyPlaceholder}
+                                    editable={!vm.gateway.busy}
+                                    maxLength={120}
+                                    style={{ marginBottom: 6 }}
+                                />
+                                {!!vm.gateway.keyNote && (
+                                    <T w={400} s={11.5} lh={1.45} c={t.fg3} style={{ marginBottom: 12 }}>{vm.gateway.keyNote}</T>
+                                )}
+                                {/* `secure` because it is a password in everything but
+                                    name, with the component's own reveal for a secret
+                                    typed on a phone keyboard. */}
+                                <Field
+                                    label={vm.gateway.secretLabel}
+                                    icon="lock-closed-outline"
+                                    value={vm.gateway.keySecret}
+                                    onChangeText={vm.gateway.setKeySecret}
+                                    placeholder="Paste the secret"
+                                    secure
+                                    editable={!vm.gateway.busy}
+                                    maxLength={200}
+                                    style={{ marginBottom: 8 }}
+                                />
+                                {!!vm.gateway.secretNote && (
+                                    <T w={400} s={11.5} lh={1.45} c={t.fg3} style={{ marginBottom: 14 }}>{vm.gateway.secretNote}</T>
+                                )}
+
+                                <Row gap={8}>
+                                    <Press onPress={vm.gateway.close} style={{ paddingVertical: 15, paddingHorizontal: 20, borderRadius: 999, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line }}>
+                                        <T w={600} s={13.5} c={t.fg2}>Cancel</T>
+                                    </Press>
+                                    <Press
+                                        onPress={vm.gateway.connect}
+                                        disabled={!vm.gateway.canSubmit}
+                                        style={{ flex: 1, paddingVertical: 15, borderRadius: 999, backgroundColor: vm.gateway.canSubmit ? t.lime : t.ink3, borderWidth: 1, borderColor: vm.gateway.canSubmit ? t.lime : t.line, alignItems: 'center' }}
+                                    >
+                                        <T w={700} s={14} c={vm.gateway.canSubmit ? t.on : t.fg3}>
+                                            {vm.gateway.busy ? 'Checking…' : 'Connect'}
+                                        </T>
+                                    </Press>
+                                </Row>
+                                {/* Said out loud, because it is the reassurance that makes
+                                    pasting a secret into somebody else's app reasonable:
+                                    it is checked against the gateway before it is stored,
+                                    so a typo is caught here. */}
+                                <T mono w={600} s={9} lh={1.6} ls={0.06} c={t.fg3} style={{ textAlign: 'center', marginTop: 13 }}>
+                                    CHECKED WITH {String(vm.gateway.providerLabel || '').toUpperCase()} BEFORE IT IS SAVED
+                                </T>
+                            </>
+                        )}
+                    </View>
+                )}
+
                 {/* ── Finish a guest profile ──────────────────────────── */}
                 {/* Reached from the prompt on the tenant's own profile tab. Three
                     fields, because three is what turns a guest into an account that

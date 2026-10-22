@@ -60,9 +60,14 @@ const PROVIDERS = {
         // What the landlord is being asked for, in the words their dashboard uses.
         keyLabel: 'Key ID',
         secretLabel: 'Key Secret',
+        // Short enough to sit INSIDE the field. The sentence that explains it is
+        // `keyNote` and goes under the field, because a placeholder long enough to be
+        // a sentence is a placeholder that gets cut off — which is what the first
+        // render of this screen showed.
+        keyPlaceholder: 'rzp_live_…',
         // rzp_test_ keys work end to end against Razorpay's test mode and move no real
         // money, which is the only honest way to try this before trusting it with rent.
-        keyHint: 'Starts with rzp_live_ (or rzp_test_ while you are trying it out)',
+        keyNote: 'A live key starts with rzp_live_. An rzp_test_ key works too, and moves no real money.',
         where: 'Razorpay Dashboard → Account & Settings → API Keys → Generate Key',
         // Razorpay issues the secret ONCE, at generation, and never shows it again.
         // Worth saying out loud in the UI, because the recovery is "generate a new key",
@@ -180,7 +185,8 @@ const providerCatalog = () => providerIds().map((id) => {
         label: p.label,
         key_label: p.keyLabel,
         secret_label: p.secretLabel,
-        key_hint: p.keyHint,
+        key_placeholder: p.keyPlaceholder,
+        key_note: p.keyNote,
         where: p.where,
         secret_note: p.secretNote
     };

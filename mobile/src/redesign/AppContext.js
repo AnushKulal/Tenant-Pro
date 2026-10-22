@@ -248,6 +248,37 @@ const BLANK_PAY = {
     method: '',
     otherRef: '',
     busy: false,
+    error: '',
+    // ── Paying through the landlord's gateway ─────────────────────────────────
+    // `onlineId` is OUR payments row, created server-side at the same moment as the
+    // gateway's link. It is held here because it is the only handle on the payment
+    // after the tenant leaves for a browser and comes back: asking "did that go
+    // through?" means asking the server to ask the gateway about THIS row.
+    onlineId: null,
+    // True once the browser has been opened and the question is outstanding.
+    opened: false,
+    // A check in flight, kept separate from `busy` so starting a payment and checking
+    // one can have different button text.
+    checking: false,
+    // What the last check said, when it was not "paid" — an expired page, nothing on
+    // it yet. Shown rather than swallowed, because a spinner that resolves to the
+    // screen it started on tells the tenant nothing.
+    onlineNote: '',
+    // The reference the SERVER issued for an online payment, which is what the landlord
+    // will see against the credit. Distinct from `reference` above, which the app makes
+    // up for the UPI route — printing that one against a gateway payment is how a
+    // landlord fails to match money that did arrive.
+    onlineRef: ''
+};
+
+// The landlord's gateway form. Blank every time it opens, and that is the point: the
+// secret is never returned by the server, so there is nothing to prefill it with and a
+// field showing a placeholder would imply otherwise.
+const BLANK_GATEWAY = {
+    keyId: '',
+    keySecret: '',
+    // Disconnecting throws the keys away, so it asks first.
+    confirming: false,
     error: ''
 };
 
@@ -548,7 +579,11 @@ function deriveVm(s, api) {
   const UNITS = D.units || [];
   const TICKETS = D.tickets || [];
   // The owner's own UPI details (empty until they set them up).
-  const PAY = D.pay || { upiId: '', upiNumber: '', qr: null };
+  const PAY = D.pay || { upiId: '', upiNumber: '', qr: null, gateway: {} };
+  // The landlord's own payment gateway, if they have connected one. Defaulted to an
+  // empty object rather than left undefined so the settings row can read `.connected`
+  // on the pre-login walkthrough, where there is no server data at all.
+  const PAYGW = PAY.gateway || {};
   // People asking to be let into one of this owner's properties.
   const JOINS = D.joins || [];
   const PENDING_JOINS = JOINS.filter((j) => j.pending);
@@ -3929,6 +3964,16 @@ function deriveVm(s, api) {
           ps: { upiId: PAY.upiId, upiNumber: PAY.upiNumber, error: '' }
         })
       },
+      // Online payments, through the landlord's OWN merchant account. Separate from
+      // the UPI row above because they are different things with different costs:
+      // UPI is free and already works, this adds cards and netbanking and charges
+      // the landlord's own gateway fee to the landlord. Nobody is opted in.
+      {
+        label: 'Online payments',
+        icon: 'card-outline',
+        meta: PAYGW.connected ? (PAYGW.enabled ? 'ON' : 'PAUSED') : 'OFF',
+        go: () => setState({ overlay: 'gateway', gw: { ...BLANK_GATEWAY } })
+      },
       // There WAS a 'Notifications' row here reading "ON", which tapped to "not built
       // yet". Both halves became false the day notifications shipped, and on one screen
       // it now contradicted the card below it — a hardcoded "ON" directly above a panel
@@ -3955,6 +4000,98 @@ function deriveVm(s, api) {
       { label: 'Help & support', icon: 'help-buoy-outline', meta: TICKETS.length ? `${shownTickets.length} OPEN` : '', go: () => setState({ route: 'support', overlay: null }) },
       { label: 'Terms of service', icon: 'shield-checkmark-outline', meta: '' }
     ].map((r) => ({ ...r, go: r.go || (() => flash(`${r.label} — not built yet`)) })),
+
+    // ── Online payments: the landlord's OWN gateway (owner) ──
+    //
+    // What a landlord is agreeing to, said on the screen rather than buried here:
+    // the merchant account is theirs, the money arrives in their account, and the
+    // gateway's fee (Razorpay: about 2% + GST) is charged by their gateway to them.
+    // This app never holds their rent and never bills them for anything.
+    //
+    // Which is also why it is off by default and why UPI stays. A landlord collecting
+    // ₹14,500 pays roughly ₹342 a month in fees for this, and what they get for it is
+    // tenants who can pay by card and confirmations they do not have to make by hand.
+    // That is a real trade and theirs to make, so the numbers are on the screen.
+    isGateway: s.overlay === 'gateway',
+    gateway: (() => {
+      const gw = s.gw || BLANK_GATEWAY;
+      const put = (patch) => setState({ gw: { ...gw, ...patch, error: '' } });
+      // One provider today. Read from the server's catalog rather than hard-coded, so
+      // the form does not claim to know the layout of somebody else's dashboard.
+      const provider = (PAYGW.providers && PAYGW.providers[0]) || {
+        id: 'razorpay', label: 'Razorpay', key_label: 'Key ID', secret_label: 'Key Secret',
+        key_placeholder: '', key_note: '', where: '', secret_note: ''
+      };
+      return {
+        connected: !!PAYGW.connected,
+        enabled: !!PAYGW.enabled,
+        providerLabel: PAYGW.providerLabel || provider.label,
+        // Which key is connected, for recognition. The last four of the Key ID — the
+        // public half — and never the secret, which the server will not return.
+        keyHint: PAYGW.keyHint || '',
+
+        // The server cannot store a credential: its encryption key is missing. A
+        // landlord cannot fix that, so the form is not drawn and the reason is shown
+        // instead of letting Connect fail with "could not save".
+        blocked: PAYGW.canConnect === false,
+        blockedLine: PAYGW.blockedReason
+          ? `Online payments are not available on this server yet (${PAYGW.blockedReason}). Nothing is wrong with your account.`
+          : 'Online payments are not available on this server yet.',
+
+        // The pitch and the price, together. Quoting one without the other is how
+        // somebody switches on a 2% fee without noticing.
+        what: 'Tenants can pay rent by card, netbanking or any UPI app, and it is confirmed automatically — you will not have to tap Confirm.',
+        cost: `The account is yours, so rent lands in it directly. ${provider.label} takes its usual fee (about 2% + GST) from each payment — this app charges you nothing, and your tenants pay only the rent.`,
+        // UPI is not being replaced, and a landlord deciding this needs to know that.
+        keepsUpi: 'Your UPI details stay exactly as they are. Tenants keep the free UPI option either way.',
+
+        provider,
+        whereLine: provider.where,
+        keyLabel: (provider.key_label || 'Key ID').toUpperCase(),
+        secretLabel: (provider.secret_label || 'Key Secret').toUpperCase(),
+        // Short enough to sit inside the field. The sentence goes UNDER it — the first
+        // render of this screen had the sentence as the placeholder, and it was cut off
+        // mid-word.
+        keyPlaceholder: provider.key_placeholder || 'Key ID',
+        keyNote: provider.key_note || '',
+        secretNote: provider.secret_note || '',
+
+        keyId: gw.keyId,
+        setKeyId: (e) => put({ keyId: evStr(e).trim().slice(0, 120) }),
+        keySecret: gw.keySecret,
+        setKeySecret: (e) => put({ keySecret: evStr(e).trim().slice(0, 200) }),
+
+        error: gw.error || '',
+        hasError: !!gw.error,
+        busy: !!s.writing,
+        canSubmit: !!String(gw.keyId || '').trim() && !!String(gw.keySecret || '').trim() && !s.writing,
+
+        connect: () => {
+          const keyId = String(gw.keyId || '').trim();
+          const keySecret = String(gw.keySecret || '').trim();
+          if (!keyId || !keySecret) {
+            setState({ gw: { ...gw, error: `Enter both the ${provider.key_label} and the ${provider.secret_label}.` } });
+            return;
+          }
+          // No format check beyond "not empty". The SERVER asks the gateway whether
+          // the pair works before storing it, which is a real answer — a regex here
+          // could only ever guess at the shape of somebody else's key and would reject
+          // a valid one the day they change it.
+          api.connectGateway({ provider: provider.id, keyId, keySecret });
+        },
+        // Pausing and disconnecting are different intentions, so they are different
+        // controls. Conflating them is how a landlord who wanted to stop taking cards
+        // for a month ends up having to generate a new key.
+        pause: () => api.setGatewayEnabled(false),
+        resume: () => api.setGatewayEnabled(true),
+        askDisconnect: () => put({ confirming: true }),
+        cancelDisconnect: () => put({ confirming: false }),
+        confirming: !!gw.confirming,
+        disconnectLine: `This forgets your ${PAYGW.providerLabel || provider.label} keys. Tenants go back to paying by UPI, and your UPI details are untouched.`,
+        disconnect: () => api.disconnectGateway(),
+        close: () => setState({ overlay: null })
+      };
+    })(),
 
     // ── Payment settings (owner) ──
     // What tenants are shown when they go to pay. Getting this wrong sends rent to
@@ -4000,21 +4137,25 @@ function deriveVm(s, api) {
     goCheckout: () => setState({ route: 'tcheckout', paid: false, pay: { ...BLANK_PAY } }),
 
     // ── Paying rent ───────────────────────────────────────────────────────────
-    // There is no payment gateway, and pretending otherwise was the old screen's
-    // problem: it offered Card and Net banking, neither of which can reach a UPI ID.
-    // A VPA can only receive from UPI, so those buttons could never have worked, and
-    // once "Pay" actually recorded something they would have logged money that never
-    // moved.
+    // Three routes, and which exist depends on what the landlord has set up.
     //
-    // So this screen does the only two honest things:
-    //   1. hand off to the tenant's own UPI app with the landlord's real VPA, the
-    //      exact amount and a reference already filled in, then ask whether it went
-    //      through; and
-    //   2. let them record a payment they made some other way — cash, a bank
-    //      transfer, a card through some third-party app.
+    //   1. Online, through the landlord's OWN gateway, when they have connected one.
+    //      The only route that confirms itself: the server asks the gateway and
+    //      settles on its answer, in seconds, without the landlord tapping anything.
+    //   2. Hand off to the tenant's UPI app with the landlord's real VPA, the exact
+    //      amount and a reference already filled in, then ask whether it went
+    //      through. Free, and always available.
+    //   3. Record a payment that moved some other way — cash, a bank transfer, a
+    //      card through some third-party app.
     //
-    // Either way the result is a CLAIM the landlord confirms. The app never asserts
-    // that money arrived, because it cannot see money.
+    // The old screen's problem was offering Card and Net banking with nothing behind
+    // them: a VPA can only receive from UPI, so those buttons could never have
+    // worked, and once Pay actually recorded something they would have logged money
+    // that never moved. Route 1 is what makes those words true — there is a gateway
+    // behind them now, and when there is not, the option is not drawn.
+    //
+    // Routes 2 and 3 still produce a CLAIM the landlord confirms, because the app
+    // cannot see money. Route 1 does not ask the app to: the gateway is the voucher.
     checkout: (() => {
       const pay = s.pay || BLANK_PAY;
       const put = (patch) => setState({ pay: { ...pay, ...patch, error: '' } });
@@ -4027,7 +4168,9 @@ function deriveVm(s, api) {
       // what lets a landlord match a credit in their bank to a claim in here — and
       // what a gateway webhook would match on later — so it has to be unique enough
       // to not collide within a month, and short enough to survive a UPI note field.
-      const reference = pay.reference || `TP${refStamp()}`;
+      // While an online payment is open, the reference on the screen is the one the
+      // SERVER issued for it. Otherwise it is the app's own, for the UPI route.
+      const reference = pay.onlineRef || pay.reference || `TP${refStamp()}`;
 
       return {
         amount,
@@ -4055,6 +4198,45 @@ function deriveVm(s, api) {
         payeeLabel: upiId || (upiNumber ? `${upiNumber} (UPI number)` : ''),
         missingUpi: !payee,
         missingUpiLine: `${landlordCard.name} has not added a UPI ID yet. Ask them to set one up, or record a payment you made another way.`,
+
+        // ── Paying online, through the landlord's own gateway ─────────────────
+        //
+        // Offered only when the landlord has connected one, because this is their
+        // merchant account: the money goes straight to them, and the gateway's fee is
+        // charged by their gateway to them. The tenant pays the rent and nothing on
+        // top — which is why the breakdown above still says ₹0 either way.
+        //
+        // What this buys the tenant is the thing UPI cannot give them: a confirmation
+        // that does not wait on their landlord noticing a claim. The gateway is asked
+        // directly and answers in seconds.
+        //
+        // It is listed FIRST for that reason, and UPI stays underneath it rather than
+        // being replaced. A tenant with no card, or who simply prefers their UPI app,
+        // loses nothing.
+        online: (() => {
+            const on = PAYINFO && PAYINFO.online;
+            const available = !!(on && on.available) && amount > 0;
+            return {
+                available,
+                provider: (on && on.provider) || null,
+                // Said plainly on the button, because "Pay online" alone does not tell
+                // a tenant whether their card will work.
+                label: `Pay ${me.rentFull} by card, UPI or netbanking`,
+                line: 'Opens a secure page from your landlord’s payment provider. Confirmed automatically — you will not have to wait for your landlord.',
+                busy: !!pay.busy,
+                // The question that is outstanding once they have been sent to the
+                // browser. Nothing else on the screen should be tappable while it is.
+                opened: !!pay.opened,
+                checking: !!pay.checking,
+                note: pay.onlineNote || '',
+                start: () => api.startOnlinePayment(),
+                check: () => api.checkOnlinePayment(),
+                // Not "cancel the payment" — we cannot cancel one at the gateway, and
+                // claiming to would be a lie. This just puts the screen back, and the
+                // claim stays so a payment that DID land still gets confirmed.
+                dismiss: () => setState({ pay: { ...pay, opened: false, onlineNote: '' } })
+            };
+        })(),
 
         // Step 1: open their UPI app. Nothing is recorded here — the tenant has not
         // paid yet, and an app cannot know whether they will.
@@ -5176,6 +5358,9 @@ export function AppProvider({ children }) {
         transactions: txRes.transactions,
         requests: reqRes.requests,
         paySettings: payRes.settings,
+        // Sent beside `settings` rather than inside it, because a landlord with no
+        // settings row at all still has to be told whether a gateway can be connected.
+        payGateway: payRes.gateway,
         joinRequests: joinRes.requests,
         declaredPayments: declRes.payments
       });
@@ -5308,6 +5493,118 @@ export function AppProvider({ children }) {
       // 409 means they already have one waiting. That is not a failure to hide — it is
       // the answer to "why can I not send another".
       setState({ pay: { ...stateRef.current.pay, busy: false, error: errText(e, 'Could not send that to your landlord.') } });
+    }
+  }, [setState, flash, loadTenantData]);
+
+  // ── Paying through the landlord's own gateway ────────────────────────────────
+  //
+  // Two halves, and the split is the whole design. This half creates the payment and
+  // hands the tenant to the gateway's hosted page. The next half asks whether it was
+  // paid — and asks the SERVER, which asks the GATEWAY. This app's word is never what
+  // settles a payment, exactly as it is not for the UPI route.
+  //
+  // A browser rather than a native checkout: Razorpay's React Native SDK is a native
+  // module, and this app ships its fixes over the air. A hosted page means payments
+  // keep shipping like everything else here.
+  const startOnlinePayment = useCallback(async () => {
+    const st = stateRef.current;
+    if (st.pay.busy) return;
+    setState({ pay: { ...st.pay, busy: true, error: '', onlineNote: '' } });
+    try {
+      const amount = Number((st.tdata && st.tdata.me && st.tdata.me.rent && st.tdata.me.rent.amount) || 0);
+      const res = await apiPortal.startOnlinePayment(amount);
+
+      // Already paid — they had a link open from before and finished it elsewhere.
+      // Nothing to open; the month is cleared.
+      if (res && res.paid) {
+        await loadTenantData({ silent: true });
+        setState({ pay: { ...BLANK_PAY }, paid: true });
+        flash((res && res.message) || 'That payment already went through');
+        return;
+      }
+
+      if (!res || !res.url) {
+        setState({ pay: { ...stateRef.current.pay, busy: false, error: 'Could not start that payment. Try UPI instead.' } });
+        return;
+      }
+
+      // The id is stored BEFORE the browser opens. If the handoff then fails, the
+      // payment still exists server-side and the check button can still reach it —
+      // storing it afterwards would lose the handle on a payment that may have been
+      // made in a browser that opened and then crashed.
+      setState({
+        pay: {
+          ...stateRef.current.pay,
+          busy: false,
+          onlineId: res.payment_id,
+          onlineRef: res.reference || `TP${res.payment_id}`,
+          opened: true
+        }
+      });
+      await Linking.openURL(res.url);
+    } catch (e) {
+      // 409 is the honest one: the landlord switched online payments off, or there is
+      // already a claim waiting. The server's own words say which, and both name UPI
+      // as the way through.
+      setState({
+        pay: {
+          ...stateRef.current.pay,
+          busy: false,
+          opened: false,
+          error: errText(e, 'Could not start that payment. You can still pay by UPI.')
+        }
+      });
+    }
+  }, [setState, flash, loadTenantData]);
+
+  // "Did that go through?" — put to the gateway, through our server, about a specific
+  // row. The app triggering the question cannot influence the answer, which is why it
+  // is safe to let a tenant tap this as often as they like.
+  //
+  // Tried a few times with a pause between, because a gateway takes a couple of
+  // seconds to move a link from created to paid and a tenant who taps the instant they
+  // return would otherwise be told "nothing on that page yet" about a payment that was
+  // about to land. Bounded rather than a poll loop: three answers is enough to tell a
+  // slow settlement from one that did not happen, and there is a button to ask again.
+  const checkOnlinePayment = useCallback(async () => {
+    const st = stateRef.current;
+    if (st.pay.checking || !st.pay.onlineId) return;
+    const id = st.pay.onlineId;
+    setState({ pay: { ...st.pay, checking: true, error: '', onlineNote: '' } });
+
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    let last = null;
+    try {
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        if (attempt) await wait(2200);
+        last = await apiPortal.checkOnlinePayment(id);
+        if (last && last.paid) {
+          // Reload so the receipts screen, the due state and the bell all agree about
+          // a month that is now cleared.
+          await loadTenantData({ silent: true });
+          setState({ pay: { ...BLANK_PAY }, paid: true });
+          flash((last && last.message) || 'Payment confirmed');
+          return;
+        }
+      }
+      // Not paid, three times. Said in the server's words — an expired page reads
+      // differently from a page nobody opened, and the tenant can act on the
+      // difference.
+      setState({
+        pay: {
+          ...stateRef.current.pay,
+          checking: false,
+          onlineNote: (last && last.message) || 'No payment on that page yet.'
+        }
+      });
+    } catch (e) {
+      setState({
+        pay: {
+          ...stateRef.current.pay,
+          checking: false,
+          error: errText(e, 'Could not check that payment. Try again in a minute.')
+        }
+      });
     }
   }, [setState, flash, loadTenantData]);
 
@@ -5645,6 +5942,49 @@ export function AppProvider({ children }) {
       { done: 'Payment details saved', failed: 'Could not save your payment details.' }
     );
   }, [ownerWrite]);
+
+  // ── The landlord's own payment gateway ──────────────────────────────────────
+  //
+  // Connecting sends a credential UP and gets nothing back: the server verifies the
+  // pair against the gateway, seals it, and returns only whether it worked. There is
+  // deliberately no read path for it, which is why the form is blank every time.
+  //
+  // The sheet is closed BEFORE the write, as the UPI form does, so a landlord is not
+  // left looking at their own secret in a text field while a request is in flight.
+  const connectGateway = useCallback(({ provider, keyId, keySecret }) => {
+    setState({ overlay: null, gw: { ...BLANK_GATEWAY } });
+    return ownerWrite(
+      () => apiPayments.connectGateway({ provider, key_id: keyId, key_secret: keySecret }),
+      {
+        done: 'Online payments are on',
+        // The server's own message is better than this fallback in every real case —
+        // "Razorpay did not accept that Key ID and secret" says what to do next, and
+        // ownerWrite prefers it. This covers a request that never arrived.
+        failed: 'Could not connect that gateway.'
+      }
+    );
+  }, [ownerWrite, setState]);
+
+  // Pausing keeps the keys. Tenants fall back to the free UPI flow, which never went
+  // away — so this is not a lockout, it is a change of payment method.
+  const setGatewayEnabled = useCallback((enabled) => ownerWrite(
+    () => apiPayments.setGatewayEnabled(enabled),
+    {
+      done: enabled ? 'Online payments are on' : 'Online payments paused — tenants can still pay by UPI',
+      failed: 'Could not change that setting.'
+    }
+  ), [ownerWrite]);
+
+  // Forgetting the keys outright. The sheet asks first, because the secret cannot be
+  // recovered — the gateway shows it once, at generation — so undoing this means
+  // generating a new key rather than tapping back.
+  const disconnectGateway = useCallback(() => {
+    setState({ overlay: null, gw: { ...BLANK_GATEWAY } });
+    return ownerWrite(
+      () => apiPayments.disconnectGateway(),
+      { done: 'Gateway disconnected — your UPI details are untouched', failed: 'Could not disconnect that gateway.' }
+    );
+  }, [ownerWrite, setState]);
 
   // ── Getting a picture: camera OR gallery ───────────────────────────────────
   // Every image in the app went straight to the photo library, which is wrong for
@@ -7183,12 +7523,12 @@ export function AppProvider({ children }) {
       setState, set, go, flash, fxRef, signIn, register, signOut, resolveSession,
       loadOwnerData, loadTenantData, loadThread, sendReply, setRequestStatus,
       pickRequestPhoto, createRequest, requestResetCode, submitNewPassword,
-      recordPayment, saveTenantRent, assignTenant, moveTenantOut, deleteTenant, savePaymentSettings,
+      recordPayment, saveTenantRent, assignTenant, moveTenantOut, deleteTenant, savePaymentSettings, connectGateway, setGatewayEnabled, disconnectGateway,
       pickPhotoFor, createProperty, saveProperty, deleteProperty, createUnit, createTenantRecord, goBackOneStep,
       decideJoin, decidePayment, requestToJoin, holdJoinCode, askPermission, finishPermits,
       loadDocs, decideDoc, loadMyDocs, pickDocPhoto, addMyDoc, removeMyDoc,
       requestId, cancelIdRequest,
-      lookupProperty, scanQrFromImage, resetDemo, sendTestPush, saveProfile, verifyContactCode, markAlertsSeen, openUpiPayment, declareMyPayment,
+      lookupProperty, scanQrFromImage, resetDemo, sendTestPush, saveProfile, verifyContactCode, markAlertsSeen, openUpiPayment, declareMyPayment, startOnlinePayment, checkOnlinePayment,
       startGoogleSignIn, finishGoogleSignUp, cancelGoogleSignIn,
       openLeave, confirmLeave, withdrawLeave,
       submitClaim,
@@ -7198,12 +7538,12 @@ export function AppProvider({ children }) {
       setState, set, go, flash, signIn, register, signOut, resolveSession,
       loadOwnerData, loadTenantData, loadThread, sendReply, setRequestStatus,
       pickRequestPhoto, createRequest, requestResetCode, submitNewPassword,
-      recordPayment, saveTenantRent, assignTenant, moveTenantOut, deleteTenant, savePaymentSettings,
+      recordPayment, saveTenantRent, assignTenant, moveTenantOut, deleteTenant, savePaymentSettings, connectGateway, setGatewayEnabled, disconnectGateway,
       pickPhotoFor, createProperty, saveProperty, deleteProperty, createUnit, createTenantRecord, goBackOneStep,
       decideJoin, decidePayment, requestToJoin, holdJoinCode, askPermission, finishPermits,
       loadDocs, decideDoc, loadMyDocs, pickDocPhoto, addMyDoc, removeMyDoc,
       requestId, cancelIdRequest,
-      lookupProperty, scanQrFromImage, resetDemo, sendTestPush, saveProfile, verifyContactCode, markAlertsSeen, openUpiPayment, declareMyPayment,
+      lookupProperty, scanQrFromImage, resetDemo, sendTestPush, saveProfile, verifyContactCode, markAlertsSeen, openUpiPayment, declareMyPayment, startOnlinePayment, checkOnlinePayment,
       startGoogleSignIn, finishGoogleSignUp, cancelGoogleSignIn,
       openLeave, confirmLeave, withdrawLeave,
       submitClaim,

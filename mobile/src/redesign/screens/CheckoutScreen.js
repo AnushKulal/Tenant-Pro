@@ -42,6 +42,21 @@ export default function CheckoutScreen() {
         </Press>
     );
 
+    // The same button, outlined rather than filled. Used for "Open my UPI app" when
+    // paying online is also on offer: two lime buttons on one screen is two primary
+    // actions, which is none — and the screenshot of that read as a toss-up rather
+    // than a recommendation. Outlined when there is a louder option above it, filled
+    // when it IS the option.
+    const SecondButton = ({ label, onPress, disabled }) => (
+        <Press
+            onPress={onPress}
+            disabled={disabled}
+            style={{ width: '100%', marginTop: 14, paddingVertical: 17, borderRadius: 999, borderWidth: 1, borderColor: disabled ? t.line : t.lime, alignItems: 'center', opacity: disabled ? 0.7 : 1 }}
+        >
+            <T w={700} s={15} lh={1} c={disabled ? t.fg3 : t.lime}>{label}</T>
+        </Press>
+    );
+
     const QuietButton = ({ label, onPress }) => (
         <Press
             onPress={onPress}
@@ -135,6 +150,34 @@ export default function CheckoutScreen() {
                             />
                             <QuietButton label="No, it did not work" onPress={c.cancelSent} />
                         </>
+                    ) : c.online.opened ? (
+                        /* They have been sent to the gateway's page. Like the UPI
+                           question above, this takes over the screen — but unlike it,
+                           the answer is NOT the tenant's to give. We ask the gateway.
+                           So the button says "check", not "yes, I paid". */
+                        <>
+                            <Eyebrow s={10} ls={0.12} c={t.fg3} style={{ marginTop: 18, marginBottom: 10 }}>FINISHED PAYING?</Eyebrow>
+                            <Card radius={20} pad={16}>
+                                <T w={400} s={13} lh={1.5} c={t.fg2}>
+                                    We will ask your payment provider directly — you do not have to tell us how it went.
+                                </T>
+                                {!!c.online.note && (
+                                    <Row gap={8} align="flex-start" style={{ marginTop: 13, paddingTop: 13, borderTopWidth: 1, borderTopColor: t.line }}>
+                                        <Glyph name="information-circle-outline" size={15} color={t.amber} />
+                                        <T w={500} s={12.5} lh={1.45} c={t.amber} style={{ flex: 1 }}>{c.online.note}</T>
+                                    </Row>
+                                )}
+                            </Card>
+                            <PrimaryButton
+                                label={c.online.checking ? 'Checking…' : 'Check my payment'}
+                                onPress={c.online.check}
+                                disabled={c.online.checking}
+                            />
+                            {/* Not "cancel" — we cannot cancel a payment at the gateway,
+                                and the claim stays so one that DID land still settles.
+                                This only puts the screen back. */}
+                            <QuietButton label="Not now" onPress={c.online.dismiss} />
+                        </>
                     ) : c.isOther ? (
                         <>
                             <Eyebrow s={10} ls={0.12} c={t.fg3} style={{ marginTop: 18, marginBottom: 10 }}>HOW DID YOU PAY?</Eyebrow>
@@ -167,6 +210,43 @@ export default function CheckoutScreen() {
                         </>
                     ) : (
                         <>
+                            {/* ── Paying online, when the landlord has a gateway ──
+                                First, and with the loud button, because it is the only
+                                route that confirms itself: the gateway is asked
+                                directly and answers in seconds, rather than the tenant
+                                waiting for their landlord to notice a claim.
+
+                                The tenant pays the rent and nothing more — the
+                                gateway's fee is charged by the landlord's own gateway
+                                to the landlord. That is why the breakdown above still
+                                reads ₹0 whichever route is taken, and why the UPI
+                                section below is a genuine alternative rather than the
+                                cheap one. */}
+                            {c.online.available && (
+                                <>
+                                    <Eyebrow s={10} ls={0.12} c={t.fg3} style={{ marginTop: 18, marginBottom: 10 }}>PAY ONLINE</Eyebrow>
+                                    <Card radius={20} pad={16}>
+                                        <Row gap={9} style={{ marginBottom: 10 }}>
+                                            <Glyph name="shield-checkmark-outline" size={16} color={t.lime} />
+                                            <Eyebrow s={10} ls={0.1} c={t.lime}>CONFIRMED AUTOMATICALLY</Eyebrow>
+                                        </Row>
+                                        <T w={400} s={13} lh={1.5} c={t.fg2}>{c.online.line}</T>
+                                    </Card>
+                                    <PrimaryButton
+                                        label={c.online.busy ? 'Opening…' : c.online.label}
+                                        onPress={c.online.start}
+                                        disabled={c.online.busy}
+                                    />
+                                    {/* A seam, so the two routes read as a choice rather
+                                        than one long form. */}
+                                    <Row gap={11} style={{ marginTop: 22, marginBottom: 4 }}>
+                                        <View style={{ flex: 1, height: 1, backgroundColor: t.line }} />
+                                        <T mono w={600} s={9} lh={1} ls={0.1} c={t.fg3}>OR</T>
+                                        <View style={{ flex: 1, height: 1, backgroundColor: t.line }} />
+                                    </Row>
+                                </>
+                            )}
+
                             {/* Without the landlord's UPI details there is nothing to
                                 open. Saying that is more use than a button that cannot
                                 work — and the other path still does. */}
@@ -207,7 +287,9 @@ export default function CheckoutScreen() {
                                             </T>
                                         )}
                                     </Card>
-                                    <PrimaryButton label="Open my UPI app" onPress={c.openUpi} disabled={!c.canUpi} />
+                                    {c.online.available
+                                        ? <SecondButton label="Open my UPI app" onPress={c.openUpi} disabled={!c.canUpi} />
+                                        : <PrimaryButton label="Open my UPI app" onPress={c.openUpi} disabled={!c.canUpi} />}
                                 </>
                             )}
 
