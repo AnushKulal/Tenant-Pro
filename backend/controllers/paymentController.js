@@ -2,6 +2,10 @@ const db = require('../config/db');
 const { getFileUrl } = require('../middleware/uploadMiddleware');
 const { nextDueAfter, anchorDayOf } = require('../utils/rentDates');
 const { notifyTenancy } = require('../services/pushService');
+// The landlord's own payment gateway. Credentials are sealed on the way in and never
+// come back out — see gatewayStatus below for what a client is allowed to be told.
+const { getProvider, providerCatalog } = require('../services/gatewayService');
+const { seal, hint, secretsReady, secretsProblem } = require('../utils/secretBox');
 
 // Tell the tenant what became of the payment they declared.
 //
@@ -34,18 +38,78 @@ const notifyPaymentDecision = (pay, status, note) => {
 // someone mounts them elsewhere the mount-level guard does not travel with them.
 const isTenantToken = (req) => req.user?.role === 'tenant';
 
+// What a client may be told about a connected gateway.
+//
+// Never the secret, and never the sealed form of it either — a ciphertext handed to a
+// client is still the thing an attacker wants, and the only thing standing between it
+// and the plaintext is an environment variable they may well also be after.
+//
+// `key_hint` is the last four characters of the Key ID, which is the public half of the
+// pair and appears in the landlord's own dashboard. It is here for recognition — "yes,
+// that is the key I generated" — and nothing else.
+const gatewayStatus = (row) => {
+    const provider = row && row.gateway ? getProvider(row.gateway) : null;
+    if (!provider || !row.gateway_key_id) {
+        return {
+            connected: false,
+            // Why connecting is impossible, if it is. A landlord tapping Connect on a
+            // server with no CREDENTIALS_KEY would otherwise get "could not save" with
+            // no idea that the fault is ours and not theirs.
+            can_connect: secretsReady(),
+            blocked_reason: secretsReady() ? null : secretsProblem(),
+            providers: providerCatalog()
+        };
+    }
+    return {
+        connected: true,
+        can_connect: secretsReady(),
+        blocked_reason: secretsReady() ? null : secretsProblem(),
+        provider: provider.id,
+        provider_label: provider.label,
+        key_hint: hint(row.gateway_key_id),
+        enabled: !!row.gateway_enabled,
+        providers: providerCatalog()
+    };
+};
+
+// Everything about a payment_settings row that is safe to send, which is to say
+// everything except the credential columns.
+//
+// This exists because the handler below used `SELECT *` and returned the row whole. The
+// moment gateway_secret joined that table, `SELECT *` started handing every landlord
+// their own sealed secret on every settings load — one careless log, one crash reporter
+// capturing a response body, and it is out. A column list is the fix, and a function
+// rather than a literal so there is one place the next column has to be considered.
+const publicSettings = (row) => ({
+    id: row.id,
+    owner_id: row.owner_id,
+    upi_id: row.upi_id,
+    upi_number: row.upi_number,
+    qr_code_url: row.qr_code_url,
+    updated_at: row.updated_at,
+    gateway: gatewayStatus(row)
+});
+
 // --- FETCH PAYMENT SETTINGS ---
 const getPaymentSettings = async (req, res) => {
     try {
         const ownerId = req.user.id;
-        
-        const [settings] = await db.query('SELECT * FROM payment_settings WHERE owner_id = ?', [ownerId]);
-        
+
+        const [settings] = await db.query(
+            `SELECT id, owner_id, upi_id, upi_number, qr_code_url, updated_at,
+                    gateway, gateway_key_id, gateway_enabled
+               FROM payment_settings WHERE owner_id = ?`,
+            [ownerId]
+        );
+
         if (settings.length === 0) {
-            return res.status(200).json({ settings: null });
+            // `gateway` is sent even with no row at all, because the screen has to be
+            // able to draw the Connect option — and say why it cannot — for a landlord
+            // who has never saved any payment settings.
+            return res.status(200).json({ settings: null, gateway: gatewayStatus(null) });
         }
-        
-        res.status(200).json({ settings: settings[0] });
+
+        res.status(200).json({ settings: publicSettings(settings[0]), gateway: gatewayStatus(settings[0]) });
     } catch (error) {
         console.error("Error fetching payment settings:", error);
         res.status(500).json({ message: "Server error while fetching payment settings." });
@@ -118,6 +182,135 @@ const savePaymentSettings = async (req, res) => {
     } catch (error) {
         console.error("Error saving payment settings:", error);
         res.status(500).json({ message: "Server error while saving payment details." });
+    }
+};
+
+// --- CONNECTING THE LANDLORD'S OWN PAYMENT GATEWAY ---
+// POST /api/payments/gateway   { provider, key_id, key_secret }
+//
+// Verified against the gateway BEFORE it is stored, and refused if the gateway says no.
+// That ordering is the whole value of this handler: a mistyped secret saved happily now
+// becomes a tenant, days later, tapping Pay and getting nothing, with the landlord
+// nowhere near the screen where it could be fixed. Checking while they are still
+// looking at the form turns a silent future failure into "Razorpay did not accept that
+// Key ID and secret."
+const connectGateway = async (req, res) => {
+    if (isTenantToken(req)) {
+        return res.status(403).json({ message: 'Landlord access only.' });
+    }
+
+    const provider = getProvider(req.body?.provider || 'razorpay');
+    if (!provider) {
+        return res.status(400).json({ message: 'That payment gateway is not supported.' });
+    }
+
+    // Refused before anything is read from the body, because without the key there is
+    // nowhere to put a secret that is not plain text in a database.
+    if (!secretsReady()) {
+        return res.status(503).json({
+            message: `Payment gateways are not available on this server yet (${secretsProblem()}).`
+        });
+    }
+
+    const keyId = String(req.body?.key_id || '').trim();
+    const keySecret = String(req.body?.key_secret || '').trim();
+    if (!keyId || !keySecret) {
+        return res.status(400).json({ message: `Enter both the ${provider.keyLabel} and the ${provider.secretLabel}.` });
+    }
+    // A length ceiling matching the columns, so an accidental paste of a whole page is
+    // refused here rather than truncated by MySQL into a key that looks saved and is not.
+    if (keyId.length > 120 || keySecret.length > 200) {
+        return res.status(400).json({ message: 'That does not look like a key — check what you pasted.' });
+    }
+
+    try {
+        const check = await provider.verify({ keyId, secret: keySecret });
+        if (!check.ok) {
+            // 400 when the gateway rejected the credentials — the landlord can fix that.
+            // 502 when the gateway merely failed to answer, because retrying is the right
+            // advice and "check your key" would be a lie.
+            return res.status(check.rejected ? 400 : 502).json({ message: check.reason });
+        }
+
+        const sealed = seal(keySecret);
+        // Connecting switches it on. A landlord who has just pasted two credentials and
+        // watched them be accepted does not also want to hunt for a toggle; the toggle
+        // below exists for turning it OFF again without throwing the keys away.
+        await db.query(
+            `INSERT INTO payment_settings (owner_id, gateway, gateway_key_id, gateway_secret, gateway_enabled)
+             VALUES (?, ?, ?, ?, 1)
+             ON DUPLICATE KEY UPDATE
+                gateway = VALUES(gateway),
+                gateway_key_id = VALUES(gateway_key_id),
+                gateway_secret = VALUES(gateway_secret),
+                gateway_enabled = 1`,
+            [req.user.id, provider.id, keyId, sealed]
+        );
+
+        res.status(200).json({
+            message: `${provider.label} connected. Tenants can now pay by card, netbanking or UPI.`,
+            gateway: gatewayStatus({ gateway: provider.id, gateway_key_id: keyId, gateway_enabled: 1 })
+        });
+    } catch (error) {
+        console.error('Error connecting payment gateway:', error.message);
+        res.status(500).json({ message: 'Could not save those gateway details.' });
+    }
+};
+
+// PUT /api/payments/gateway   { enabled: true | false }
+// Pausing online payments without surrendering the keys — which a landlord wants when a
+// gateway is between KYC states, or when they would simply rather be paid by UPI this
+// month. Tenants fall back to the free UPI flow, which never went away.
+const toggleGateway = async (req, res) => {
+    if (isTenantToken(req)) {
+        return res.status(403).json({ message: 'Landlord access only.' });
+    }
+    const enabled = req.body?.enabled === true || req.body?.enabled === 'true' ? 1 : 0;
+    try {
+        const [rows] = await db.query(
+            'SELECT gateway, gateway_key_id FROM payment_settings WHERE owner_id = ?',
+            [req.user.id]
+        );
+        if (!rows.length || !rows[0].gateway_key_id) {
+            return res.status(400).json({ message: 'No payment gateway is connected yet.' });
+        }
+        await db.query('UPDATE payment_settings SET gateway_enabled = ? WHERE owner_id = ?', [enabled, req.user.id]);
+        res.status(200).json({
+            message: enabled ? 'Online payments are on.' : 'Online payments are off. Tenants can still pay by UPI.',
+            gateway: gatewayStatus({ ...rows[0], gateway_enabled: enabled })
+        });
+    } catch (error) {
+        console.error('Error toggling payment gateway:', error.message);
+        res.status(500).json({ message: 'Could not change that setting.' });
+    }
+};
+
+// DELETE /api/payments/gateway
+// Forgets the credentials entirely. Offered next to the pause above because the two are
+// different intentions and conflating them is how a landlord who wanted to stop taking
+// cards for a month ends up having to generate a new key.
+//
+// Payment links already created keep working — they live at the gateway, not here — and
+// any that get paid can still be settled, because gateway_ref stays on the row and the
+// landlord can confirm by hand. Removing the keys stops NEW links being made.
+const disconnectGateway = async (req, res) => {
+    if (isTenantToken(req)) {
+        return res.status(403).json({ message: 'Landlord access only.' });
+    }
+    try {
+        await db.query(
+            `UPDATE payment_settings
+                SET gateway = NULL, gateway_key_id = NULL, gateway_secret = NULL, gateway_enabled = 0
+              WHERE owner_id = ?`,
+            [req.user.id]
+        );
+        res.status(200).json({
+            message: 'Gateway disconnected. Your UPI details are untouched.',
+            gateway: gatewayStatus(null)
+        });
+    } catch (error) {
+        console.error('Error disconnecting payment gateway:', error.message);
+        res.status(500).json({ message: 'Could not disconnect that gateway.' });
     }
 };
 
@@ -359,6 +552,11 @@ module.exports = {
     settlePayment,
     getPaymentSettings,
     savePaymentSettings,
+    connectGateway,
+    toggleGateway,
+    disconnectGateway,
+    gatewayStatus,
+    publicSettings,
     recordPayment,
     getDeclaredPayments,
     decidePayment

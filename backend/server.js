@@ -84,6 +84,11 @@ const { pushMode, sweepOrphanTokens } = require('./services/pushService');
 const { smsMode } = require('./services/smsService');
 const { sweepVerifications } = require('./services/verifyService');
 const { googleConfigured, googleMissing } = require('./config/googleAuth');
+// Whether a landlord can connect a payment gateway at all. Same reasoning as `uploads`
+// and `google`: without CREDENTIALS_KEY the Connect button can only ever fail, and from
+// outside the server that is indistinguishable from a broken feature. Reports the
+// problem in words, never the key.
+const { secretsReady, secretsProblem } = require('./utils/secretBox');
 
 // WHICH COMMIT IS ACTUALLY RUNNING.
 //
@@ -169,6 +174,10 @@ app.get('/healthz', async (req, res) => {
             // Whether a new phone number can be PROVED before it becomes a sign-in
             // identifier. Without this, a profile phone change has to be refused.
             sms: smsMode(),
+            // Whether landlords can connect their own payment gateway. 'ready' does not
+            // mean anybody has — each landlord's credentials are their own — only that
+            // there is a key to seal them with.
+            gateways: secretsReady() ? 'ready' : `not-configured (${secretsProblem()})`,
             time: new Date().toISOString()
         });
     } catch (e) {

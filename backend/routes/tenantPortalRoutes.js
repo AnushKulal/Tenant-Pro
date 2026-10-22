@@ -15,6 +15,8 @@ const {
     getPulse,
     getPayments,
     declarePayment,
+    startOnlinePayment,
+    checkOnlinePayment,
     getRequests,
     createRequest,
     getRequestMessages,
@@ -77,6 +79,13 @@ router.get('/payments', getPayments);
 // "I have paid this." Records a CLAIM, not money received -- the landlord confirms it
 // at PUT /api/payments/declared/:id, and only that advances the due date.
 router.post('/payments', declarePayment);
+// Paying through the landlord's OWN gateway, which confirms itself rather than waiting
+// on the landlord noticing a claim. Registered above nothing in particular, but note
+// that '/payments/online' must come before any '/payments/:id' route would — there is
+// no such GET today and this keeps it from becoming a trap if one is added.
+router.post('/payments/online', startOnlinePayment);
+// "Did that go through?" — answered by asking the gateway, never by trusting the app.
+router.post('/payments/:id/check', checkOnlinePayment);
 // ── Leaving a property ────────────────────────────────────────────────────────
 // Below requireLiveStay: an expired guest has no live tenancy to give notice on.
 // GET is separate from POST so the confirmation screen can state the real dates
