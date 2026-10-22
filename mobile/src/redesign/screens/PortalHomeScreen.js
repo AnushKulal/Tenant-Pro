@@ -1,0 +1,257 @@
+import React from 'react';
+import { View, ScrollView } from 'react-native';
+import { useVm } from '../AppContext';
+import { useT } from '../ThemeContext';
+import { T, Eyebrow, Card, Row, Pill, Press, Glyph, IconChip, Face, Avatar } from '../ui';
+import AlertBell from '../AlertBell';
+
+export default function PortalHomeScreen() {
+    const vm = useVm();
+    const t = useT();
+    const me = vm.me || {};
+
+    return (
+        <ScrollView
+            contentContainerStyle={{ paddingTop: 14, paddingHorizontal: 18, paddingBottom: 22 }}
+            showsVerticalScrollIndicator={false}
+        >
+            {/* Welcome header */}
+            <Row gap={12} style={{ marginBottom: 20 }}>
+                <Avatar uri={me.img} name={vm.meFullName} size={42} radius={14} />
+                <View style={{ flex: 1 }}>
+                    <Eyebrow s={9} ls={0.1} c={t.fg3}>WELCOME BACK</Eyebrow>
+                    {/* Fell back to 'Rahul' — the demo tenant — so a real tenant whose
+                        name had not arrived yet was greeted by somebody else's. */}
+                    <T w={700} s={20} lh={1.1} numberOfLines={1} style={{ letterSpacing: -0.8, marginTop: 5 }}>
+                        {me.name || 'Welcome'}
+                    </T>
+                </View>
+                {/* Same bell the landlord has, same component. On the tenant's home
+                    screen because this is where they land — an alert they have to go
+                    hunting for is one they will not see. */}
+                <AlertBell
+                    onPress={vm.openTAlerts}
+                    has={vm.hasTAlerts}
+                    urgent={vm.tBellUrgent}
+                    count={vm.tBellCount}
+                />
+                <Press
+                    onPress={vm.askSignOut}
+                    style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        columnGap: 6,
+                        paddingVertical: 9,
+                        paddingHorizontal: 13,
+                        borderRadius: 999,
+                        borderWidth: 1,
+                        // Red, because it is the one destructive thing on this screen.
+                        borderColor: t.coral,
+                        backgroundColor: t.csoft
+                    }}
+                >
+                    <Glyph name="log-out-outline" size={15} color={t.coral} />
+                    <T mono w={600} s={10} ls={0.06} c={t.coral}>SIGN OUT</T>
+                </Press>
+            </Row>
+
+            {/* A landlord has asked for an ID. Above everything else, because it is the
+                only thing on this screen somebody else is waiting on.
+
+                It names the person and carries their number on purpose: an unexplained
+                demand for a government ID, from an app, is exactly the shape of a scam,
+                and the tenant needs to be able to ring and check before photographing
+                anything. */}
+            {vm.idAsk && (
+                <View
+                    style={{
+                        padding: 18,
+                        borderRadius: 22,
+                        backgroundColor: t.ink2,
+                        borderWidth: 1,
+                        borderColor: t.accent,
+                        marginBottom: 8
+                    }}
+                >
+                    <Row gap={11}>
+                        <IconChip name="shield-outline" box={40} radius={13} size={19} bg={t.vsoft} color={t.accent} />
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                            <T w={600} s={14.5} lh={1.25} c={t.fg}>{vm.idAsk.title}</T>
+                            {vm.idAsk.more ? (
+                                <T mono w={600} s={9} lh={1.4} ls={0.08} c={t.fg3} style={{ marginTop: 4 }}>{vm.idAsk.more}</T>
+                            ) : null}
+                        </View>
+                    </Row>
+                    <T w={400} s={13} lh={1.5} c={t.fg2} style={{ marginTop: 12 }}>{vm.idAsk.line}</T>
+                    {vm.idAsk.hasNote ? (
+                        <T w={400} s={12.5} lh={1.5} c={t.fg2} style={{ marginTop: 7 }}>{`“${vm.idAsk.note}”`}</T>
+                    ) : null}
+                    {vm.idAsk.verifyLine ? (
+                        <T w={400} s={11.5} lh={1.45} c={t.fg3} style={{ marginTop: 9 }}>{vm.idAsk.verifyLine}</T>
+                    ) : null}
+                    <Row gap={7} style={{ marginTop: 13 }}>
+                        {vm.idAsk.hasPhone ? (
+                            <Press
+                                onPress={vm.idAsk.call}
+                                style={{ flexDirection: 'row', alignItems: 'center', columnGap: 6, paddingVertical: 12, paddingHorizontal: 14, borderRadius: 13, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line }}
+                            >
+                                <Glyph name="call" size={14} color={t.pos} />
+                                <T w={600} s={12} c={t.fg}>Call</T>
+                            </Press>
+                        ) : null}
+                        {/* A prompt that only tells you off is the version people learn
+                            to ignore, so this goes straight to the upload form. */}
+                        <Press
+                            onPress={vm.idAsk.go}
+                            style={{ flex: 1, alignItems: 'center', paddingVertical: 12, borderRadius: 13, backgroundColor: t.lime }}
+                        >
+                            <T w={700} s={12.5} c={t.on}>Upload my ID</T>
+                        </Press>
+                    </Row>
+                </View>
+            )}
+
+            {/* Waiting on a landlord to confirm. Distinct from the empty state below:
+                telling somebody to go find a property, while their landlord is being
+                asked about them right now, sends them to raise a second request. */}
+            {vm.portalWaiting && vm.portalWait && (
+                <View
+                    style={{
+                        paddingVertical: 24,
+                        paddingHorizontal: 20,
+                        borderRadius: 22,
+                        backgroundColor: t.ink2,
+                        borderWidth: 1,
+                        borderColor: t.amber,
+                        marginBottom: 8
+                    }}
+                >
+                    <Row gap={11}>
+                        <IconChip name="hourglass-outline" box={40} radius={13} size={19} bg={t.asoft} color={t.amber} />
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                            <T w={600} s={15} lh={1.25} c={t.fg}>{vm.portalWait.title}</T>
+                            {vm.portalWait.property ? (
+                                <T mono w={600} s={9} lh={1.4} ls={0.08} c={t.amber} numberOfLines={1} style={{ marginTop: 4 }}>
+                                    {`${String(vm.portalWait.property).toUpperCase()}${vm.portalWait.unit ? ` · ROOM ${vm.portalWait.unit}` : ''}`}
+                                </T>
+                            ) : null}
+                        </View>
+                    </Row>
+                    <T w={400} s={13} lh={1.5} c={t.fg2} style={{ marginTop: 13 }}>{vm.portalWait.line}</T>
+                    <T w={400} s={12} lh={1.45} c={t.fg3} style={{ marginTop: 7 }}>{vm.portalWait.note}</T>
+                </View>
+            )}
+
+            {/* Unlinked empty state */}
+            {vm.portalUnlinked && (
+                <View
+                    style={{
+                        alignItems: 'center',
+                        paddingVertical: 44,
+                        paddingHorizontal: 20,
+                        borderRadius: 22,
+                        backgroundColor: t.ink2,
+                        borderWidth: 1,
+                        borderStyle: 'dashed',
+                        borderColor: t.line2,
+                        marginBottom: 8
+                    }}
+                >
+                    <IconChip name="home-outline" box={44} radius={14} size={20} bg={t.vsoft} color={t.accent} />
+                    <T w={600} s={15} lh={1.3} c={t.fg} style={{ marginTop: 14 }}>No property yet</T>
+                    <T w={400} s={13} lh={1.5} c={t.fg2} style={{ marginTop: 7, maxWidth: 240, textAlign: 'center' }}>
+                        Scan your landlord's invite QR, enter a property ID, or search by name.
+                    </T>
+                    <Press
+                        onPress={vm.goFind}
+                        style={{ marginTop: 16, paddingVertical: 12, paddingHorizontal: 18, borderRadius: 999, backgroundColor: t.lime }}
+                    >
+                        <T w={600} s={12} c={t.on}>Find a property</T>
+                    </Press>
+                </View>
+            )}
+
+            {/* Linked: rent card + stats + requests */}
+            {vm.portalLinked && (
+                <>
+                    <View style={{ borderRadius: 28, backgroundColor: t.lime, padding: 22, overflow: 'hidden', marginBottom: 8 }}>
+                        <View style={{ position: 'absolute', right: -30, top: -30, width: 130, height: 130, borderRadius: 65, backgroundColor: 'rgba(0,0,0,.06)' }} />
+                        <Row justify="space-between">
+                            <Eyebrow s={9} ls={0.12} c={t.on} style={{ opacity: 0.6 }}>RENT DUE</Eyebrow>
+                            <View style={{ paddingVertical: 5, paddingHorizontal: 10, borderRadius: 999, backgroundColor: t.on }}>
+                                <T mono w={600} s={8} lh={1.3} ls={0.08} c={t.lime}>IN 24 DAYS</T>
+                            </View>
+                        </Row>
+                        <T w={700} s={48} lh={1} c={t.on} style={{ letterSpacing: -2.6, marginTop: 16 }}>{me.rent}</T>
+                        <T w={400} s={12} lh={1} c={t.on} style={{ opacity: 0.66, marginTop: 8 }}>{me.home}</T>
+                        <Press
+                            onPress={vm.goCheckout}
+                            style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', columnGap: 8, width: '100%', marginTop: 20, padding: 15, borderRadius: 999, backgroundColor: t.on }}
+                        >
+                            <T w={700} s={14} c={t.lime}>Pay</T>
+                            <Glyph name="arrow-forward" size={16} color={t.lime} />
+                        </Press>
+                    </View>
+
+                    {/* Stats grid */}
+                    <Row gap={8} align="stretch" style={{ marginBottom: 8 }}>
+                        <View style={{ flex: 1, borderRadius: 20, backgroundColor: t.ink2, borderWidth: 1, borderColor: t.line, padding: 16 }}>
+                            <T w={700} s={20} lh={1} style={{ letterSpacing: -0.8 }}>{me.deposit}</T>
+                            <Eyebrow s={10} ls={0.08} c={t.fg3} style={{ marginTop: 8 }}>DEPOSIT HELD</Eyebrow>
+                        </View>
+                        <View style={{ flex: 1, borderRadius: 20, backgroundColor: t.ink2, borderWidth: 1, borderColor: t.line, padding: 16 }}>
+                            <T w={700} s={20} lh={1} style={{ letterSpacing: -0.8 }}>{me.since}</T>
+                            <Eyebrow s={10} ls={0.08} c={t.fg3} style={{ marginTop: 8 }}>{me.movedIn}</Eyebrow>
+                        </View>
+                    </Row>
+
+                    {/* Requests */}
+                    <Card radius={22} pad={0} style={{ paddingVertical: 16, paddingHorizontal: 18, marginBottom: 8 }}>
+                        <Row justify="space-between" style={{ marginBottom: 14 }}>
+                            <Eyebrow s={9} ls={0.12} c={t.fg3}>REQUESTS</Eyebrow>
+                            <Press
+                                onPress={vm.openNewRequest}
+                                style={{ flexDirection: 'row', alignItems: 'center', columnGap: 3, paddingVertical: 5, paddingHorizontal: 10, borderRadius: 999, backgroundColor: t.vsoft }}
+                            >
+                                <Glyph name="add" size={13} color={t.accent} />
+                                <T mono w={600} s={8} ls={0.08} c={t.accent}>NEW</T>
+                            </Press>
+                        </Row>
+                        {/* Tappable here too — the same detail sheet the Help tab opens. */}
+                        {(vm.requests || []).map((rq, i) => (
+                            <Press key={i} onPress={rq.open}>
+                                <Row gap={10} style={{ paddingVertical: 9 }}>
+                                    <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: t[rq.dot] }} />
+                                    <View style={{ flex: 1, minWidth: 0 }}>
+                                        <T w={500} s={13} lh={1.2}>{rq.title}</T>
+                                        <Eyebrow s={9} ls={0.06} c={t.fg3} style={{ marginTop: 3 }}>{rq.sub}</Eyebrow>
+                                    </View>
+                                    <T mono w={600} s={8} ls={0.08} c={t[rq.dot]}>{rq.status}</T>
+                                </Row>
+                            </Press>
+                        ))}
+                    </Card>
+                </>
+            )}
+
+            {/* Linked: landlord contact */}
+            {vm.portalLinked && (
+                <Card radius={22} pad={0} style={{ paddingVertical: 16, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', columnGap: 12 }}>
+                    <Press onPress={(vm.landlord || {}).open}>
+                        <Avatar uri={(vm.landlord || {}).img} initials={(vm.landlord || {}).initials} size={40} radius={13} />
+                    </Press>
+                    <Press onPress={(vm.landlord || {}).open} style={{ flex: 1 }}>
+                        <T w={600} s={14} lh={1.2} numberOfLines={1}>{(vm.landlord || {}).name}</T>
+                        <Eyebrow s={10} ls={0.08} c={t.fg3} style={{ marginTop: 4 }}>{(vm.landlord || {}).phoneLabel}</Eyebrow>
+                    </Press>
+                    <Press
+                        onPress={(vm.landlord || {}).call}
+                        style={{ width: 38, height: 38, borderRadius: 13, backgroundColor: t.lsoft, alignItems: 'center', justifyContent: 'center' }}
+                    >
+                        <Glyph name="call" size={16} color={t.pos} />
+                    </Press>
+                </Card>
+            )}
+        </ScrollView>
+    );
+}
