@@ -4020,7 +4020,7 @@ function deriveVm(s, api) {
       // the form does not claim to know the layout of somebody else's dashboard.
       const provider = (PAYGW.providers && PAYGW.providers[0]) || {
         id: 'razorpay', label: 'Razorpay', key_label: 'Key ID', secret_label: 'Key Secret',
-        key_placeholder: '', key_note: '', where: '', secret_note: ''
+        key_placeholder: '', key_note: '', where: '', secret_note: '', onboarding: null
       };
       return {
         connected: !!PAYGW.connected,
@@ -4046,6 +4046,31 @@ function deriveVm(s, api) {
         keepsUpi: 'Your UPI details stay exactly as they are. Tenants keep the free UPI option either way.',
 
         provider,
+
+        // ── What Razorpay will put them through, before they set off ─────────────
+        //
+        // Connecting looks like a five-minute job from in here — paste two strings —
+        // and it is not: KYC, then a SECOND wait while they verify the website the
+        // payments will be collected on. A landlord who expects five minutes and meets
+        // a week concludes this app is broken, and the support message lands here.
+        //
+        // Read off the provider, not written here, because none of it is a fact about
+        // our code and another gateway asks for different things.
+        expect: (() => {
+          const o = provider.onboarding || {};
+          return {
+            // Nothing to draw at all for a provider that needs no paperwork, rather
+            // than an empty card with a heading over it.
+            show: !!(o.needs || o.time || o.meanwhile),
+            needs: o.needs || '',
+            time: o.time || '',
+            meanwhile: o.meanwhile || '',
+            // Held separately because it is advice for SOME landlords, not a fact
+            // about all of them — and it is the specific wall the small ones hit.
+            noGst: o.noGst || ''
+          };
+        })(),
+
         whereLine: provider.where,
         keyLabel: (provider.key_label || 'Key ID').toUpperCase(),
         secretLabel: (provider.secret_label || 'Key Secret').toUpperCase(),

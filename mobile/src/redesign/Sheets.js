@@ -2471,6 +2471,42 @@ export default function Sheets() {
                                     <T w={400} s={12.5} lh={1.5} c={t.fg2} style={{ marginTop: 9 }}>{vm.gateway.keepsUpi}</T>
                                 </View>
 
+                                {/* What the gateway will put them through, BEFORE they
+                                    leave for it. Pasting two strings is a five-minute
+                                    job; getting the two strings is not, and a landlord
+                                    who learns that only after setting off reasonably
+                                    concludes this app is broken. Sits above the "where
+                                    to find them" line because it is the question that
+                                    comes first: is this worth starting today. */}
+                                {vm.gateway.expect.show && (
+                                    <View style={{ marginTop: 12, padding: 14, borderRadius: 16, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line }}>
+                                        <Eyebrow s={9} ls={0.12} c={t.fg3} style={{ marginBottom: 8 }}>BEFORE YOU START</Eyebrow>
+                                        {!!vm.gateway.expect.needs && (
+                                            <T w={400} s={12.5} lh={1.5} c={t.fg2}>{vm.gateway.expect.needs}</T>
+                                        )}
+                                        {!!vm.gateway.expect.time && (
+                                            <T w={400} s={12.5} lh={1.5} c={t.fg2} style={{ marginTop: 9 }}>{vm.gateway.expect.time}</T>
+                                        )}
+                                        {/* The reassurance, in lime, because it is the
+                                            part that makes a week-long wait survivable:
+                                            nobody is cut off from paying meanwhile. */}
+                                        {!!vm.gateway.expect.meanwhile && (
+                                            <Row gap={8} align="flex-start" style={{ marginTop: 11, paddingTop: 11, borderTopWidth: 1, borderTopColor: t.line }}>
+                                                <Glyph name="checkmark-circle-outline" size={15} color={t.lime} />
+                                                <T w={500} s={12.5} lh={1.45} c={t.lime} style={{ flex: 1 }}>{vm.gateway.expect.meanwhile}</T>
+                                            </Row>
+                                        )}
+                                        {/* Advice for SOME landlords, not a fact about
+                                            all of them — so it is quieter, and set off
+                                            from the rest. "Business proof" is where a
+                                            landlord with three rooms and no GST gives
+                                            up, not knowing the free option exists. */}
+                                        {!!vm.gateway.expect.noGst && (
+                                            <T w={400} s={11.5} lh={1.5} c={t.fg3} style={{ marginTop: 11 }}>{vm.gateway.expect.noGst}</T>
+                                        )}
+                                    </View>
+                                )}
+
                                 {!!vm.gateway.whereLine && (
                                     <Row gap={9} align="flex-start" style={{ marginTop: 12, paddingVertical: 11, paddingHorizontal: 13, borderRadius: 14, backgroundColor: t.vsoft }}>
                                         <Glyph name="key-outline" size={15} color={t.accent} />
