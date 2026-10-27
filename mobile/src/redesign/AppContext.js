@@ -18,7 +18,7 @@ import {
 import {
   auth as apiAuth, owner as apiOwner, properties as apiProps,
   units as apiUnits, tenants as apiTenants, portal as apiPortal, payments as apiPayments, places as apiPlaces,
-  setToken, setOnAuthFailure, setOnSessionRenewed, mediaUrl
+  setToken, setOnAuthFailure, setOnSessionRenewed, isSessionFailure, PUBLIC_AUTH, mediaUrl
 } from './api';
 import { mapOwnerData, mapPortalRequest, mapDocument, mapMyPlace } from './mapping';
 import { hasPin, roundCoord, DEFAULT_CENTER, openDirections, MIN_ZOOM, MAX_ZOOM } from './maps';
@@ -46,10 +46,30 @@ import {
 // before any message is rendered, but a 401 can still land in a `dataError` during
 // that same tick, so the wording is fixed here too rather than relying on the race.
 const AUTH_MSG = 'Your session expired. Please sign in again.';
+
+// A 401 is only a session failure when it is NOT an answer from a sign-in endpoint.
+//
+// This used to be `status === 401` flat, which meant the single most common error in
+// the app — mistyping your password — was reported as "Your session expired. Please
+// sign in again." on the very screen you were signing in on. The server sends
+// "Incorrect password. Try again or reset it." with a WRONG_PASSWORD code, and this
+// threw it away and replaced it with a sentence about a session that never existed.
+//
+// Found by driving the real app in a browser and typing a wrong password, which is
+// not a thing any test here had ever done.
+//
+// The url test is delegated to api.js so that the interceptor — which decides whether
+// to SIGN SOMEBODY OUT over this — and this function, which decides what to SAY about
+// it, can never disagree. They did disagree: the interceptor had the exemption from
+// the start and this did not.
 const isAuthFail = (e) => {
-  const status = e && e.response && e.response.status;
+  if (isSessionFailure(e)) return true;
+  // An older server, or a proxy, may answer with the words rather than a clean 401.
+  // Still exempt on a public auth route, for the same reason.
+  const url = (e && e.config && e.config.url) || '';
+  if (PUBLIC_AUTH.test(url)) return false;
   const msg = String((e && e.response && e.response.data && e.response.data.message) || '');
-  return status === 401 || /not authorized/i.test(msg);
+  return /not authorized/i.test(msg);
 };
 
 const errText = (e, fallback) =>

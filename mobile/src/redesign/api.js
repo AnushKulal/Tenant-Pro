@@ -49,7 +49,27 @@ export function setOnAuthFailure(fn) { onAuthFailure = typeof fn === 'function' 
 // mistyping their password on the login screen — which is where they already are —
 // would be absurd, so the public auth routes are exempt: their 401 is an answer to a
 // question, not an expired credential.
-const PUBLIC_AUTH = /\/(auth|tenant-auth)\/(login|register|forgot-password|reset-password|google)/;
+// Exported because AppContext needs the SAME answer when it turns an error into a
+// sentence. It did not have it, and the cost was the most common error in the app
+// being mislabelled: a mistyped password answered "Your session expired. Please sign
+// in again." on the very screen you were signing in on — over the top of the server's
+// own, better, "Incorrect password. Try again or reset it."
+//
+// One definition, two readers. Two copies of this regex would drift, and the drift
+// would be invisible until somebody typed their password wrong.
+export const PUBLIC_AUTH = /\/(auth|tenant-auth)\/(login|register|forgot-password|reset-password|google)/;
+
+// Is this error a DEAD CREDENTIAL, as opposed to an answer to a question?
+//
+// A 401 from /auth/login means "that is not your password". A 401 from anywhere else
+// means the token is finished. Only the second is a session failure, and only the
+// second should ever produce the words "your session expired".
+export function isSessionFailure(error) {
+    const status = error && error.response && error.response.status;
+    if (status !== 401) return false;
+    const url = (error && error.config && error.config.url) || '';
+    return !PUBLIC_AUTH.test(url);
+}
 
 // Guarded so a burst of parallel calls — the dashboard fires eleven at once — raises
 // one sign-out, not eleven.
