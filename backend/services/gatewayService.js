@@ -73,6 +73,37 @@ const PROVIDERS = {
         // Worth saying out loud in the UI, because the recovery is "generate a new key",
         // not "look it up".
         secretNote: 'Razorpay shows the secret only once, when you generate the key.',
+
+        // ── What the landlord is in for, said BEFORE they leave for Razorpay ──────
+        //
+        // Connecting a gateway looks like a five-minute job from inside this app —
+        // paste two strings — and it is not. Razorpay wants KYC, and then it wants to
+        // verify the website the payments will be collected on, which is a SECOND wait
+        // after the first one. A landlord who sets out expecting five minutes and finds
+        // a week reasonably concludes that this app is broken, and says so.
+        //
+        // None of these are facts about our code, which is why they live in the
+        // provider table rather than in the screen: another gateway asks for different
+        // things, and the screen should not be the place that knows Razorpay's
+        // paperwork.
+        onboarding: {
+            needs: 'Razorpay will ask for your PAN, a bank account, and one business proof.',
+            // Deliberately a range and deliberately not a promise. Razorpay documents
+            // 24–48 hours for KYC and up to 3 working days for the website check; those
+            // are their numbers, they run one after the other, and neither is ours to
+            // guarantee.
+            time: 'Live keys usually take 2–5 working days — KYC first, then a separate check of the website you give them.',
+            // The part that stops this being bad news. A landlord can connect test keys
+            // today and see the whole thing work, and nobody is cut off from paying in
+            // the meantime, because the free UPI route never went anywhere.
+            meanwhile: 'Test keys work straight away. Your tenants can keep paying by UPI the whole time.',
+            // The specific wall most small landlords hit. "Business proof" sounds like
+            // something only a registered company has, and a landlord with three rooms
+            // and no GST gives up there — not realising the free ten-minute option
+            // exists. One line is the difference between abandoning this and finishing.
+            noGst: 'No GST? A free Udyam (MSME) registration at udyamregistration.gov.in counts as business proof and takes about ten minutes.'
+        },
+
         base: 'https://api.razorpay.com/v1',
         // Basic auth, key_id as the user and key_secret as the password. No SDK, no
         // signing dance, nothing to go stale.
@@ -188,7 +219,10 @@ const providerCatalog = () => providerIds().map((id) => {
         key_placeholder: p.keyPlaceholder,
         key_note: p.keyNote,
         where: p.where,
-        secret_note: p.secretNote
+        secret_note: p.secretNote,
+        // Sent whole rather than flattened, so a provider that needs none of this
+        // (or different fields) is an entry in the table and not a screen change.
+        onboarding: p.onboarding || null
     };
 });
 
