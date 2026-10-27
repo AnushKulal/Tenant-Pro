@@ -49,6 +49,46 @@ const { open } = require('../utils/secretBox');
 // how long one of the ten pooled DB connections can be held by an outbound call.
 const TIMEOUT_MS = 10000;
 
+// ── Never let a network failure read as a rejected credential ────────────────
+//
+// `fetch` THROWS when it cannot reach the host — DNS, a dead connection, the ten
+// second deadline above — rather than returning a response with a status. Every call
+// below used to let that throw escape, so a landlord connecting a gateway while
+// Razorpay was unreachable got "Could not save those gateway details", which reads as
+// "your keys are wrong". The honest answer is "we could not reach Razorpay", and the
+// difference matters: one of those sends somebody to regenerate a key they did not
+// need to touch.
+//
+// This is the same mistake the mail transport made, where a connection timeout was
+// reported as CREDENTIALS REJECTED and shipped. Caught there by the live health line;
+// caught here by an end-to-end run against a host this container cannot reach, which
+// turned out to be an accidentally perfect test of exactly this path.
+//
+// Returns a discriminated result rather than throwing, so every caller has to decide
+// what to do about unreachable — and `rejected` stays reserved for the gateway
+// actually saying no.
+const reach = async (url, init, what) => {
+    try {
+        const r = await fetch(url, init);
+        const json = await r.json().catch(() => ({}));
+        return { reached: true, ok: r.ok, status: r.status, json };
+    } catch (e) {
+        // AbortSignal.timeout surfaces as TimeoutError; everything else is a transport
+        // failure of some kind. Both are "not their fault", said in words a landlord
+        // can act on — wait and retry — rather than a code.
+        const timedOut = e && (e.name === 'TimeoutError' || /abort|timeout/i.test(e.message || ''));
+        return {
+            reached: false,
+            ok: false,
+            status: 0,
+            json: {},
+            reason: timedOut
+                ? `${what} did not answer in time. Check your connection and try again.`
+                : `Could not reach ${what}. Check your connection and try again.`
+        };
+    }
+};
+
 // ── Providers ────────────────────────────────────────────────────────────────
 // Shaped like config/mailProviders.js: one table, each entry owning its own HTTP. The
 // callers below know only `createLink` / `readLink` / `verify`, so adding Cashfree later
@@ -136,7 +176,7 @@ const PROVIDERS = {
                 // This is what lets an event find the row it belongs to.
                 notes: { reference: String(reference) }
             };
-            const r = await fetch(`${PROVIDERS.razorpay.base}/payment_links`, {
+            const r = await reach(`${PROVIDERS.razorpay.base}/payment_links`, {
                 method: 'POST',
                 headers: {
                     Authorization: PROVIDERS.razorpay.auth(creds.keyId, creds.secret),
@@ -144,25 +184,34 @@ const PROVIDERS = {
                 },
                 body: JSON.stringify(body),
                 signal: AbortSignal.timeout(TIMEOUT_MS)
-            });
-            const json = await r.json().catch(() => ({}));
+            }, 'Razorpay');
             if (!r.ok) {
-                return { ok: false, status: r.status, reason: json?.error?.description || `HTTP ${r.status}` };
+                return {
+                    ok: false,
+                    reached: r.reached,
+                    status: r.status,
+                    reason: r.reason || r.json?.error?.description || `HTTP ${r.status}`
+                };
             }
-            return { ok: true, ref: json.id, url: json.short_url };
+            return { ok: true, ref: r.json.id, url: r.json.short_url };
         },
 
         // What the gateway says about a link we created. The only authority on whether
         // money arrived.
         readLink: async (creds, ref) => {
-            const r = await fetch(`${PROVIDERS.razorpay.base}/payment_links/${encodeURIComponent(ref)}`, {
+            const r = await reach(`${PROVIDERS.razorpay.base}/payment_links/${encodeURIComponent(ref)}`, {
                 headers: { Authorization: PROVIDERS.razorpay.auth(creds.keyId, creds.secret) },
                 signal: AbortSignal.timeout(TIMEOUT_MS)
-            });
-            const json = await r.json().catch(() => ({}));
+            }, 'Razorpay');
             if (!r.ok) {
-                return { ok: false, status: r.status, reason: json?.error?.description || `HTTP ${r.status}` };
+                return {
+                    ok: false,
+                    reached: r.reached,
+                    status: r.status,
+                    reason: r.reason || r.json?.error?.description || `HTTP ${r.status}`
+                };
             }
+            const json = r.json;
             // Razorpay's link statuses: created, partially_paid, expired, cancelled,
             // paid. Only `paid` settles anything. `partially_paid` cannot happen — we
             // set accept_partial: false — but it is named here so that if it ever does,
@@ -188,16 +237,22 @@ const PROVIDERS = {
         // any links. 401 means the key or secret is wrong; anything else that is not ok
         // is the gateway having a bad minute and not the landlord's fault.
         verify: async (creds) => {
-            const r = await fetch(`${PROVIDERS.razorpay.base}/payment_links?count=1`, {
+            const r = await reach(`${PROVIDERS.razorpay.base}/payment_links?count=1`, {
                 headers: { Authorization: PROVIDERS.razorpay.auth(creds.keyId, creds.secret) },
                 signal: AbortSignal.timeout(TIMEOUT_MS)
-            });
+            }, 'Razorpay');
+            // Unreachable is NOT rejected. This is the whole point of the split: one
+            // of these means "fix your key", the other means "try again in a minute",
+            // and telling a landlord the first when it is the second sends them off to
+            // regenerate a key that was fine.
+            if (!r.reached) {
+                return { ok: false, rejected: false, reason: r.reason };
+            }
             if (r.status === 401 || r.status === 403) {
                 return { ok: false, rejected: true, reason: 'Razorpay did not accept that Key ID and secret.' };
             }
             if (!r.ok) {
-                const json = await r.json().catch(() => ({}));
-                return { ok: false, rejected: false, reason: json?.error?.description || `Razorpay returned HTTP ${r.status}.` };
+                return { ok: false, rejected: false, reason: r.json?.error?.description || `Razorpay returned HTTP ${r.status}.` };
             }
             return { ok: true };
         }

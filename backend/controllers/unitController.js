@@ -11,9 +11,21 @@ const addUnit = async (req, res) => {
         const [propCheck] = await db.query('SELECT id FROM properties WHERE id = ? AND owner_id = ?', [property_id, req.user.id]);
         if (propCheck.length === 0) return res.status(403).json({ message: "Unauthorized to add units to this property." });
 
+        // `unit_number` and `base_rent` are NOT NULL, so leaving either out used to be
+        // a 500 reading "Server error while adding unit" — a message that names neither
+        // the field nor the fix. A room with no number is also unusable: it is the
+        // label on every screen the tenant and the landlord share.
+        if (!String(unit_number || '').trim()) {
+            return res.status(400).json({ message: 'Give this room a number or a name.' });
+        }
+        const rent = Number(base_rent);
+        if (!Number.isFinite(rent) || rent < 0) {
+            return res.status(400).json({ message: 'Enter the rent for this room.' });
+        }
+
         // 2. ADDED 'capacity' to the SQL columns, and an extra '?' for the values
         const query = `INSERT INTO units (property_id, unit_number, room_type, base_rent, capacity, status, rent_split_type, image_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
-        const [result] = await db.query(query, [property_id, unit_number, room_type, base_rent, capacity || 1, status || 'Vacant', rent_split_type || 'Equal', image_url]);
+        const [result] = await db.query(query, [property_id, String(unit_number).trim(), room_type || null, rent, capacity || 1, status || 'Vacant', rent_split_type || 'Equal', image_url]);
 
         res.status(201).json({ message: "Unit added successfully", unitId: result.insertId });
     } catch (error) {

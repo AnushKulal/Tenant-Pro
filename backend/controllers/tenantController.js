@@ -1,4 +1,8 @@
 const db = require('../config/db');
+// Ownership checks live in one file now, because two of the three endpoints that
+// accept a unit_id from a request body had this check and the third did not — see
+// utils/ownership.js for what that cost.
+const { ownsUnit, NOT_YOUR_ROOM } = require('../utils/ownership');
 const { getFileUrl } = require('../middleware/uploadMiddleware');
 const { endGuestIdentity } = require('./guestController');
 const { parseStayUntil, toSqlDate } = require('../utils/guestStay');
@@ -32,8 +36,18 @@ const addTenant = async (req, res) => {
             }
         }
 
-        const image_url = getFileUrl(req.file);
+        // The room, if one was named, must be THIS landlord's. Without this a tenant
+        // could be filed into a stranger's room by guessing an integer — and the
+        // landlord's own tenant list would then display that stranger's property name
+        // and room number, which is somebody else's data arriving through our screen.
+        // Checked here rather than trusted because `tenants.unit_id` carries no foreign
+        // key, so the database will happily store a room that does not exist either.
         const finalUnitId = unit_id || null;
+        if (finalUnitId && !(await ownsUnit(owner_id, finalUnitId))) {
+            return res.status(404).json({ message: NOT_YOUR_ROOM });
+        }
+
+        const image_url = getFileUrl(req.file);
         const finalStatus = 'Active';
 
         // --- 3. SMART BILLING ENGINE (Calculate Next Rent Due) ---
@@ -215,6 +229,15 @@ const assignUnit = async (req, res) => {
         }
         
         const oldUnitId = check[0].unit_id;
+
+        // The room must be the caller's too. The tenant check above is NOT enough: it
+        // proves whose tenant is being moved, not whose room they are being moved into.
+        // This endpoint's sibling (assignTenantToRoom, below) had this check from the
+        // start; this one never did, and an end-to-end run moved one landlord's tenant
+        // into another's room to a cheerful 200.
+        if (unit_id && !(await ownsUnit(ownerId, unit_id))) {
+            return res.status(404).json({ message: NOT_YOUR_ROOM });
+        }
 
         // 2. --- SMART BILLING ENGINE (Calculate Next Rent Due) ---
         let nextRentDue = null;
@@ -457,14 +480,10 @@ const assignTenantToRoom = async (req, res) => {
 
         // The room must be one of THIS landlord's, checked before anything is written —
         // otherwise the room id is a way to file your tenant into a stranger's property.
-        const [rooms] = await db.query(
-            `SELECT u.id FROM units u
-             JOIN properties p ON u.property_id = p.id
-             WHERE u.id = ? AND p.owner_id = ?`,
-            [unit_id, req.user.id]
-        );
-        if (rooms.length === 0) {
-            return res.status(404).json({ message: "That room is not one of yours." });
+        // The query moved to utils/ownership.js so the two sibling endpoints above
+        // cannot drift apart again.
+        if (!(await ownsUnit(req.user.id, unit_id))) {
+            return res.status(404).json({ message: NOT_YOUR_ROOM });
         }
 
         // Always: the room, and Active — reassigning somebody is what brings a moved-out
