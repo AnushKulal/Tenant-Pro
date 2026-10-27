@@ -55,9 +55,51 @@ const PUBLIC_AUTH = /\/(auth|tenant-auth)\/(login|register|forgot-password|reset
 // one sign-out, not eleven.
 let handlingAuthFailure = false;
 
+// ── A session that renews itself ──────────────────────────────────────────────
+// Raising the token's life from 7 days to 30 did not stop people being logged out, it
+// just made it monthly. A fixed lifetime counts from the last SIGN IN, which says
+// nothing about whether somebody is still using the app — so the daily user was being
+// thrown out on day 30 exactly like somebody who had not opened it since February.
+//
+// The server now hands back a fresh token on any authenticated request once the
+// current one is past halfway through its life. This stores it, so an active user
+// never reaches an expiry at all. The full argument is at the top of
+// backend/config/session.js.
+//
+// `onSessionRenewed` lets AppContext persist it, because a token kept only in memory
+// is lost the moment the app is killed — which would leave the phone still holding the
+// OLD token on disk and quietly undo the whole mechanism.
+let onSessionRenewed = null;
+export function setOnSessionRenewed(fn) { onSessionRenewed = typeof fn === 'function' ? fn : null; }
+
+// Header names are case-insensitive per the HTTP spec, and axios lowercases them on
+// the way in — but a direct index is one normalisation away from silently reading
+// undefined for ever, so both spellings are tried.
+const renewedToken = (res) => {
+    const h = (res && res.headers) || {};
+    const t = h['x-session-token'] || h['X-Session-Token'] || (typeof h.get === 'function' ? h.get('x-session-token') : null);
+    return typeof t === 'string' && t.length > 20 ? t : null;
+};
+
+const adoptRenewal = (res) => {
+    const fresh = renewedToken(res);
+    if (!fresh || fresh === TOKEN) return;
+    TOKEN = fresh;
+    // Persisted outside this module, and never allowed to break the response it rode
+    // in on: a failed write means the user keeps the token they already had.
+    if (onSessionRenewed) {
+        try { onSessionRenewed(fresh); } catch (e) { /* the request still succeeded */ }
+    }
+};
+
 http.interceptors.response.use(
-    (res) => res,
+    (res) => { adoptRenewal(res); return res; },
     (error) => {
+        // A renewed token can ride back on an error response too — a 404 or a 409 is
+        // still an authenticated request, and dropping the renewal there would make
+        // whether your session survives depend on whether your last call happened to
+        // succeed.
+        if (error && error.response) adoptRenewal(error.response);
         const status = error && error.response && error.response.status;
         const url = (error && error.config && error.config.url) || '';
         if (status === 401 && !PUBLIC_AUTH.test(url) && onAuthFailure && !handlingAuthFailure) {

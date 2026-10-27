@@ -30,6 +30,33 @@ export async function saveTenantSession(token, tenant) {
     await AsyncStorage.multiSet([[K.tenantToken, token], [K.tenantData, JSON.stringify(tenant || {})]]);
 }
 
+// Replace the stored TOKEN only, leaving the stored user untouched.
+//
+// Called when the server hands back a renewed token (see the note on renewal in
+// api.js). It deliberately does not take a role: at renewal time the app knows which
+// token it is holding but has no reason to re-derive whose it is, and asking it to
+// would be one more thing to get wrong on a path that runs silently in the background.
+// Whichever key already holds a token is the one updated.
+//
+// Writing the wrong key here would be the worst kind of bug — a session that looks
+// fine until the app is next killed, then signs the user out with nothing to connect
+// it to — so this reads first and writes only where a token already lives.
+export async function saveRenewedToken(token) {
+    if (!token) return;
+    try {
+        const pairs = await AsyncStorage.multiGet([K.ownerToken, K.tenantToken]);
+        const map = Object.fromEntries(pairs);
+        // Owner takes precedence, matching loadSession above: if both somehow exist,
+        // the owner session is the live one and must be the one kept fresh.
+        const key = map[K.ownerToken] ? K.ownerToken : map[K.tenantToken] ? K.tenantToken : null;
+        if (key) await AsyncStorage.setItem(key, token);
+    } catch (e) {
+        // Best effort by design. A failed write leaves the user on the token they
+        // already have, which still works — it only means they will not get the
+        // benefit of this renewal.
+    }
+}
+
 // Resolve the active session: { role: 'owner'|'tenant'|null, token, user }.
 export async function loadSession() {
     const pairs = await AsyncStorage.multiGet([K.ownerToken, K.ownerData, K.tenantToken, K.tenantData]);

@@ -18,7 +18,7 @@ import {
 import {
   auth as apiAuth, owner as apiOwner, properties as apiProps,
   units as apiUnits, tenants as apiTenants, portal as apiPortal, payments as apiPayments, places as apiPlaces,
-  setToken, setOnAuthFailure, mediaUrl
+  setToken, setOnAuthFailure, setOnSessionRenewed, mediaUrl
 } from './api';
 import { mapOwnerData, mapPortalRequest, mapDocument, mapMyPlace } from './mapping';
 import { hasPin, roundCoord, DEFAULT_CENTER, openDirections, MIN_ZOOM, MAX_ZOOM } from './maps';
@@ -26,7 +26,7 @@ import { upiUri } from './qr';
 import { readBuild } from './buildinfo';
 import { resolvePushToken, onNotificationTap, setForegroundBehaviour } from './push';
 import {
-  loadSession, saveOwnerSession, saveTenantSession, clearSession,
+  loadSession, saveOwnerSession, saveTenantSession, clearSession, saveRenewedToken,
   hasOnboarded, setOnboarded, hasSeenPermits, setPermitsSeen
 } from './session';
 
@@ -7493,6 +7493,25 @@ export function AppProvider({ children }) {
     });
     return () => setOnAuthFailure(null);
   }, [signOut, flash]);
+
+  // A token the server renewed mid-flight, written to disk.
+  //
+  // api.js has already swapped it into memory by the time this runs — the request it
+  // arrived on carries on with the new credential either way. This exists so the
+  // renewal SURVIVES the app being killed: without it, the phone would keep booting
+  // from the original stored token and march to its expiry exactly as before, while
+  // every running session looked fine. That failure would surface thirty days later as
+  // a logout, with nothing to connect it to.
+  //
+  // Silent on purpose. There is nothing for the user to do about it and nothing to
+  // celebrate; the whole point is that a session they are using never interrupts them.
+  // `state.session.token` is deliberately NOT updated: it seeds the push-registration
+  // effect below, and re-keying that on every renewal would re-register the device for
+  // notifications roughly every fortnight for no reason.
+  useEffect(() => {
+    setOnSessionRenewed((token) => { saveRenewedToken(token); });
+    return () => setOnSessionRenewed(null);
+  }, []);
 
   // Resolve the stored session once, on mount.
   useEffect(() => { resolveSession(); }, [resolveSession]);
