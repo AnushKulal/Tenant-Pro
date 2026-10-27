@@ -30,4 +30,36 @@ const SESSION_TTL = '30d';
 // full argument is at the top of controllers/guestController.js.
 const GUEST_SESSION_TTL = '90d';
 
-module.exports = { SESSION_TTL, GUEST_SESSION_TTL };
+// ── Why a session that is being USED never expires ────────────────────────────
+//
+// Raising the lifetime from 7 days to 30 did not fix being logged out. It moved it.
+// A fixed lifetime measures from when you last SIGNED IN, which is the one thing that
+// has no bearing on whether you are still using the app: somebody who opens TenantPro
+// every single morning is signed out on day 30 exactly like somebody who has not
+// touched it since February. From inside the app the two are indistinguishable, and
+// the frequent user is the one it insults.
+//
+// So the token is re-issued while it is being used. Past the halfway mark of its life,
+// any authenticated request hands back a fresh one, and the app swaps it in. An active
+// user therefore never reaches an expiry; a token only runs out after a genuine
+// absence of half a lifetime — fifteen days of silence for an ordinary account.
+//
+// Half rather than, say, nine tenths, because the window has to be wider than the gap
+// between two ordinary visits. Rent is monthly. Somebody who opens the app once a
+// fortnight is a NORMAL user of this app, not a lapsed one, and a renewal threshold
+// tighter than their habit would sign them out for behaving exactly as expected.
+//
+// ── What this is not ──────────────────────────────────────────────────────────
+// Not revocation. A stolen token still works until it expires, and renewing it on use
+// means a thief who keeps using it keeps it alive — which is the honest cost of this
+// trade and the reason refresh tokens with a server-side revocation list are still the
+// real answer. What this buys is that the ordinary user, who is not being robbed, is
+// not logged out every month for no reason.
+const RENEW_AFTER_FRACTION = 0.5;
+
+// The header a renewed token rides back on. Named rather than typed in two files,
+// because the client reads the exact string and a typo would silently never renew —
+// failing in thirty days' time, as a logout, with nothing to connect it to.
+const SESSION_HEADER = 'X-Session-Token';
+
+module.exports = { SESSION_TTL, GUEST_SESSION_TTL, RENEW_AFTER_FRACTION, SESSION_HEADER };

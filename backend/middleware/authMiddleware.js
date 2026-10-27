@@ -2,6 +2,7 @@
 const jwt = require('jsonwebtoken');
 const db = require('../config/db');
 const { stayState, toSqlDate } = require('../utils/guestStay');
+const { RENEW_AFTER_FRACTION, SESSION_HEADER } = require('../config/session');
 
 // A missing JWT_SECRET used to fall back to the literal string 'your_secret_key'
 // — a value that is in this file, in the git history, and in every tutorial this
@@ -40,9 +41,54 @@ const protect = (req, res, next) => {
 
     try {
         req.user = jwt.verify(token, SECRET); // { id, email, role? }
+        renewIfStale(req.user, res);
         return next();
     } catch (error) {
         return res.status(401).json({ message: 'Not authorized, token failed' });
+    }
+};
+
+// Hand back a fresh token when this one is past the halfway point of its life.
+//
+// The reasoning for renewing at all is in config/session.js. The mechanics worth
+// knowing here:
+//
+// · The new token keeps the OLD one's lifetime, computed as exp - iat rather than read
+//   from a constant. That is what makes one function correct for all three kinds of
+//   session — a 30-day account, a 90-day guest, and the 7-day tokens still in the wild
+//   from before the lifetime was raised. Reading SESSION_TTL instead would silently
+//   promote every guest to 30 days and demote nothing, which is the sort of change
+//   nobody notices for three months.
+//
+// · iat and exp are STRIPPED before re-signing. jwt.sign refuses to accept expiresIn
+//   alongside an exp already in the payload, and leaving iat in would re-stamp the new
+//   token with the old one's issue time — so it would be born already half spent and
+//   renew again on the very next request, every request, forever.
+//
+// · It rides on a response header, so no endpoint's payload shape changes and nothing
+//   has to be threaded through 40 handlers. A client that ignores the header is not
+//   broken by it; it simply behaves as it did before, which is what makes this safe to
+//   deploy before the app update reaches anybody.
+//
+// · Never throws into the request. A renewal that fails is a user who stays signed in
+//   on their existing, still-valid token — the status quo — and turning that into a
+//   500 on every authenticated route would be a far worse bug than the one being
+//   fixed.
+const renewIfStale = (claims, res) => {
+    try {
+        const { iat, exp, ...rest } = claims || {};
+        if (!iat || !exp) return;
+        const life = exp - iat;
+        if (life <= 0) return;
+        const spent = Math.floor(Date.now() / 1000) - iat;
+        if (spent < life * RENEW_AFTER_FRACTION) return;
+        res.set(SESSION_HEADER, jwt.sign(rest, SECRET, { expiresIn: life }));
+        // So a browser client can actually READ it. Without this, CORS hides the
+        // header from JavaScript and the whole mechanism is invisible on web while
+        // working perfectly on the phone — the kind of split that takes a day to spot.
+        res.set('Access-Control-Expose-Headers', SESSION_HEADER);
+    } catch (e) {
+        console.error('Session renewal failed (user stays signed in on the old token):', e.message);
     }
 };
 
@@ -120,4 +166,4 @@ const requireLiveStay = async (req, res, next) => {
     }
 };
 
-module.exports = { protect, requireOwner, requireLiveStay };
+module.exports = { protect, requireOwner, requireLiveStay, renewIfStale };
