@@ -7,7 +7,9 @@ const {
     registerOwner,
     loginOwner,
     forgotPassword,
-    resetPassword
+    resetPassword,
+    refreshToken,
+    logout
 } = require('../controllers/authController');
 const {
     startGoogle,
@@ -34,6 +36,24 @@ router.post('/forgot-password', resetLimit, forgotPassword);
 
 // Public Route: Reset the password using the emailed code
 router.post('/reset-password', resetLimit, resetPassword);
+
+// ── Session lifecycle ──────────────────────────────────────────────────────────
+//
+// Both PUBLIC on purpose. /refresh is called precisely when the access token has
+// expired, so requiring a valid one would make it useful only to callers who do not
+// need it; the refresh token is the credential, and it is single-use.
+//
+// /refresh is bounded generously rather than tightly: a legitimate app refreshes once
+// every couple of hours, but a phone coming back from a flaky connection can fire
+// several at once, and cutting those off would log somebody out for having bad signal
+// — the exact failure this area exists to prevent. Reuse detection, not a rate limit,
+// is what guards this endpoint.
+router.post('/refresh', rateLimit({ max: 60, scope: 'refresh' }), refreshToken);
+
+// Unbounded, because it only ever DESTROYS a session. There is nothing here worth
+// brute-forcing, and refusing a sign-out because somebody signed out too often would
+// be an odd way to protect them.
+router.post('/logout', logout);
 
 // ── Google sign-in ─────────────────────────────────────────────────────────────
 // Both roles share these: the app says which one it wants at /start, and the role

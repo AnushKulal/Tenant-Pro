@@ -25,6 +25,7 @@
 
 const crypto = require('crypto');
 const { SESSION_TTL } = require('../config/session');
+const { issueSession } = require('../services/sessionService');
 const db = require('../config/db');
 const jwt = require('jsonwebtoken');
 const { googleConfigured, googleMissing, authUrl, exchangeCode } = require('../config/googleAuth');
@@ -307,10 +308,18 @@ const pollGoogle = async (req, res) => {
             await tryProposeLinks({ id: acc.id, phone: acc.phone });
         }
 
-        const token = issueToken(acc.id, acc.email, session.role);
+        const sess = await issueSession({
+            claims: { id: acc.id, email: acc.email, ...(session.role === 'tenant' ? { role: 'tenant' } : {}) },
+            kind: session.role === 'tenant' ? 'tenant' : 'owner',
+            accountId: acc.id,
+            req
+        });
+        const token = sess.token;
+        const refresh = sess.refresh;
         return res.status(200).json({
             status: 'ready',
             token,
+            refresh,
             [session.role === 'tenant' ? 'tenant' : 'owner']: {
                 id: acc.id,
                 name: acc.name,
@@ -395,10 +404,18 @@ const completeGoogle = async (req, res) => {
             await tryProposeLinks({ id: ins.insertId, phone: digits });
         }
 
-        const token = issueToken(ins.insertId, stored.email, role);
+        const sess = await issueSession({
+            claims: { id: ins.insertId, email: stored.email, ...(role === 'tenant' ? { role: 'tenant' } : {}) },
+            kind: role === 'tenant' ? 'tenant' : 'owner',
+            accountId: ins.insertId,
+            req
+        });
+        const token = sess.token;
+        const refresh = sess.refresh;
         return res.status(201).json({
             status: 'ready',
             token,
+            refresh,
             [role === 'tenant' ? 'tenant' : 'owner']: {
                 id: ins.insertId,
                 name,

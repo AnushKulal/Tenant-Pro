@@ -46,8 +46,14 @@ const renewed = (r) => r.headers[SESSION_HEADER] || null;
 
 (async () => {
 console.log('THE CONSTANTS');
-chk('an ordinary session is 30 days', SESSION_TTL === '30d', SESSION_TTL);
-chk('a guest is 90', GUEST_SESSION_TTL === '90d', GUEST_SESSION_TTL);
+// These were 30d and 90d. They are now hours, and that is the refresh-token change:
+// an ACCESS token's length is about nothing but theft exposure, and the lifetime that
+// decides when somebody has to type their password again moved to the refresh token,
+// which lives in a row and can therefore be cancelled.
+chk('an access token lasts hours, not weeks', /^\d+h$/.test(SESSION_TTL), SESSION_TTL);
+chk('...which bounds how long a stolen one is useful', SESSION_TTL === '2h', SESSION_TTL);
+chk('a guest access token is the same — their LENGTH lives on the refresh token now',
+    GUEST_SESSION_TTL === SESSION_TTL, GUEST_SESSION_TTL);
 chk('renewal kicks in at the halfway mark', RENEW_AFTER_FRACTION === 0.5, RENEW_AFTER_FRACTION);
 
 console.log('\nA FRESH TOKEN IS LEFT ALONE');
@@ -109,7 +115,11 @@ chk('garbage is refused', r.status === 401, r);
 r = await call(null);
 chk('no header at all is refused', r.status === 401, r);
 
-console.log('\nTHE USER WHO OPENS THE APP EVERY FORTNIGHT IS NEVER LOGGED OUT');
+console.log('\nTHE USER WHO KEEPS USING THE APP IS NEVER LOGGED OUT');
+// Written with explicit lifetimes rather than SESSION_TTL, because this is about the
+// RENEWAL rule and not about today's value of the constant. The equivalent question
+// for the refresh token — an app opened after the access token has expired entirely —
+// is covered against a real database in refresh.e2e.js.
 // The actual scenario. Rent is monthly, so a fortnightly visit is a NORMAL user of
 // this app — and the one a 30-day fixed expiry was quietly throwing out.
 let token = mint({ id: 9, email: 'anush@x.com' }, 30, 0);

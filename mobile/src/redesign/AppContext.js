@@ -18,7 +18,8 @@ import {
 import {
   auth as apiAuth, owner as apiOwner, properties as apiProps,
   units as apiUnits, tenants as apiTenants, portal as apiPortal, payments as apiPayments, places as apiPlaces,
-  setToken, setOnAuthFailure, setOnSessionRenewed, isSessionFailure, PUBLIC_AUTH, mediaUrl
+  setToken, setRefresh, setOnAuthFailure, setOnSessionRenewed, setOnRefreshed,
+  endServerSession, isSessionFailure, PUBLIC_AUTH, mediaUrl
 } from './api';
 import { mapOwnerData, mapPortalRequest, mapDocument, mapMyPlace } from './mapping';
 import { hasPin, roundCoord, DEFAULT_CENTER, openDirections, MIN_ZOOM, MAX_ZOOM } from './maps';
@@ -27,7 +28,7 @@ import { readBuild } from './buildinfo';
 import { resolvePushToken, onNotificationTap, setForegroundBehaviour } from './push';
 import {
   loadSession, saveOwnerSession, saveTenantSession, clearSession, saveRenewedToken,
-  hasOnboarded, setOnboarded, hasSeenPermits, setPermitsSeen
+  saveRefreshedPair, hasOnboarded, setOnboarded, hasSeenPermits, setPermitsSeen
 } from './session';
 
 // Indian-grouped rupee magnitude (e.g. 1234567 -> "12,34,567") WITHOUT
@@ -6577,8 +6578,9 @@ export function AppProvider({ children }) {
       const res = await apiPortal.claimAccount({ name: c.name.trim(), email: c.email.trim(), password: c.password });
       // A fresh token, because the guest one carried no email in its payload.
       if (res.token) {
-        await saveTenantSession(res.token, res.tenant);
+        await saveTenantSession(res.token, res.tenant, res.refresh);
         setToken(res.token);
+        setRefresh(res.refresh || null);
       }
       setState({
         session: { role: 'tenant', token: res.token || stateRef.current.session.token, user: res.tenant },
@@ -7166,11 +7168,17 @@ export function AppProvider({ children }) {
       const sess = await loadSession();
       if (sess.role) {
         setToken(sess.token);
+        // Null for an install that signed in before refresh tokens existed. That is a
+        // supported state, not a broken one: the access token works until it expires
+        // and the renewal header keeps it alive, exactly as before. They gain
+        // revocation at their next sign-in.
+        setRefresh(sess.refresh || null);
         setState({ session: sess, route: sess.role === 'owner' ? 'home' : 'portal' });
         if (sess.role === 'owner') loadOwnerData();
         else loadTenantData();
       } else {
         setToken(null);
+        setRefresh(null);
         // Signed out: first-time users get the intro, then the one-time
         // permissions primer, then the role picker. The primer is checked
         // separately so an install that already finished the intro still sees it
@@ -7181,6 +7189,7 @@ export function AppProvider({ children }) {
       }
     } catch (e) {
       setToken(null);
+      setRefresh(null);
       setState({ session: null, route: 'role' });
     }
   }, [setState, loadOwnerData, loadTenantData]);
@@ -7220,9 +7229,10 @@ export function AppProvider({ children }) {
         ? await apiAuth.loginTenant(id, authPw, idmode)
         : await apiAuth.loginOwner(id, authPw, idmode);
       const user = res.owner || res.tenant || null;
-      if (role === 'tenant') await saveTenantSession(res.token, user);
-      else await saveOwnerSession(res.token, user);
+      if (role === 'tenant') await saveTenantSession(res.token, user, res.refresh);
+      else await saveOwnerSession(res.token, user, res.refresh);
       setToken(res.token);
+      setRefresh(res.refresh || null);
       setState({
         session: { role, token: res.token, user },
         authBusy: false, authPw: '', authError: '', authCode: '', authFails: 0,
@@ -7333,10 +7343,11 @@ export function AppProvider({ children }) {
   // Both paths end the same way, so this is shared rather than written twice — a
   // sign-in that saved the session slightly differently from the password path would
   // break somewhere unrelated weeks later.
-  const adoptSession = useCallback(async (role, token, user) => {
-    if (role === 'tenant') await saveTenantSession(token, user);
-    else await saveOwnerSession(token, user);
+  const adoptSession = useCallback(async (role, token, user, refresh) => {
+    if (role === 'tenant') await saveTenantSession(token, user, refresh);
+    else await saveOwnerSession(token, user, refresh);
     setToken(token);
+    setRefresh(refresh || null);
     setState({
       session: { role, token, user },
       gauth: { ...INITIAL_STATE.gauth },
@@ -7402,7 +7413,7 @@ export function AppProvider({ children }) {
       if (gpollRef.current !== run) return;
 
       if (res.status === 'ready') {
-        await adoptSession(want, res.token, res.owner || res.tenant || null);
+        await adoptSession(want, res.token, res.owner || res.tenant || null, res.refresh);
         return;
       }
       if (res.status === 'profile') {
@@ -7449,7 +7460,7 @@ export function AppProvider({ children }) {
     setState({ gauth: { ...gauth, busy: true, error: '' } });
     try {
       const res = await apiAuth.googleComplete(gauth.claim, phone);
-      await adoptSession(gauth.role, res.token, res.owner || res.tenant || null);
+      await adoptSession(gauth.role, res.token, res.owner || res.tenant || null, res.refresh);
     } catch (e) {
       setState({
         gauth: {
@@ -7486,9 +7497,10 @@ export function AppProvider({ children }) {
       const res = asTenant ? await apiAuth.registerTenant(payload) : await apiAuth.registerOwner(payload);
       const user = res.owner || res.tenant || null;
       if (res.token) {
-        if (asTenant) await saveTenantSession(res.token, user);
-        else await saveOwnerSession(res.token, user);
+        if (asTenant) await saveTenantSession(res.token, user, res.refresh);
+        else await saveOwnerSession(res.token, user, res.refresh);
         setToken(res.token);
+        setRefresh(res.refresh || null);
         setState({
           session: { role: asTenant ? 'tenant' : 'owner', token: res.token, user },
           authBusy: false, authPw: '', authError: '',
@@ -7575,8 +7587,19 @@ export function AppProvider({ children }) {
     } catch (e) { /* signing out must never fail on this */ }
     pushRef.current = null;
 
+    // Tell the server first, while the refresh token is still in hand. This is what
+    // actually ENDS the session rather than merely forgetting it locally — before
+    // refresh tokens existed, "sign out" only deleted the phone's copy and the token
+    // itself stayed valid for its full life, so a signed-out device was one restored
+    // backup away from being signed in again.
+    //
+    // Awaited but incapable of failing: endServerSession swallows its own errors, so
+    // a dead network costs a moment, not the sign-out.
+    try { await endServerSession(); } catch (e) { /* local sign-out is what matters */ }
+
     try { await clearSession(); } catch (e) { /* clearing is best-effort */ }
     setToken(null);
+    setRefresh(null);
     setState({ ...INITIAL_STATE, route: 'role', session: null, data: SEED, live: false, theme: stateRef.current.theme });
   }, [setState]);
 
@@ -7621,6 +7644,19 @@ export function AppProvider({ children }) {
   useEffect(() => {
     setOnSessionRenewed((token) => { saveRenewedToken(token); });
     return () => setOnSessionRenewed(null);
+  }, []);
+
+  // A refreshed PAIR, written to disk together.
+  //
+  // api.js has already swapped both into memory, so the request that triggered the
+  // refresh carries on either way. This is what makes it survive the app being
+  // killed — and here that matters more than it does for a renewed access token,
+  // because a refresh token is SINGLE USE. A phone that keeps the old one on disk
+  // will present a spent token on its next cold start, which the server reads as
+  // theft and answers by ending every session on the account.
+  useEffect(() => {
+    setOnRefreshed(({ token, refresh }) => { saveRefreshedPair(token, refresh); });
+    return () => setOnRefreshed(null);
   }, []);
 
   // Resolve the stored session once, on mount.

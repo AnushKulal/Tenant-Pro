@@ -27,6 +27,21 @@ let TOKEN = null;
 export function setToken(t) { TOKEN = t || null; }
 export function getToken() { return TOKEN; }
 
+// ── The refresh token ─────────────────────────────────────────────────────────
+// Held beside the access token and used for exactly one thing: getting a new access
+// token when this one has expired. It is single-use — spending it returns a
+// replacement — so it is swapped here on every refresh, and the replacement must be
+// persisted or the next refresh will present a token the server has already spent and
+// be read as THEFT. That failure ends every session on the account, so `onRefreshed`
+// below is not optional plumbing; it is the thing that stops a sign-out.
+let REFRESH = null;
+export function setRefresh(t) { REFRESH = t || null; }
+export function getRefresh() { return REFRESH; }
+
+// Called with a new { token, refresh } pair so AppContext can write both to disk.
+let onRefreshed = null;
+export function setOnRefreshed(fn) { onRefreshed = typeof fn === 'function' ? fn : null; }
+
 http.interceptors.request.use((cfg) => {
     if (TOKEN) cfg.headers.Authorization = `Bearer ${TOKEN}`;
     return cfg;
@@ -112,9 +127,56 @@ const adoptRenewal = (res) => {
     }
 };
 
+// ── Getting a new access token ────────────────────────────────────────────────
+//
+// One refresh at a time, shared by every request that hits a 401 while it is in
+// flight. Without this, an app that fires eight parallel calls on a cold start would
+// fire eight refreshes; seven of them would present a token the first had already
+// spent, the server would read that as reuse, and every session on the account would
+// end. The feature meant to stop people being logged out would log them out.
+let refreshing = null;
+
+const doRefresh = async () => {
+    if (!REFRESH) return { ok: false, fatal: true };
+    try {
+        // A BARE axios call, not `http`: going through the instance would attach the
+        // dead access token and re-enter this same interceptor on failure.
+        const res = await axios.post(`${SERVER_URL}/api/auth/refresh`, { refresh: REFRESH }, {
+            timeout: 30000,
+            headers: { 'Content-Type': 'application/json' }
+        });
+        const token = res && res.data && res.data.token;
+        const next = res && res.data && res.data.refresh;
+        if (!token || !next) return { ok: false, fatal: true };
+        TOKEN = token;
+        REFRESH = next;
+        if (onRefreshed) {
+            try { onRefreshed({ token, refresh: next }); } catch (e) { /* still refreshed */ }
+        }
+        return { ok: true };
+    } catch (e) {
+        const status = e && e.response && e.response.status;
+        // 401 means the refresh token is genuinely finished — revoked, expired, or
+        // already spent. That is the only case that should end the session.
+        //
+        // Everything else is NOT fatal, and the distinction is the whole point: a 500,
+        // a timeout, a dead connection or a 409 from two refreshes racing must not
+        // sign somebody out. The server answers 500 rather than 401 on its own
+        // failures precisely so this branch can tell them apart.
+        return { ok: false, fatal: status === 401 };
+    }
+};
+
+const refreshOnce = () => {
+    if (!refreshing) {
+        refreshing = doRefresh().finally(() => { refreshing = null; });
+    }
+    return refreshing;
+};
+
 http.interceptors.response.use(
     (res) => { adoptRenewal(res); return res; },
-    (error) => {
+    async (error) => {
         // A renewed token can ride back on an error response too — a 404 or a 409 is
         // still an authenticated request, and dropping the renewal there would make
         // whether your session survives depend on whether your last call happened to
@@ -122,6 +184,26 @@ http.interceptors.response.use(
         if (error && error.response) adoptRenewal(error.response);
         const status = error && error.response && error.response.status;
         const url = (error && error.config && error.config.url) || '';
+
+        // ── A 401 is now a question, not a verdict ───────────────────────────
+        // Before ending the session, try the refresh token once and replay the
+        // request. An expired access token is the ORDINARY case — they last two
+        // hours — and signing somebody out for one would be the old bug in a new
+        // costume.
+        //
+        // `_retried` guards against a loop: if the replayed request 401s again, the
+        // new access token is not the problem and there is nothing left to try.
+        const cfg = error && error.config;
+        if (status === 401 && !PUBLIC_AUTH.test(url) && cfg && !cfg._retried && REFRESH) {
+            cfg._retried = true;
+            const r = await refreshOnce();
+            if (r.ok) return http(cfg);
+            // Not fatal — the network is down, or the server stumbled. Let the error
+            // through as itself. The app shows "cannot reach the server", which is
+            // true, and the session survives to try again.
+            if (!r.fatal) return Promise.reject(error);
+        }
+
         if (status === 401 && !PUBLIC_AUTH.test(url) && onAuthFailure && !handlingAuthFailure) {
             handlingAuthFailure = true;
             try { onAuthFailure(); } catch (e) { /* never mask the original error */ }
@@ -139,6 +221,19 @@ const MULTIPART = { headers: { 'Content-Type': 'multipart/form-data' } };
 const isForm = (v) => typeof FormData !== 'undefined' && v instanceof FormData;
 
 // ── Auth (public) ─────────────────────────────────────────────────────────────
+// Tell the server this device is done, so the refresh token's row is revoked.
+//
+// Fire-and-forget by design: a sign-out must complete on the phone whether or not the
+// network cooperates. The worst case of a failed call is a row that stays live until
+// it expires, which is strictly better than a sign-out button that can fail.
+export async function endServerSession() {
+    const token = REFRESH;
+    if (!token) return;
+    try {
+        await axios.post(`${SERVER_URL}/api/auth/logout`, { refresh: token }, { timeout: 8000 });
+    } catch (e) { /* the local sign-out is what matters */ }
+}
+
 export const auth = {
     // `mode` is which side of the EMAIL/MOBILE switch the user chose. The server
     // scopes its lookup to that column, so picking MOBILE and typing an email

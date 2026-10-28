@@ -83,6 +83,9 @@ const { uploadMode } = require('./middleware/uploadMiddleware');
 const { pushMode, sweepOrphanTokens } = require('./services/pushService');
 const { smsMode } = require('./services/smsService');
 const { sweepVerifications } = require('./services/verifyService');
+// Dead refresh-token rows. Kept tidy for the same reason orphan push tokens are:
+// a table that only ever grows turns an indexed read into a scan over years.
+const { sweepSessions } = require('./services/sessionService');
 const { googleConfigured, googleMissing } = require('./config/googleAuth');
 // Whether a landlord can connect a payment gateway at all. Same reasoning as `uploads`
 // and `google`: without CREDENTIALS_KEY the Connect button can only ever fail, and from
@@ -255,6 +258,14 @@ app.listen(PORT, () => {
         await sweepVerifications();
     } catch (err) {
         console.error('verify: sweep skipped -', err.message);
+    }
+    // And dead refresh-token rows: long expired, or revoked a month ago. Rows that
+    // are spent but RECENT are deliberately kept — they are what makes a replayed
+    // token detectable as theft rather than merely unknown.
+    try {
+        await sweepSessions();
+    } catch (err) {
+        console.error('sessions: sweep skipped -', err.message);
     }
     initCronJobs();
 })();

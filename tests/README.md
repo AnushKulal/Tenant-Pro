@@ -9,6 +9,8 @@ is not already here — they are plain Node scripts that exit non-zero on failur
 | `session.test.js` | token renewal, through the real middleware and the real axios interceptor | nothing |
 | `gateway.test.js` | the gateway controllers, with `db` and `fetch` stubbed | nothing |
 | `vm.gateway.test.js` | the real `deriveVm`, with react-native stubbed | `mobile/node_modules` |
+| `refresh.client.test.js` | the real axios interceptor: refresh-on-401, retry, and when NOT to sign out | nothing |
+| `refresh.e2e.js` | refresh tokens against a real server and a real MySQL | a running server + seeded DB + `E2E_SOCK` |
 | `api.e2e.js` | every HTTP endpoint, against a real server and a real MySQL | a running server + seeded DB |
 | `ui.e2e.js` | the real app in a browser, clicking real buttons | a web build + Chromium |
 
@@ -17,6 +19,7 @@ is not already here — they are plain Node scripts that exit non-zero on failur
 cd backend && node ../tests/secretbox.test.js
 cd backend && node ../tests/session.test.js
 cd backend && node ../tests/gateway.test.js
+cd mobile  && node ../tests/refresh.client.test.js
 cd mobile  && node ../tests/vm.gateway.test.js
 ```
 
@@ -33,6 +36,9 @@ E2E_OWNER=landlord20260101@example.com \
 E2E_TENANT=sandeep.naik1000@example.com \
 E2E_UNLINKED=sneha.bhat2000@example.com \
 node ../tests/api.e2e.js
+
+# refresh tokens also read the database directly, to prove the token is NOT stored
+E2E_SOCK=/path/to/mysql.sock E2E_OWNER=... E2E_TENANT=... node ../tests/refresh.e2e.js
 ```
 
 **`api.e2e.js` mutates the database it runs against** — it confirms a declared
