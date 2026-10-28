@@ -2,6 +2,7 @@
 // Auth for TENANT accounts (separate from owner/landlord accounts).
 const db = require('../config/db');
 const { SESSION_TTL } = require('../config/session');
+const { issueSession } = require('../services/sessionService');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { tryProposeLinks } = require('../services/tenantLinkService');
@@ -61,11 +62,13 @@ const registerTenant = async (req, res) => {
             [name, email, phoneToStore, passwordHash]
         );
 
-        const token = jwt.sign(
-            { id: result.insertId, email, role: 'tenant' },
-            process.env.JWT_SECRET,
-            { expiresIn: SESSION_TTL }
-        );
+        const session = await issueSession({
+            claims: { id: result.insertId, email, role: 'tenant' },
+            kind: 'tenant',
+            accountId: result.insertId,
+            req
+        });
+        const token = session.token;
 
         // The landlord may already have typed this person into a room. If so, put a
         // request in front of them rather than linking on a phone number alone — a
@@ -79,6 +82,7 @@ const registerTenant = async (req, res) => {
         res.status(201).json({
             message: 'Registered successfully',
             token,
+            refresh: session.refresh,
             tenant: {
                 id: result.insertId, name, email, phone,
                 // 'Pending' only if a request was actually raised. Saying it otherwise
@@ -145,11 +149,14 @@ const loginTenant = async (req, res) => {
             });
         }
 
-        const token = jwt.sign(
-            { id: user.id, email: user.email, role: 'tenant' },
-            process.env.JWT_SECRET,
-            { expiresIn: SESSION_TTL }
-        );
+        const session = await issueSession({
+            claims: { id: user.id, email: user.email, role: 'tenant' },
+            kind: 'tenant',
+            accountId: user.id,
+            isGuest: !!user.is_guest,
+            req
+        });
+        const token = session.token;
 
         // Also matched at LOGIN, not just registration. Two ordinary situations need
         // it: accounts that registered before this existed, and — much more common —
@@ -163,6 +170,7 @@ const loginTenant = async (req, res) => {
         res.status(200).json({
             message: 'Login successful',
             token,
+            refresh: session.refresh,
             tenant: {
                 id: user.id,
                 name: user.name,

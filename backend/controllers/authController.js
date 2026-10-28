@@ -3,6 +3,9 @@ const db = require('../config/db');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const { SESSION_TTL } = require('../config/session');
+// Sessions are rows now, not just signatures — one service mints, rotates and revokes
+// them, so the four controllers that used to call jwt.sign by hand cannot drift.
+const { issueSession, refreshSession, revokeSession, revokeAllForAccount } = require('../services/sessionService');
 
 // How many wrong guesses a single reset code tolerates before it is destroyed.
 // Matches services/verifyService, so the two code flows behave the same way.
@@ -140,17 +143,20 @@ const loginOwner = async (req, res) => {
             });
         }
 
-        // Generate JWT token
-        const token = jwt.sign(
-            { id: owner.id, email: owner.email }, 
-            process.env.JWT_SECRET,               
-            { expiresIn: SESSION_TTL }
-        );
+        // An access token AND a refresh token. The refresh token is what makes this
+        // session cancellable later — see services/sessionService.js.
+        const session = await issueSession({
+            claims: { id: owner.id, email: owner.email },
+            kind: 'owner',
+            accountId: owner.id,
+            req
+        });
 
         // Send back all necessary user profile data
         res.status(200).json({
             message: 'Login successful',
-            token: token,
+            token: session.token,
+            refresh: session.refresh,
             owner: { 
                 id: owner.id, 
                 name: owner.name, 
@@ -427,6 +433,30 @@ const resetPassword = async (req, res) => {
         // Invalidate this account type's codes now that one has been used.
         await db.query('DELETE FROM password_resets WHERE email = ? AND role = ?', [accountEmail, target.role]);
 
+        // ── End every other session this account has ─────────────────────────
+        //
+        // The whole reason somebody resets a password is that they think the old one
+        // is in the wrong hands. Before sessions were rows this was impossible — the
+        // thief's token kept working for its full thirty days no matter what the
+        // password became, which made "reset your password" advice that did not do
+        // the thing people believe it does.
+        //
+        // Best effort: a reset that succeeded must not be reported as failed because
+        // the cleanup afterwards did not. The worst case is the old behaviour.
+        try {
+            const [who] = await db.query(
+                `SELECT id FROM \`${target.table}\` WHERE email = ? LIMIT 1`,
+                [accountEmail]
+            );
+            if (who.length) {
+                const kind = target.role === 'owner' ? 'owner' : 'tenant';
+                const ended = await revokeAllForAccount(kind, who[0].id, 'password');
+                if (ended) console.log(`🔒 Password reset ended ${ended} other session(s).`);
+            }
+        } catch (e) {
+            console.error('Could not revoke sessions after a password reset:', e.message);
+        }
+
         res.status(200).json({ message: 'Password reset successful. You can now sign in.' });
     } catch (error) {
         console.error('Reset Password Error:', error);
@@ -434,10 +464,70 @@ const resetPassword = async (req, res) => {
     }
 };
 
+
+// ── POST /api/auth/refresh   { refresh } ─────────────────────────────────────
+//
+// Trade a refresh token for a new pair. Public on purpose: the caller's access token
+// has, by definition, expired — requiring a valid one here would make this endpoint
+// useful only to people who did not need it.
+//
+// The refresh token IS the credential, and it is single-use. Spending one returns a
+// new one; presenting a spent one is treated as theft and ends every session this
+// account has. See services/sessionService.js for why.
+const refreshToken = async (req, res) => {
+    try {
+        const r = await refreshSession(req.body?.refresh, { req });
+        if (!r.ok) {
+            // One status and one sentence for every failure. The reason is useful to
+            // US and is logged, but telling a caller "that token was revoked" rather
+            // than "unknown" confirms it once existed, which is a way to probe.
+            //
+            // `raced` is the exception worth naming internally: two refreshes in
+            // flight at once, which an app with parallel requests does routinely. It
+            // is not theft and the loser should simply try again.
+            if (r.reason === 'raced') {
+                return res.status(409).json({ message: 'Try that again.' });
+            }
+            return res.status(401).json({ code: 'REFRESH_FAILED', message: 'Please sign in again.' });
+        }
+        res.status(200).json({
+            token: r.token,
+            refresh: r.refresh,
+            refresh_expires_at: r.refresh_expires_at,
+            role: r.role
+        });
+    } catch (error) {
+        console.error('Refresh failed:', error.message);
+        // 500, NOT 401. A database hiccup must not read to the app as "your session is
+        // over" — that would sign people out over a blip, which is the exact failure
+        // this whole area has been trying to stop.
+        res.status(500).json({ message: 'Could not refresh your session.' });
+    }
+};
+
+// ── POST /api/auth/logout   { refresh } ──────────────────────────────────────
+//
+// Ends THIS device's session. Public, and deliberately quiet: it answers 200 whether
+// or not the token existed, because a sign-out that reports "no such session" is a way
+// to test whether one is live.
+//
+// The access token is not affected and keeps working until it expires — at most two
+// hours. Ending it instantly would mean checking a revocation list on every request.
+const logout = async (req, res) => {
+    try {
+        await revokeSession(req.body?.refresh, 'signout');
+    } catch (error) {
+        console.error('Logout failed:', error.message);
+    }
+    res.status(200).json({ message: 'Signed out.' });
+};
+
 // --- Export Functions ---
 module.exports = {
     registerOwner,
     loginOwner,
     forgotPassword,
-    resetPassword
+    resetPassword,
+    refreshToken,
+    logout
 };

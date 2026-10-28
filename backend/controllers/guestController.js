@@ -65,11 +65,16 @@ const { guestDisplayName } = require('../utils/guestCode');
 const { SESSION_TTL, GUEST_SESSION_TTL } = require('../config/session');
 const GUEST_SESSION = GUEST_SESSION_TTL;
 const TENANT_SESSION = SESSION_TTL;
+// Kept for anything that still wants a bare token, but the claim path below issues a
+// full SESSION — a refresh token included — because a guest who has just turned their
+// account into a real one should get the same cancellable session as anybody who
+// signed up the ordinary way.
 const signTenantToken = (user) => jwt.sign(
     { id: user.id, email: user.email || null, role: 'tenant' },
     process.env.JWT_SECRET,
     { expiresIn: user.email ? TENANT_SESSION : GUEST_SESSION }
 );
+const { issueSession } = require('../services/sessionService');
 
 // Indian mobile numbers, which is what every other phone field in this codebase
 // assumes. Accepts the shapes people actually type — +91 spaces, dashes, a leading
@@ -178,7 +183,18 @@ const claimAccount = async (req, res) => {
             tenant: { id: req.user.id, name, email, is_guest: 0, guest_code: null },
             // A fresh token: the old one carries email: null in its payload, which is
             // what `protect` puts on req.user and what handlers read.
-            token: signTenantToken({ id: req.user.id, email })
+            // A fresh session rather than a bare token: claiming an account is the
+            // moment a guest gains an email and a password, so it is exactly when they
+            // should get a session that can later be signed out of.
+            ...(await (async () => {
+                const sess = await issueSession({
+                    claims: { id: req.user.id, email, role: 'tenant' },
+                    kind: 'tenant',
+                    accountId: req.user.id,
+                    req
+                });
+                return { token: sess.token, refresh: sess.refresh };
+            })())
         });
     } catch (error) {
         console.error('Claim account error:', error.message);

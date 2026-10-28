@@ -22,13 +22,50 @@
 // useful, not whether it works. The honest fix for that is revocation — a refresh
 // token that can be withdrawn — not a short window that logs everyone out weekly
 // and still leaves a stolen token good for a week.
-const SESSION_TTL = '30d';
+// ── Two tokens, and why ───────────────────────────────────────────────────────
+//
+// SESSION_TTL below is the ACCESS token: the one every request carries. It used to be
+// the only token, and it had one fatal property — nothing could cancel it. The server
+// checks a signature and nothing else, so there is no list anywhere of "tokens that
+// are still valid". A stolen phone, a tenant who moved out, a password change: none of
+// them could end a session. It simply ran its thirty days.
+//
+// So a session now also has a REFRESH token, which is a random string stored (hashed)
+// in the `sessions` table. Its only job is to mint new access tokens. Because it is a
+// ROW, it can be deleted — and deleting it is what "sign out everywhere", "this phone
+// was stolen" and "I changed my password" all become.
+//
+// ── Why the access token got shorter, but not much shorter ───────────────────
+// The textbook answer is fifteen minutes. The textbook is optimising for the stolen
+// token; this app's users have spent the last month being logged out for no reason,
+// and every minute of access-token life is a minute the refresh path does NOT have to
+// work perfectly. Two hours, with the renewal already in place, means an active user
+// never touches the refresh path at all — it exists for the app being opened after a
+// gap, and for revocation.
+//
+// What that buys, stated honestly: revocation is IMMEDIATE on the refresh path and
+// lags by at most the access token's life — two hours — on the access path. Making it
+// instant would mean a database lookup on every single authenticated request, which is
+// the cost essentially nobody pays. Two hours instead of thirty days is the win.
+const SESSION_TTL = '2h';
+
+// How long a refresh token is good for. Generous on purpose: this is the number that
+// decides when somebody who has not opened the app in a while has to type their
+// password again, and for an app opened when rent is due, "a while" is months.
+const REFRESH_TTL_DAYS = 60;
+
+// A guest's refresh token outlives an ordinary one for the same reason their session
+// always did — see the note on GUEST_SESSION_TTL below.
+const GUEST_REFRESH_TTL_DAYS = 120;
 
 // A guest has no password and no email, so being signed out is not an
 // inconvenience — it is the end of their access to their own tenancy, with no
 // reset to ask for. Kept far longer than an ordinary session for that reason; the
 // full argument is at the top of controllers/guestController.js.
-const GUEST_SESSION_TTL = '90d';
+// The guest ACCESS token. Same two hours as everybody else now — the thing that kept
+// a guest signed in for ninety days is their refresh token, above, which is where that
+// lifetime belongs. An access token's length is about theft exposure and nothing else.
+const GUEST_SESSION_TTL = '2h';
 
 // ── Why a session that is being USED never expires ────────────────────────────
 //
@@ -62,4 +99,11 @@ const RENEW_AFTER_FRACTION = 0.5;
 // failing in thirty days' time, as a logout, with nothing to connect it to.
 const SESSION_HEADER = 'X-Session-Token';
 
-module.exports = { SESSION_TTL, GUEST_SESSION_TTL, RENEW_AFTER_FRACTION, SESSION_HEADER };
+module.exports = {
+    SESSION_TTL,
+    GUEST_SESSION_TTL,
+    REFRESH_TTL_DAYS,
+    GUEST_REFRESH_TTL_DAYS,
+    RENEW_AFTER_FRACTION,
+    SESSION_HEADER
+};

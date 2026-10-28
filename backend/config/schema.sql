@@ -594,3 +594,43 @@ CREATE TABLE IF NOT EXISTS `contact_verifications` (
   KEY `account` (`role`,`account_id`,`channel`),
   KEY `expires_at` (`expires_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- 22. sessions (refresh tokens)
+--
+-- The thing that makes a session CANCELLABLE. An access token is a signature and
+-- nothing else, so no list of valid ones exists and none can be withdrawn; this table
+-- is that list, one row per signed-in device.
+--
+-- `token_hash` is sha256 of the refresh token, never the token. Same reasoning as the
+-- reset codes in password_resets: a credential we only ever need to COMPARE is a
+-- credential we should not be able to read, so one leaked backup is not every live
+-- session on the platform.
+--
+-- account_kind + account_id rather than two nullable foreign keys, because owners and
+-- tenant_users are independent tables with independent AUTO_INCREMENTs — owner 7 and
+-- tenant 7 are different people, and a column that could mean either is how they get
+-- confused.
+CREATE TABLE IF NOT EXISTS `sessions` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `token_hash` char(64) NOT NULL,
+  `account_kind` enum('owner','tenant') NOT NULL,
+  `account_id` int(11) NOT NULL,
+  `expires_at` datetime NOT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `last_used_at` datetime DEFAULT NULL,
+  -- Set when this token is spent. A refresh token is single-use: presenting one
+  -- rotates it, and the old hash lives on only so that REUSE can be detected.
+  `replaced_at` datetime DEFAULT NULL,
+  -- Why the session ended, when it did. 'signout' is the user; 'rotated' is this token
+  -- being spent normally; 'reuse' is a spent token presented a second time, which
+  -- means a copy exists somewhere it should not; 'password' is a credential change.
+  `revoked_at` datetime DEFAULT NULL,
+  `revoked_reason` varchar(20) DEFAULT NULL,
+  -- Which device, roughly, so a future "your sessions" screen can say something more
+  -- useful than "3 sessions". Truncated and never parsed.
+  `device` varchar(200) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `token_hash` (`token_hash`),
+  KEY `account` (`account_kind`, `account_id`),
+  KEY `expires_at` (`expires_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
