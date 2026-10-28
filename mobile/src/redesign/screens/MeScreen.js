@@ -135,6 +135,12 @@ export default function MeScreen() {
                     {/* Payment timeline */}
                     <Card radius={22} style={{ marginBottom: 8, paddingHorizontal: 18 }}>
                         <Eyebrow s={10} ls={0.12} style={{ marginBottom: 14 }}>PAYMENT TIMELINE</Eyebrow>
+                        {/* An empty history says so. It used to render five invented
+                            months at the tenant's real rent, which read as a tidy
+                            payment record to somebody who had never paid at all. */}
+                        {vm.myTimelineEmpty && (
+                            <T w={400} s={12.5} lh={1.5} c={t.fg3} style={{ paddingBottom: 4 }}>{vm.myTimelineEmptyLine}</T>
+                        )}
                         {vm.myTimeline.map((mt2, i) => (
                             <Row key={i} gap={12} style={{ paddingVertical: 9 }}>
                                 <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: col(mt2.dot) }} />
@@ -145,9 +151,19 @@ export default function MeScreen() {
                         ))}
                     </Card>
 
-                    {/* Receipts */}
+                    {/* Receipts — the most recent few, with a way through to the rest.
+                        These were the SEED tenant's payments, shown to everybody, each
+                        stamped DEMO-REF beside a PDF button wired to a no-op. They are
+                        the tenant's own rows now, and the button goes to the Receipts
+                        screen, which is the one place that has ever had the full list. */}
+                    {!vm.myTimelineEmpty && (
                     <Card radius={22} pad={0} style={{ marginBottom: 8 }}>
-                        <Eyebrow s={10} ls={0.12} style={{ paddingTop: 16, paddingHorizontal: 18, paddingBottom: 12 }}>RECEIPTS</Eyebrow>
+                        <Row justify="space-between" style={{ paddingTop: 16, paddingHorizontal: 18, paddingBottom: 12 }}>
+                            <Eyebrow s={10} ls={0.12}>RECEIPTS</Eyebrow>
+                            <Press onPress={vm.goReceipts}>
+                                <Eyebrow s={9} ls={0.06} c={t.accent}>SEE ALL</Eyebrow>
+                            </Press>
+                        </Row>
                         {vm.myPayments.map((mp, i) => (
                             <Row key={i} gap={12} style={{ paddingVertical: 13, paddingHorizontal: 18, borderTopWidth: 1, borderTopColor: t.line }}>
                                 <View style={{ width: 34, height: 34, borderRadius: 11, backgroundColor: t.lsoft, alignItems: 'center', justifyContent: 'center' }}>
@@ -157,12 +173,15 @@ export default function MeScreen() {
                                     <T w={600} s={14} lh={1.2}>{mp.amt}</T>
                                     <T mono w={600} s={10} lh={1.4} ls={0.06} c={t.fg3} style={{ marginTop: 4 }}>{mp.sub}</T>
                                 </View>
-                                <Press onPress={vm.noop} style={{ paddingVertical: 7, paddingHorizontal: 12, borderRadius: 999, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line }}>
-                                    <T mono w={600} s={9} lh={1} ls={0.08} c={t.fg2}>PDF</T>
-                                </Press>
+                                {/* Was a PDF button that generated nothing. The
+                                    reference is what a tenant actually needs — it is
+                                    how a landlord finds the credit in their bank. */}
+                                {!!mp.ref && (
+                                    <T mono w={600} s={9} lh={1} ls={0.06} c={t.fg3}>{mp.ref}</T>
+                                )}
                             </Row>
                         ))}
-                    </Card>
+                    </Card>)}
 
                     {/* Documents */}
                     <Card radius={22} style={{ marginBottom: 8, paddingHorizontal: 18 }}>

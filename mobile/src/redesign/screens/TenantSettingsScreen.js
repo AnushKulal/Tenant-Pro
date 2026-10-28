@@ -43,27 +43,43 @@ export default function TenantSettingsScreen() {
                 </Row>
             </View>
 
-            {/* Payment methods */}
+            {/* ── Where the rent goes ──────────────────────────────────────────
+                This card used to be headed PAYMENT METHODS and listed three saved
+                methods that did not exist: a Google Pay handle, an HDFC Visa and a
+                PhonePe number, all typed into the source, identical in every install,
+                one of them carrying a stranger's name. "DEFAULT" under a saved card
+                tells a tenant the app is holding their payment method. It holds
+                nothing, and should not.
+
+                So the card now answers the question it can actually answer — where
+                their money goes — and the ADD button is gone, because there was never
+                a screen behind it. */}
             <View style={{ borderRadius: 22, backgroundColor: t.ink2, borderWidth: 1, borderColor: t.line, overflow: 'hidden', marginBottom: 8 }}>
                 <Row justify="space-between" style={{ paddingTop: 16, paddingHorizontal: 18, paddingBottom: 12 }}>
-                    <Eyebrow s={10} ls={0.12} c={t.fg3}>PAYMENT METHODS</Eyebrow>
-                    <Press onPress={vm.noop} style={{ borderRadius: 999, backgroundColor: t.vsoft, paddingVertical: 5, paddingHorizontal: 10 }}>
-                        <Row gap={4}>
-                            <Glyph name="add" size={13} color={t.accent} />
-                            <Eyebrow s={9} ls={0.06} c={t.accent}>ADD</Eyebrow>
-                        </Row>
-                    </Press>
+                    <Eyebrow s={10} ls={0.12} c={t.fg3}>WHERE YOUR RENT GOES</Eyebrow>
                 </Row>
-                {(vm.payCards || []).map((pc, i) => (
+
+                {vm.payCardsEmpty ? (
+                    <Row gap={9} align="flex-start" style={{ paddingVertical: 14, paddingHorizontal: 18, borderTopWidth: 1, borderTopColor: t.line }}>
+                        <Glyph name="information-circle-outline" size={15} color={t.amber} />
+                        <T w={500} s={12.5} lh={1.45} c={t.amber} style={{ flex: 1 }}>{vm.payCardsEmptyLine}</T>
+                    </Row>
+                ) : (vm.payCards || []).map((pc, i) => (
                     <Row key={i} gap={12} style={{ paddingVertical: 13, paddingHorizontal: 18, borderTopWidth: 1, borderTopColor: t.line }}>
                         <IconChip name={pc.icon} size={16} color={t.fg} bg={t.ink3} box={36} radius={12} />
                         <View style={{ flex: 1, minWidth: 0 }}>
-                            <T w={600} s={14} lh={1.2}>{pc.label}</T>
+                            <T w={600} s={14} lh={1.2} numberOfLines={1}>{pc.label}</T>
                             <Eyebrow s={10} ls={0.06} c={t.fg3} style={{ marginTop: 4 }}>{pc.sub}</Eyebrow>
                         </View>
-                        <Eyebrow s={9} ls={0.06} c={t.pos}>{pc.tag}</Eyebrow>
+                        {!!pc.tag && <Eyebrow s={9} ls={0.06} c={t.pos}>{pc.tag}</Eyebrow>}
                     </Row>
                 ))}
+
+                {/* The reassurance that replaces the fiction: there is nothing of
+                    theirs here because there is nothing of theirs anywhere. */}
+                <View style={{ paddingVertical: 13, paddingHorizontal: 18, borderTopWidth: 1, borderTopColor: t.line }}>
+                    <T w={400} s={11.5} lh={1.5} c={t.fg3}>{vm.payCardsNote}</T>
+                </View>
             </View>
 
             {/* Checking that a notification actually arrives. A tenant's test can only

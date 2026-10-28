@@ -4543,16 +4543,39 @@ function deriveVm(s, api) {
     tmeH: ['tme', 'tstay', 'tsettings'].includes(s.route) ? '68px' : '52px',
     backFromStay: () => go('tme'),
     myCredit: creditOf(me),
-    myTimeline: ['Aug', 'Jul', 'Jun', 'May', 'Apr'].map((m, i) => {
-      const missed = me.state === 'overdue' && i === 0;
+    // ── The tenant's ACTUAL payment history ──────────────────────────────────
+    //
+    // This was five hard-coded months — Aug, Jul, Jun, May, Apr — with an invented
+    // method sequence ['UPI','CASH','UPI','BANK','UPI'] and the tenant's CURRENT rent
+    // repeated five times, under the heading PAYMENT TIMELINE.
+    //
+    // It is the most dangerous shape a fiction can take, because it looked right: it
+    // used their real rent figure, so a tenant with no payment history at all was
+    // shown five months of tidy on-time payments and had no way to tell. It also
+    // claimed the same five months of 2026 whatever today's date was.
+    //
+    // Now derived from MY_PAYMENTS — the rows /tenant-portal/payments returns, which
+    // is the same source the Receipts screen and the credit score read. An empty
+    // history renders as empty, which is the truth for a tenant who has not paid
+    // through the app yet.
+    myTimeline: MY_PAYMENTS.slice(0, 6).map((p) => {
+      const declared = p.status === 'Declared';
+      const rejected = p.status === 'Rejected';
       return {
-        month: `${m} 2026`,
-        method: missed ? 'PENDING' : ['UPI', 'CASH', 'UPI', 'BANK', 'UPI'][i],
-        amt: missed ? me.rentFull : `+${me.rentFull}`,
-        fg: missed ? 'coral' : 'pos',
-        dot: missed ? 'coral' : 'lime'
+        month: fmtDay(p.payment_date),
+        // The status matters more than the method on a timeline: a claim still
+        // waiting on the landlord is not money received, and showing it the same
+        // green as a confirmed one is how a tenant believes their month is clear.
+        method: declared ? 'AWAITING' : rejected ? 'REJECTED' : String(p.payment_method || 'UPI').toUpperCase(),
+        amt: declared || rejected ? `₹${inr(p.amount_paid)}` : `+₹${inr(p.amount_paid)}`,
+        fg: rejected ? 'coral' : declared ? 'amber' : 'pos',
+        dot: rejected ? 'coral' : declared ? 'amber' : 'lime'
       };
     }),
+    // Nothing paid through the app yet. Said in a sentence rather than drawn as an
+    // empty card under a heading promising a timeline.
+    myTimelineEmpty: MY_PAYMENTS.length === 0,
+    myTimelineEmptyLine: 'Nothing here yet. Payments appear once your landlord confirms them.',
     myStats: [
       { k: 'WITH YOU', v: me.since, fg: 'fg' },
       { k: 'RENT SHARE', v: me.rentFull, fg: 'fg' },
@@ -4779,8 +4802,19 @@ function deriveVm(s, api) {
         open: () => setState({ ticket: t.id, overlay: 'ticket' })
       };
     }),
-    myPayments: PAYMENTS.filter((p) => p.who === 'rahul').map((p) => ({
-      amt: `₹${p.amt}`, sub: `${p.method} · ${p.date} 2026`, ref: 'DEMO-REF'
+    // Was PAYMENTS.filter(p => p.who === 'rahul') — the seed tenant's rows, shown to
+    // every real tenant, each stamped 'DEMO-REF', beside a PDF button wired to a
+    // no-op. It also duplicated the timeline above it and the Receipts SCREEN, which
+    // is the one place this belongs and the only one reading real rows.
+    //
+    // Kept as a derived value rather than deleted outright because MeScreen still
+    // renders it; it now shows the same real payments, and the screen links to the
+    // full list instead of pretending to hand over a PDF nobody generates.
+    myPayments: MY_PAYMENTS.slice(0, 4).map((p) => ({
+      amt: `₹${inr(p.amount_paid)}`,
+      sub: `${String(p.payment_method || 'UPI').toUpperCase()} · ${fmtDay(p.payment_date)}`,
+      ref: p.reference_id || '',
+      status: p.status
     })),
     roommates: myUnit ? occupantsOf(myUnit.no).filter((t) => t.id !== me.id).map((t) => ({
       name: t.name, img: t.img, co: t.co.toUpperCase()
@@ -4791,11 +4825,64 @@ function deriveVm(s, api) {
     myFoodNote: myProp ? myProp.foodNote : '',
     isTSettings: s.route === 'tsettings',
     goTSettings: () => go('tsettings'),
-    payCards: [
-      { label: 'Google Pay', sub: 'UPI · rahul@okaxis', icon: 'logo-google', tag: 'DEFAULT' },
-      { label: 'HDFC · 4471', sub: 'Visa · expires 08/29', icon: 'card-outline', tag: '' },
-      { label: 'PhonePe', sub: 'UPI · 98123 45670', icon: 'phone-portrait-outline', tag: '' }
-    ],
+    // ── How this tenant actually pays ─────────────────────────────────────────
+    //
+    // This was three hard-coded strings left over from the prototype: "Google Pay ·
+    // UPI · rahul@okaxis · DEFAULT", an HDFC Visa ending 4471, and a PhonePe number.
+    // None of it was real, none of it was this tenant's, and one of them carried a
+    // stranger's name into every install. A tenant reading "DEFAULT" under a saved
+    // card reasonably concludes the app is holding their payment method. It holds
+    // nothing — TenantPro stores no card, no UPI handle and no bank detail belonging
+    // to a tenant, by design, because it never touches their money.
+    //
+    // What is TRUE and worth showing is the other direction: where their rent goes.
+    // That is the landlord's UPI, which the tenant can check against what their bank
+    // app shows them, and whether paying by card is on offer this month.
+    //
+    // Nothing here is tappable, and that is deliberate — there is nothing to edit.
+    // The "ADD" button beside this card is gone for the same reason: it was wired to
+    // a no-op and promised a screen that does not exist.
+    payCards: (() => {
+      const on = PAYINFO && PAYINFO.online;
+      const rows = [];
+      if (PAYINFO && PAYINFO.upi_id) {
+        rows.push({
+          label: PAYINFO.upi_id,
+          sub: `UPI · ${landlordCard.name || 'your landlord'}`,
+          icon: 'at',
+          tag: ''
+        });
+      }
+      if (PAYINFO && PAYINFO.upi_number) {
+        rows.push({
+          label: PAYINFO.upi_number,
+          sub: 'UPI NUMBER',
+          icon: 'call-outline',
+          tag: ''
+        });
+      }
+      if (on && on.available) {
+        rows.push({
+          label: 'Card, netbanking or UPI',
+          // Said plainly, because a tenant seeing a card option on a rent screen will
+          // wonder who is charging them for it. Nobody is: the gateway's fee comes out
+          // of the landlord's settlement.
+          sub: 'CONFIRMED AUTOMATICALLY · NO EXTRA CHARGE',
+          icon: 'card-outline',
+          tag: ''
+        });
+      }
+      return rows;
+    })(),
+    // Nothing on file at all — the landlord has not added UPI details and has not
+    // connected a gateway. An empty card with a heading over it says less than a
+    // sentence explaining why it is empty and who can fix it.
+    payCardsEmpty: !((PAYINFO && (PAYINFO.upi_id || PAYINFO.upi_number))
+      || (PAYINFO && PAYINFO.online && PAYINFO.online.available)),
+    payCardsEmptyLine: 'Your landlord has not added a way to pay yet. Ask them to add their UPI details in Settings.',
+    // Why there is nothing of the tenant's own here, said once, on the screen rather
+    // than only in this comment.
+    payCardsNote: 'TenantPro never stores your card or UPI details. You pay from your own app, to your landlord directly.',
     tenantSettingsRows: [
       // Both halves of this used to be false, the same way the landlord's were: a
       // hardcoded "3 DAYS" over a schedule that is really two, and "not built yet" for
@@ -4808,7 +4895,10 @@ function deriveVm(s, api) {
         meta: `${REMINDER_LEAD} DAYS BEFORE`,
         go: () => flash(`You are reminded ${REMINDER_LEAD} days before rent is due, on the day, then until it is paid.`)
       },
-      { label: 'Autopay', icon: 'repeat-outline', meta: 'OFF' },
+      // 'Autopay — OFF' used to sit here. There is no autopay anywhere in this
+      // codebase, so the row implied a switch that could be flipped and a feature
+      // that could be turned on. A setting that reports the state of something that
+      // does not exist is worse than no setting.
       {
         label: 'App permissions',
         icon: 'shield-checkmark-outline',
