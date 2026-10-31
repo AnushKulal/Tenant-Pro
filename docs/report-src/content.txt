@@ -176,6 +176,137 @@
 |Gateway|Per-landlord sealed gateway credentials|Encrypted with AES-256-GCM; never returned to a client
 #P The entity relationship diagram below shows the core of the schema with its keys and cardinalities. The chain from an owner down to a payment runs through four tables, which is why an ownership check on a write that names a room is not local to the row being written and had to be factored into a shared helper.
 #FIG fig_erd.png|Fig 4.7 — Entity relationship diagram of the core schema
+#SS 4.9.1 Table Structures
+#P The structure of each principal table is given below, with the MySQL type, the key or constraint and what the column is for. Only the ten tables that carry the working data are listed; the remaining twelve hold supporting records such as push tokens, password resets, document requests, contact verifications and demo state.
+#TBL Table 4.3 — owners: the landlord account
+|Field|Type|Key / constraint|Description
+|id|int(11)|PK, AUTO_INCREMENT|Landlord account identifier
+|name|varchar(100)|NOT NULL|Display name
+|email|varchar(100)|NOT NULL, UNIQUE|Sign-in address; also the reminder sender identity
+|phone|varchar(15)|NOT NULL, UNIQUE|Contact number shown to the tenant
+|password_hash|varchar(255)|NOT NULL|bcrypt hash; the password itself is never stored
+|profile_pic|varchar(255)|NULL|Avatar, held in external media storage
+|created_at|timestamp|DEFAULT NOW()|Registration time
+#TBL Table 4.4 — properties: a building belonging to a landlord
+|Field|Type|Key / constraint|Description
+|id|int(11)|PK, AUTO_INCREMENT|Property identifier
+|owner_id|int(11)|FK to owners, ON DELETE CASCADE|The landlord this property belongs to
+|name|varchar(150)|NOT NULL|Property name shown on both sides
+|property_type|enum|NOT NULL|PG, Apartment, Independent House or Hostel
+|address|text|NOT NULL|Postal address
+|locality, city, pincode|varchar|NULL, city defaults to Bengaluru|Location fields used for display and search
+|latitude, longitude|decimal(10,7)|NULL|Map pin, null until the landlord sets one; seven places is about 11 mm, and a float loses precision at the sixth
+|upi_id|varchar(50)|NULL|The landlord's own payment address for this property
+|image_url|varchar(255)|NULL|Cover photograph
+|created_at|timestamp|DEFAULT NOW()|Creation time
+#TBL Table 4.5 — units: a room inside a property
+|Field|Type|Key / constraint|Description
+|id|int(11)|PK, AUTO_INCREMENT|Room identifier
+|property_id|int(11)|FK to properties, ON DELETE CASCADE|The property that contains this room
+|unit_number|varchar(50)|NOT NULL|Room number or name
+|room_type|varchar(50)|DEFAULT 'Standard'|Free-text classification
+|capacity|int(11)|DEFAULT 1|How many occupants the room takes
+|rent_split_type|enum|DEFAULT 'Equal'|Equal or Custom split across occupants
+|base_rent|decimal(10,2)|NOT NULL|Rent for the whole room before any split
+|status|enum|DEFAULT 'Vacant'|Vacant, Occupied or Maintenance; follows occupancy
+|notify_email, notify_sms, notify_whatsapp|tinyint(1)|Defaults 1, 1, 0|Per-room reminder channels, switched independently
+|image_url|varchar(255)|NULL|Room photograph
+#TBL Table 4.6 — tenants: a tenancy, which is the landlord's record of a person
+|Field|Type|Key / constraint|Description
+|id|int(11)|PK, AUTO_INCREMENT|Tenancy identifier
+|owner_id|int(11)|FK to owners, ON DELETE CASCADE|The landlord who holds this tenancy
+|unit_id|int(11)|NULL|Assigned room; null for a tenant not yet placed
+|status|enum|DEFAULT 'Active'|Active or Inactive
+|name, phone, email|varchar|phone NOT NULL|Contact details; email is optional for guests
+|aadhar, company, emergency_phone|varchar|NULL|Supporting details collected at onboarding
+|deposit|decimal(10,2)|DEFAULT 0.00|Deposit held, shown on the tenant's own screen
+|rent_share|decimal(10,2)|DEFAULT 0.00|This tenant's share of the room rent
+|credit_score|int(11)|DEFAULT 100|Payment-behaviour score, computed from the payment history
+|move_in_date|date|NULL|Start of the tenancy; the anniversary the due date derives from
+|billing_cycle|varchar(20)|DEFAULT 'Anniversary'|How the due date is derived
+|next_rent_due|date|NULL|The next date rent falls due; advanced only on settlement
+|stay_until|date|NULL|Agreed leave date, where notice has been given
+|id_proof_url, image_url|varchar(255)|NULL|Identity proof and photograph
+|created_at|timestamp|DEFAULT NOW()|When the tenancy was created
+#TBL Table 4.7 — tenant_users: the tenant's own login account
+|Field|Type|Key / constraint|Description
+|id|int(11)|PK, AUTO_INCREMENT|Tenant account identifier, separate from tenants.id
+|name|varchar(100)|NOT NULL|Display name
+|email|varchar(100)|NULL, UNIQUE|Null for a guest account, which has no email
+|phone|varchar(15)|NOT NULL|Also the key by which an account is matched to a tenancy
+|password_hash|varchar(255)|NULL|Null until a guest claims a full account
+|tenant_id|int(11)|NULL|The tenancy this account is linked to
+|status|enum|DEFAULT 'Unlinked'|Unlinked, Pending or Linked
+|is_guest|tinyint(1)|NOT NULL DEFAULT 0|Marks an account identified by a code rather than an email
+|guest_code|varchar(16)|NULL, UNIQUE|The code a guest signs in with
+|alerts_seen_at|datetime|NULL|When the tenant last opened their alerts; stamped by the server so a wrong device clock cannot silence them
+|created_at|timestamp|DEFAULT NOW()|Account creation time
+#TBL Table 4.8 — payments: one rent payment, claimed or confirmed
+|Field|Type|Key / constraint|Description
+|id|int(11)|PK, AUTO_INCREMENT|Payment identifier
+|tenant_id|int(11)|FK to tenants, ON DELETE CASCADE|The tenancy this payment belongs to
+|amount_paid|decimal(10,2)|NOT NULL|Amount
+|payment_date|date|NOT NULL|Date the payment was made
+|due_date|date|NULL|The due date this payment settles, captured at declaration; without it punctuality is unanswerable after the fact
+|payment_method|varchar(50)|NOT NULL|UPI, cash, gateway and so on
+|reference_id|varchar(100)|NULL|Reference shown to the tenant and quoted on the transfer
+|status|enum|NOT NULL DEFAULT 'Confirmed'|Declared, Confirmed or Rejected
+|declared_by|int(11)|FK to tenant_users|Which tenant account claimed it; null when the landlord entered the row
+|confirmation_source|enum|NOT NULL DEFAULT 'landlord'|landlord, gateway or bank; meaningful only once status is not Declared
+|gateway_ref|varchar(120)|NULL, indexed|The provider's own transaction id, so a retried webhook cannot settle twice
+|decided_at|timestamp|NULL|When it was confirmed or rejected
+|decision_note|varchar(300)|NULL|The landlord's reason on a rejection, shown to the tenant
+|created_at|timestamp|DEFAULT NOW()|Row creation time
+#TBL Table 4.9 — payment_settings: one row per landlord, holding the gateway connection
+|Field|Type|Key / constraint|Description
+|id|int(11)|PK, AUTO_INCREMENT|Row identifier
+|owner_id|int(11)|FK to owners, UNIQUE|One settings row per landlord
+|upi_id, upi_number|varchar|NULL|The landlord's own payment address and number
+|qr_code_url|varchar(255)|NULL|A stored QR image, where one was uploaded
+|gateway|varchar(20)|NULL|Which provider is connected
+|gateway_key_id|varchar(120)|NULL|The landlord's own publishable key
+|gateway_secret|varchar(512)|NULL|Sealed with AES-256-GCM, useless without the key held in the environment, and never returned to a client
+|gateway_enabled|tinyint(1)|NOT NULL DEFAULT 0|Whether the online route is offered to tenants
+|updated_at|timestamp|ON UPDATE NOW()|Last change
+#TBL Table 4.10 — maintenance_requests: a repair ticket shared by both parties
+|Field|Type|Key / constraint|Description
+|id|int(11)|PK, AUTO_INCREMENT|Request identifier
+|tenant_id|int(11)|FK to tenants, ON DELETE CASCADE|Who raised it
+|owner_id|int(11)|FK to owners, ON DELETE CASCADE|Who has to deal with it
+|category|varchar(50)|NOT NULL DEFAULT 'General'|Plumbing, electrical and so on
+|title|varchar(150)|NOT NULL|One-line summary
+|description|text|NULL|The detail
+|priority|enum|DEFAULT 'Medium'|Low, Medium or High
+|status|enum|DEFAULT 'Open'|Open, In Progress, Resolved or Closed
+|image_url|varchar(500)|NULL|One optional photograph of the problem
+|created_at, updated_at|timestamp|updated_at ON UPDATE NOW()|Raised and last changed
+#TBL Table 4.11 — join_requests: a tenant asking to be let into a property
+|Field|Type|Key / constraint|Description
+|id|int(11)|PK, AUTO_INCREMENT|Request identifier
+|tenant_user_id|int(11)|FK to tenant_users|The account asking
+|owner_id|int(11)|FK to owners|The landlord being asked
+|property_id|int(11)|FK to properties|The property named by the code
+|unit_id|int(11)|FK to units, ON DELETE SET NULL|The room the landlord actually assigned
+|requested_unit_id|int(11)|FK to units, ON DELETE SET NULL|The room the applicant asked for, kept separate so accepting into a different one does not erase the request
+|requested_stay_until|date|NULL|How long the applicant says they are staying; null is a legitimate answer
+|status|enum|NOT NULL DEFAULT 'Pending'|Pending, Accepted or Rejected
+|source|enum|NOT NULL DEFAULT 'code'|code for a stranger typing a property code, phone_match for a number the landlord already has on file
+|note|varchar(300)|NULL|Message from the applicant
+|created_at|timestamp|DEFAULT NOW()|When it was raised
+|decided_at|timestamp|NULL|Null while Pending, which makes "how long has this been waiting" answerable without an event log
+#TBL Table 4.12 — sessions: one row per issued refresh token
+|Field|Type|Key / constraint|Description
+|id|int(11)|PK, AUTO_INCREMENT|Session identifier
+|token_hash|char(64)|NOT NULL, UNIQUE|SHA-256 of the refresh token; the token itself is never stored
+|account_kind|enum|NOT NULL|owner or tenant, which decides the table account_id points into
+|account_id|int(11)|NOT NULL|The account this session belongs to
+|expires_at|datetime|NOT NULL, indexed|When the refresh token stops working
+|last_used_at|datetime|NULL|When it was last presented
+|replaced_at|datetime|NULL|Set when the token is spent; the spent row is kept so that reuse can be detected
+|revoked_at|datetime|NULL|When the session was ended
+|revoked_reason|varchar(20)|NULL|signout, rotated, reuse or password
+|device|varchar(200)|NULL|User agent, truncated and never parsed, for a future sessions screen
+|created_at|timestamp|DEFAULT NOW()|When the session was issued
 
 #CH CHAPTER 5 — SYSTEM REQUIREMENTS
 #S 5.1 Hardware Requirements

@@ -235,16 +235,29 @@ def add_table(doc, rows):
     return t
 
 
-def auto_widths(rows, total=Inches(6.05), minw=Inches(0.62)):
-    """Share the width out in proportion to how much text each column carries."""
+def auto_widths(rows, total=Inches(6.05)):
+    """Share the width out between the columns.
+
+    Each column first gets enough room for its longest unbreakable word, since a
+    column narrower than that breaks AUTO_INCREMENT across two lines. Whatever is
+    left over is then shared in proportion to how much text each column carries.
+    """
     ncol = len(rows[0])
-    weight = []
+    char = 0.084   # inches per character at 10.5 pt; capitals run wider
+    pad = 0.16     # cell padding either side
+
+    need, mean = [], []
     for c in range(ncol):
-        longest = max(len(r[c]) for r in rows)
-        mean = sum(len(r[c]) for r in rows) / len(rows)
-        weight.append(max(longest ** 0.5 * 1.0 + mean, 4.0))
-    scale = (total.twips - minw.twips * ncol) / sum(weight)
-    return [Inches((minw.twips + w * scale) / 1440) for w in weight]
+        longest_word = max((len(w) for r in rows for w in r[c].split()), default=4)
+        need.append(min(longest_word * char + pad, 1.9))
+        mean.append(max(sum(len(r[c]) for r in rows) / len(rows), 4.0))
+
+    spare = total.twips - sum(Inches(n).twips for n in need)
+    if spare <= 0:                       # nothing to share out; scale back to fit
+        k = total.twips / sum(Inches(n).twips for n in need)
+        return [Inches(n * k) for n in need]
+    scale = spare / sum(mean)
+    return [Inches(n + m * scale / 1440) for n, m in zip(need, mean)]
 
 
 # ------------------------------------------------------------------ front pages
