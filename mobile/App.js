@@ -5,6 +5,8 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { ThemeProvider, useTheme } from './src/theme';
+import { isRedesign } from './src/appConfig';
+import RedesignRoot from './src/redesign/RedesignRoot';
 
 // Screens
 import SplashScreen from './src/screens/SplashScreen';
@@ -83,6 +85,11 @@ function RootNavigator() {
 }
 
 export default function App() {
+    // The whole redesign lives behind this one flag (src/appConfig.js). Flipping
+    // UI_VERSION to 'v2' mounts RedesignRoot and nothing of v1; flipping back is a
+    // clean revert. See RedesignRoot.js for the redesign's own provider tree.
+    if (isRedesign()) return <RedesignRoot />;
+
     return (
         <ThemeProvider>
             <SafeAreaProvider>

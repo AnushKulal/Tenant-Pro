@@ -1,16 +1,19 @@
 name: Build Android APK
 
-# Run this manually from the Actions tab (Run workflow). It builds the APK on
-# GitHub's free runners using EAS "local" mode — no Expo build queue.
+# Run this manually from the Actions tab (Run workflow) — pick the branch.
+# Builds the APK ON THE RUNNER with `eas build --local`, which does NOT consume
+# the EAS cloud build quota (used when the hosted queue is exhausted). Gradle is
+# given extra heap/metaspace and the daemon is disabled to fit the runner, and
+# the timeout is raised to 90m. Publishes the APK as a Release + artifact.
 on:
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 45   # fail fast instead of hanging for hours
+    timeout-minutes: 90
     permissions:
-      contents: write     # needed to publish the APK as a Release
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,18 +37,37 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: gradle-${{ runner.os }}-tenantpro
+          key: gradle-${{ runner.os }}-tp-v2
           restore-keys: gradle-${{ runner.os }}-
 
       - name: Install dependencies
         working-directory: mobile
         run: npm install
 
-      - name: Build APK (EAS local — bypasses the Expo queue)
+      - name: Build APK (EAS local — no cloud quota)
         working-directory: mobile
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-          EAS_NO_VCS: "1"   # use the working dir directly; avoids CI git hangs
+          EAS_NO_VCS: "1"
+          # The map provider, same as eas-update.yml passes. These were missing here,
+          # and eas.json additionally overrode them with the literal text
+          # "$EXPO_PUBLIC_MAP_TILE_URL" — EAS does not shell-expand env values, so the
+          # placeholder itself was compiled into the APK. Tiles were then fetched from
+          # a URL that is not a URL, so an installed build showed an empty map while
+          # the same code shipped over the air worked: eas-update.yml passed the real
+          # values, so only the APK was affected. Both halves are fixed; keep this list
+          # in step with eas-update.yml.
+          EXPO_PUBLIC_MAP_PROVIDER: ${{ secrets.EXPO_PUBLIC_MAP_PROVIDER || 'maptiler' }}
+          EXPO_PUBLIC_MAP_KEY: ${{ secrets.EXPO_PUBLIC_MAP_KEY }}
+          EXPO_PUBLIC_MAP_TILE_URL: ${{ secrets.EXPO_PUBLIC_MAP_TILE_URL }}
+          EXPO_PUBLIC_MAP_TILE_URL_DARK: ${{ secrets.EXPO_PUBLIC_MAP_TILE_URL_DARK }}
+          EXPO_PUBLIC_MAP_ATTRIBUTION: ${{ secrets.EXPO_PUBLIC_MAP_ATTRIBUTION }}
+          # Give Gradle room on the 7 GB runner and disable the daemon (lower
+          # overhead) — the earlier failure was an OutOfMemoryError: Metaspace.
+          GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.workers.max=2 -Xmx5120m -XX:MaxMetaspaceSize=2g"
+          # These also flow into the app's android/gradle.properties JVM args via
+          # Expo prebuild's passthrough of ORG_GRADLE_PROJECT_* is not used here;
+          # daemon-off means GRADLE_OPTS applies to the build JVM directly.
         run: >
           npx eas-cli build
           --platform android
