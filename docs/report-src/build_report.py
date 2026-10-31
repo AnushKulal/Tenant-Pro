@@ -119,6 +119,42 @@ def add_page_number_footer(section, fmt="decimal", start=None):
         pg.set(qn("w:start"), str(start))
 
 
+def page_border(section, color="1F3864", sz=14, space=22):
+    """A frame on every page of this section, measured from the page edge."""
+    sect_pr = section._sectPr
+    old = sect_pr.find(qn("w:pgBorders"))
+    if old is not None:
+        sect_pr.remove(old)
+    pb = OxmlElement("w:pgBorders")
+    pb.set(qn("w:offsetFrom"), "page")
+    for side in ("top", "left", "bottom", "right"):
+        el = OxmlElement(f"w:{side}")
+        el.set(qn("w:val"), "single")
+        el.set(qn("w:sz"), str(sz))
+        el.set(qn("w:space"), str(space))
+        el.set(qn("w:color"), color)
+        pb.append(el)
+    sect_pr.append(pb)
+
+
+def different_first_page(section):
+    """No page number on the title page."""
+    sect_pr = section._sectPr
+    el = sect_pr.find(qn("w:titlePg"))
+    if el is None:
+        el = OxmlElement("w:titlePg")
+        sect_pr.append(el)
+
+
+def same_first_page(section):
+    """python-docx copies the previous sectPr, so w:titlePg is inherited. The body
+    section needs its own first page numbered."""
+    sect_pr = section._sectPr
+    el = sect_pr.find(qn("w:titlePg"))
+    if el is not None:
+        sect_pr.remove(el)
+
+
 def shade(cell, hexcolor):
     tcPr = cell._tc.get_or_add_tcPr()
     el = OxmlElement("w:shd")
@@ -375,6 +411,9 @@ def build(out_path, pagemap=None):
     sec.left_margin = Inches(1.25)
     sec.right_margin = Inches(1.0)
     set_base_style(doc)
+    page_border(sec)
+    different_first_page(sec)
+    add_page_number_footer(sec, fmt="lowerRoman", start=1)
 
     title_page(doc)
     certificate_university(doc)
@@ -452,6 +491,8 @@ def build(out_path, pagemap=None):
     body_sec.bottom_margin = Inches(1.0)
     body_sec.left_margin = Inches(1.25)
     body_sec.right_margin = Inches(1.0)
+    page_border(body_sec)
+    same_first_page(body_sec)
     add_page_number_footer(body_sec, start=1)
 
     pending_rows = []
@@ -529,10 +570,9 @@ def build(out_path, pagemap=None):
             with open(path, "rb") as fh:
                 head = fh.read(33)
             w, h = struct.unpack(">II", head[16:24])
-            if w > h:
-                p.add_run().add_picture(path, width=Inches(5.9))
-            else:
-                p.add_run().add_picture(path, height=Inches(5.3))
+            max_w, max_h = 5.85, 5.6
+            scale = min(max_w / w, max_h / h)
+            p.add_run().add_picture(path, width=Inches(w * scale))
             para(doc, caption, align=WD_ALIGN_PARAGRAPH.CENTER, italic=True, size=Pt(11),
                  line=1.15, space_after=Pt(12))
 
@@ -572,9 +612,18 @@ def page_numbers(pdf_path, toc, tables, figures):
         targets.append((cap, norm(cap)[:40]))
 
     normpages = [norm(p) for p in pages]
+    tops = []
+    for p in pages:
+        head = [l.strip() for l in p.split("\n") if l.strip()][:3]
+        tops.append(norm(" ".join(head)))
+
+    chapter_keys = {t for k, t in toc if k == "chapter"}
     for key, needle in targets:
+        if not needle:
+            continue
+        pool = tops if key in chapter_keys else normpages
         for i in range(body_start, len(pages)):
-            if needle and needle in normpages[i]:
+            if needle in pool[i]:
                 mapping[key] = i - body_start + 1
                 break
     return mapping
