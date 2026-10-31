@@ -122,16 +122,20 @@
 #P The use case diagram identifies the two primary actors and the two external systems the application talks to. The landlord and the tenant both sign in and hold a session, and from there their paths separate almost completely: the landlord describes and administers the portfolio, while the tenant looks at their own position in it and acts on it.
 #P Two things in the diagram are worth pointing out. The payment gateway appears as an external actor rather than as part of the system, which is the modelling consequence of the decision described in Chapter 2: the system asks the gateway questions and never handles the money itself. And the messaging services are external too, because the system composes a reminder but does not deliver it.
 #FIG fig_use_case.png|Fig 4.2 — Use case diagram: the landlord, the tenant, and the two external systems
-#S 4.3 Activity Diagram for Paying Rent
-#P The activity diagram below traces a rent payment from the moment the tenant opens the payment screen to the moment both sides see it settled. The single decision at the top, whether the landlord has connected a gateway, is what sends the flow down one of two branches.
+#S 4.3 Activity Diagrams
+#P Two activity diagrams are given. The first takes in the system as a whole; the second zooms into the one flow that carries the most design weight.
+#P Figure 4.3 follows a tenancy from end to end across three swimlanes: what the landlord does, what the system does on its own, and what the tenant does. Reading down the lanes shows how little of the work sits with any one party. The landlord registers, builds the portfolio and decides on a join request. The tenant joins, looks at what is owed, pays and raises tickets. In between, the system issues the session, derives the due date from the tenancy start date, runs the morning reminder job, settles payments and computes a leave date.
+#P Three branches in the diagram end early rather than carrying on, and that is deliberate. A join request can be declined. A payment can be rejected, or can sit as a claim nobody has vouched for yet. Both are ordinary outcomes, not errors, and a diagram that showed only the happy path would be describing a different system from the one that was built.
+#FIG fig_system_activity.png|Fig 4.3 — Activity diagram for the system as a whole, across the landlord, system and tenant swimlanes
+#P Figure 4.4 takes the payment step out of that flow and expands it. The single decision at the top, whether the landlord has connected a gateway, is what sends the flow down one of two branches.
 #P On the UPI branch the money moves outside the system entirely, so the tenant declares the payment afterwards and it sits as a claim until the landlord confirms or rejects it. On the gateway branch the server can ask the gateway directly, so the confirmation comes from the gateway rather than from a person. The important feature of the diagram is that the two branches converge: whichever route was taken, settlement happens in exactly one place, inside one transaction that both changes the status and advances the due date.
-#FIG fig_activity.png|Fig 4.3 — Activity diagram: the two payment routes converging on a single settlement step
+#FIG fig_activity.png|Fig 4.4 — Activity diagram for paying rent: the two routes converging on a single settlement step
 #S 4.4 Data Flow Diagrams
 #P The context diagram fixes the boundary of the system. Four external entities surround it: the landlord and the tenant, who supply and consume information, and the payment gateway and the messaging services, which the system calls out to. The flows are all information. No flow on this diagram carries money, which is the point the architecture turns on.
-#FIG fig_dfd0.png|Fig 4.4 — Data flow diagram, level 0: the context diagram
+#FIG fig_dfd0.png|Fig 4.5 — Data flow diagram, level 0: the context diagram
 #P The level 1 diagram breaks the single process of the context diagram into five: authentication and sessions, portfolio and tenancy management, payment and confirmation, notifications and reminders, and maintenance requests. Seven data stores sit beside them.
 #P The diagram also records a constraint that matters for correctness. Several processes read the tenancy store, but only process 3.0 writes a due date to it, and it does so only as part of the settlement transaction. Allowing any other process to move a due date would make it possible for a tenancy to advance without a payment behind it.
-#FIG fig_dfd1.png|Fig 4.5 — Data flow diagram, level 1: processes, data stores and the external systems
+#FIG fig_dfd1.png|Fig 4.6 — Data flow diagram, level 1: processes, data stores and the external systems
 #S 4.5 Client Architecture and the View-Model
 #P One React Native codebase serves both roles. Rather than spreading presentation logic across screens, the application runs the current state and the server payload through a single pure function that produces a view-model. A screen then holds layout and very little else.
 #P Two things follow. Because the function is pure and needs no device, the behaviour of the interface can be asserted directly, and one of the suites in Chapter 6 does exactly that. And two screens showing the same fact cannot drift apart, since both read the same derived value instead of each working it out for itself.
@@ -171,7 +175,7 @@
 |Sessions|Refresh token hashes, expiry, revocation reason|Hash only; the token itself is never stored
 |Gateway|Per-landlord sealed gateway credentials|Encrypted with AES-256-GCM; never returned to a client
 #P The entity relationship diagram below shows the core of the schema with its keys and cardinalities. The chain from an owner down to a payment runs through four tables, which is why an ownership check on a write that names a room is not local to the row being written and had to be factored into a shared helper.
-#FIG fig_erd.png|Fig 4.6 — Entity relationship diagram of the core schema
+#FIG fig_erd.png|Fig 4.7 — Entity relationship diagram of the core schema
 
 #CH CHAPTER 5 — SYSTEM REQUIREMENTS
 #S 5.1 Hardware Requirements

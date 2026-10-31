@@ -275,8 +275,103 @@ def erd():
     write("fig_erd.svg", W, H, "\n".join(s))
 
 
+
+
+# ------------------------------------------- Fig 4.3 whole-system activity
+LANES = [("Landlord", 250), ("TenantPro System", 710), ("Tenant", 1160)]
+LANE_EDGES = [20, 480, 940, 1380]
+
+
+def _router(src, dst, nodes):
+    """Orthogonal arrow from the bottom of one node to the top of the next.
+    Same lane gives a straight drop; a lane change gives one elbow halfway."""
+    x1, y1, h1 = nodes[src]
+    x2, y2, h2 = nodes[dst]
+    a, b = y1 + h1 / 2, y2 - h2 / 2
+    if x1 == x2:
+        return line(x1, a, x2, b)
+    mid = (a + b) / 2
+    return poly([(x1, a), (x1, mid), (x2, mid), (x2, b)])
+
+
+def system_activity():
+    """The whole lifecycle across three swimlanes, from registration through to
+    a tenancy ending. The payment branch is drawn in detail in Fig 4.4."""
+    W, H = 1400, 2160
+    s = []
+    top, bot = 92, H - 24
+    for i, (name, cx) in enumerate(LANES):
+        x0, x1 = LANE_EDGES[i], LANE_EDGES[i + 1]
+        s.append(f'<rect x="{x0}" y="26" width="{x1-x0}" height="66" fill="{BAND}" '
+                 f'stroke="{LINE}" stroke-width="3"/>')
+        s.append(txt(cx, 59, name, size=30, weight="bold"))
+        s.append(f'<rect x="{x0}" y="92" width="{x1-x0}" height="{bot-top}" fill="none" '
+                 f'stroke="{LINE}" stroke-width="3"/>')
+
+    L, S, T = 250, 710, 1160
+    BW, BH = 400, 88
+    nodes = {}
+
+    def node(key, x, y, lines, h=BH, fill="#ffffff"):
+        nodes[key] = (x, y, h)
+        s.append(box(x, y, BW, h, lines, size=27, fill=fill))
+
+    def dec(key, x, y, lines, h=130):
+        nodes[key] = (x, y, h)
+        s.append(diamond(x, y, 420, h, lines, size=25))
+
+    s.append(f'<circle cx="{L}" cy="140" r="20" fill="{INK}"/>')
+    nodes["start"] = (L, 140, 40)
+
+    node("signin", L, 232, ["Register and sign in"])
+    node("token", S, 350, ["Issue an access token and", "a refresh token"])
+    node("portfolio", L, 468, ["Create properties and rooms"])
+    node("join", T, 586, ["Join by invite code and", "upload an ID proof"])
+    node("review", L, 704, ["Review the join request"])
+    dec("accept", L, 840, ["Accept?"])
+    node("declined", T, 840, ["Declined, with a reason", "the tenant reads"])
+    node("assign", L, 986, ["Assign a room; set the rent,", "deposit and start date"])
+    node("due", S, 1104, ["Derive the due date from", "the tenancy start date"])
+    node("remind", S, 1222, ["Daily job: remind whoever", "is due across the channels"])
+    node("view", T, 1340, ["View dues, then pay by UPI", "or through the gateway"])
+    dec("vouched", S, 1480, ["Vouched for by the landlord", "or by the gateway?"], h=150)
+    node("pending", L, 1480, ["Rejected, or still a claim", "awaiting confirmation"])
+    node("settle", S, 1628, ["settlePayment: confirm and", "advance the due date"], fill=BAND)
+    node("ledger", L, 1746, ["Ledger and collection", "figures update"])
+    node("notice", T, 1864, ["Raise maintenance requests;", "give notice to leave"])
+    node("end", S, 1982, ["Leave date computed; the", "room returns to vacant"])
+
+    for a, b in [("start", "signin"), ("signin", "token"), ("token", "portfolio"),
+                 ("portfolio", "join"), ("join", "review"), ("review", "accept"),
+                 ("accept", "assign"), ("assign", "due"), ("due", "remind"),
+                 ("remind", "view"), ("view", "vouched"), ("vouched", "settle"),
+                 ("settle", "ledger"), ("ledger", "notice"), ("notice", "end")]:
+        s.append(_router(a, b, nodes))
+
+    s.append(line(L + 210, 840, T - 200, 840))
+    s.append(flow_label(T - 300, 820, "no", size=27))
+    s.append(flow_label(L + 44, 924, "yes", size=27, anchor="start"))
+    s.append(line(S - 210, 1480, L + 200, 1480))
+    s.append(flow_label(L + 236, 1460, "no", size=27))
+    s.append(flow_label(S + 44, 1570, "yes", size=27, anchor="start"))
+
+    def stop(x, y):
+        s.append(f'<circle cx="{x}" cy="{y}" r="24" fill="none" stroke="{INK}" stroke-width="3.6"/>')
+        s.append(f'<circle cx="{x}" cy="{y}" r="14" fill="{INK}"/>')
+
+    # every branch has to finish somewhere, including the two that stop early
+    s.append(line(T, 884, T, 952))
+    stop(T, 986)
+    s.append(line(L, 1524, L, 1592))
+    stop(L, 1626)
+    s.append(line(S, 2026, S, 2068))
+    stop(S, 2102)
+    write("fig_system_activity.svg", W, H, "\n".join(s))
+
+
 if __name__ == "__main__":
     use_case()
+    system_activity()
     activity()
     dfd0()
     dfd1()

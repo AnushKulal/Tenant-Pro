@@ -570,7 +570,10 @@ def build(out_path, pagemap=None):
             with open(path, "rb") as fh:
                 head = fh.read(33)
             w, h = struct.unpack(">II", head[16:24])
-            max_w, max_h = 5.85, 5.6
+            # drawn figures may run tall and get a page to themselves; phone
+            # screenshots are capped shorter so they sit beside their text
+            max_w = 5.85
+            max_h = 8.5 if os.path.basename(fname).startswith("fig_") else 5.6
             scale = min(max_w / w, max_h / h)
             p.add_run().add_picture(path, width=Inches(w * scale))
             para(doc, caption, align=WD_ALIGN_PARAGRAPH.CENTER, italic=True, size=Pt(11),
