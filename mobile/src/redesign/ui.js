@@ -12,11 +12,16 @@
 //   an ionicon via -webkit-mask          → <Glyph name="search" size={15} color={t.fg}/>
 //   an avatar <img> round                 → <Face uri={…} size={34}/>
 import React from 'react';
-import { View, Text, Pressable, Image, StyleSheet, TextInput, Platform } from 'react-native';
+import { View, Text, Pressable, Image, StyleSheet, TextInput, Platform, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useT } from './ThemeContext';
 import { grotesk, mono as monoFamily } from './theme';
 import { qrMatrix } from './qr';
+
+// Pressable with an animated style. Created once at module scope: building it
+// inside the component would make a new component type on every render, which
+// unmounts and remounts the whole subtree and loses anything inside it.
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 // ── Text ─────────────────────────────────────────────────────────────────────
 // w: weight (400/500/600/700). s: size px. lh: line-height MULTIPLIER (like CSS
@@ -109,17 +114,51 @@ export function Pill({ children, bg, fg, style }) {
 
 // ── Pressable ─────────────────────────────────────────────────────────────────
 // Mirrors the prototype's .rw:active{opacity:.6}. Use for every tappable surface.
-export function Press({ children, onPress, style, disabled, hitSlop, ...rest }) {
+// Every touchable in the app goes through this, which is why the press feel lives
+// here rather than being wrapped around individual buttons. One change and the
+// whole app responds the same way; the alternative was two hundred call sites
+// slowly drifting apart.
+//
+// The dip in opacity on its own always looked flat. A spring back to full size
+// reads as something that was pushed — and this app routes by state rather than
+// through a navigator, so a tap that opens a sheet or swaps a screen has no
+// system-supplied "that did something" of its own. This is it.
+//
+// Transform and opacity only, so it runs on the native driver and off the JS
+// thread. `scale` is how far it travels: 1 switches the movement off for the
+// handful of places where a shrinking box would look wrong, such as a full-width
+// row inside a list that is already animating.
+export function Press({ children, onPress, style, disabled, hitSlop, scale = 0.97, ...rest }) {
+    // One driver for both scale and opacity.
+    //
+    // The style is a plain ARRAY, never a function. Pressable resolves a
+    // style-as-function itself, and an Animated wrapper around it does not — it
+    // takes the function for a style object and the result is a view with none of
+    // its own styling at all. That is not theoretical: it stripped the background
+    // off every button in the dock, which went from white cards to bare labels.
+    // The pressed state therefore comes from this value rather than from the
+    // `pressed` argument, which also keeps the two in step.
+    const v = React.useRef(new Animated.Value(0)).current;
+    const to = (toValue) => {
+        if (disabled) return;
+        Animated.spring(v, { toValue, useNativeDriver: true, speed: 44, bounciness: 4 }).start();
+    };
+    const anim = {
+        opacity: v.interpolate({ inputRange: [0, 1], outputRange: [1, 0.72] }),
+        transform: [{ scale: v.interpolate({ inputRange: [0, 1], outputRange: [1, scale] }) }]
+    };
     return (
-        <Pressable
+        <AnimatedPressable
             onPress={onPress}
             disabled={disabled}
             hitSlop={hitSlop}
-            style={({ pressed }) => [style, pressed && !disabled ? { opacity: 0.6 } : null]}
             {...rest}
+            onPressIn={(e) => { to(1); if (rest.onPressIn) rest.onPressIn(e); }}
+            onPressOut={(e) => { to(0); if (rest.onPressOut) rest.onPressOut(e); }}
+            style={[style, anim]}
         >
             {children}
-        </Pressable>
+        </AnimatedPressable>
     );
 }
 

@@ -4,6 +4,7 @@ import { useVm } from '../AppContext';
 import { useT } from '../ThemeContext';
 import { T, Row, Press, Glyph, Face, Avatar, SearchBar } from '../ui';
 import { KeyboardScroll } from '../keyboard';
+import { Stagger } from '../motion';
 
 const col = (v, t) => (v && (v[0] === '#' || v.startsWith('rgb')) ? v : t[v]);
 
@@ -77,48 +78,50 @@ export default function PeopleScreen() {
             {/* People list */}
             <View style={{ gap: 8 }}>
                 {vm.people.map((p, i) => (
-                    <Press key={i} onPress={p.open}>
-                        <Row
-                            gap={12}
-                            style={{
-                                width: '100%',
-                                borderRadius: 20,
-                                backgroundColor: col(p.cardBg, t),
-                                borderWidth: 1,
-                                borderColor: col(p.edge, t) === t.amber ? t.amber : t.line,
-                                paddingVertical: 13,
-                                paddingHorizontal: 15,
-                                overflow: 'hidden'
-                            }}
-                        >
-                            {/* A wider rail on an unassigned tenant, so the row that
-                                needs action is the one that catches the eye. */}
-                            <View style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: col(p.edge, t) === t.amber ? 4 : 3, backgroundColor: col(p.edge, t) }} />
-                            <Avatar uri={p.img} name={p.name} size={44} radius={14} />
-                            <View style={{ flex: 1, minWidth: 0 }}>
-                                <T w={600} s={15} lh={1.2} c={t.fg} numberOfLines={1}>{p.name}</T>
-                                <T mono w={600} s={10} lh={1.4} ls={0.08} c={col(p.subFg, t)} numberOfLines={1} style={{ marginTop: 4 }}>{p.sub}</T>
-                                {p.score ? (
-                                    <T mono w={600} s={9} lh={1.4} ls={0.08} c={col(p.scoreFg, t)} numberOfLines={1} style={{ marginTop: 3 }}>{p.score}</T>
-                                ) : null}
-                            </View>
-                            <View style={{ alignItems: 'flex-end' }}>
-                                <T w={700} s={15} lh={1} c={t.fg}>{p.rent}</T>
-                                <View
-                                    style={{
-                                        marginTop: 6,
-                                        paddingVertical: 3,
-                                        paddingHorizontal: 7,
-                                        borderRadius: 6,
-                                        backgroundColor: col(p.chipBg, t)
-                                    }}
-                                >
-                                    <T mono w={600} s={8} lh={1.3} ls={0.08} c={col(p.chipFg, t)}>{p.chip}</T>
+                        <Stagger index={i} key={i}>
+                        <Press key={i} onPress={p.open}>
+                            <Row
+                                gap={12}
+                                style={{
+                                    width: '100%',
+                                    borderRadius: 20,
+                                    backgroundColor: col(p.cardBg, t),
+                                    borderWidth: 1,
+                                    borderColor: col(p.edge, t) === t.amber ? t.amber : t.line,
+                                    paddingVertical: 13,
+                                    paddingHorizontal: 15,
+                                    overflow: 'hidden'
+                                }}
+                            >
+                                {/* A wider rail on an unassigned tenant, so the row that
+                                    needs action is the one that catches the eye. */}
+                                <View style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: col(p.edge, t) === t.amber ? 4 : 3, backgroundColor: col(p.edge, t) }} />
+                                <Avatar uri={p.img} name={p.name} size={44} radius={14} />
+                                <View style={{ flex: 1, minWidth: 0 }}>
+                                    <T w={600} s={15} lh={1.2} c={t.fg} numberOfLines={1}>{p.name}</T>
+                                    <T mono w={600} s={10} lh={1.4} ls={0.08} c={col(p.subFg, t)} numberOfLines={1} style={{ marginTop: 4 }}>{p.sub}</T>
+                                    {p.score ? (
+                                        <T mono w={600} s={9} lh={1.4} ls={0.08} c={col(p.scoreFg, t)} numberOfLines={1} style={{ marginTop: 3 }}>{p.score}</T>
+                                    ) : null}
                                 </View>
-                            </View>
-                        </Row>
-                    </Press>
-                ))}
+                                <View style={{ alignItems: 'flex-end' }}>
+                                    <T w={700} s={15} lh={1} c={t.fg}>{p.rent}</T>
+                                    <View
+                                        style={{
+                                            marginTop: 6,
+                                            paddingVertical: 3,
+                                            paddingHorizontal: 7,
+                                            borderRadius: 6,
+                                            backgroundColor: col(p.chipBg, t)
+                                        }}
+                                    >
+                                        <T mono w={600} s={8} lh={1.3} ls={0.08} c={col(p.chipFg, t)}>{p.chip}</T>
+                                    </View>
+                                </View>
+                            </Row>
+                        </Press>
+                        </Stagger>
+                    ))}
             </View>
         </KeyboardScroll>
     );

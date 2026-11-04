@@ -3,6 +3,7 @@ import { View, ScrollView, Image, RefreshControl } from 'react-native';
 import { useVm } from '../AppContext';
 import { useT } from '../ThemeContext';
 import { T, Eyebrow, Card, Row, Press, Glyph, IconChip, Face, Avatar } from '../ui';
+import { Stagger } from '../motion';
 
 export default function OverviewScreen() {
     const vm = useVm();
@@ -211,32 +212,34 @@ export default function OverviewScreen() {
 
             <View style={{ gap: 8 }}>
                 {vm.tickets.map((tk, i) => (
-                    <Card key={i} radius={20} pad={0} rail={col(tk.fg)}>
-                        <View style={{ paddingVertical: 14, paddingHorizontal: 15 }}>
-                            <Row align="flex-start" gap={11}>
-                                <Image source={{ uri: tk.img }} style={{ width: 36, height: 36, borderRadius: 12, backgroundColor: t.ink3 }} resizeMode="cover" />
-                                <View style={{ flex: 1, minWidth: 0 }}>
-                                    <T w={600} s={14} lh={1.25} c={t.fg}>{tk.title}</T>
-                                    <T mono w={600} s={10} lh={1.4} ls={0.06} c={t.fg3} numberOfLines={1} style={{ marginTop: 5 }}>{tk.meta}</T>
-                                </View>
-                                <View style={{ paddingVertical: 4, paddingHorizontal: 8, borderRadius: 7, backgroundColor: col(tk.bg) }}>
-                                    <T mono w={600} s={10} lh={1.3} ls={0.05} c={col(tk.fg)}>{tk.priority}</T>
-                                </View>
-                            </Row>
-                            <Row align="center" gap={6} style={{ marginTop: 12 }}>
-                                <T mono w={600} s={9} lh={1} ls={0.08} c={col(tk.statusFg)} style={{ flex: 1 }}>{tk.status}</T>
-                                {/* Just Read. An "Open" button beside a status already
-                                    reading OPEN said nothing, and a dashboard is for
-                                    seeing what needs doing — the doing happens in the
-                                    ticket itself. */}
-                                <Press onPress={tk.read} style={{ flexDirection: 'row', alignItems: 'center', columnGap: 6, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 11, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line }}>
-                                    <T w={600} s={11} lh={1} c={t.fg}>Read</T>
-                                    <Glyph name="chevron-forward" size={12} color={t.fg3} />
-                                </Press>
-                            </Row>
-                        </View>
-                    </Card>
-                ))}
+                        <Stagger index={i} key={i}>
+                        <Card key={i} radius={20} pad={0} rail={col(tk.fg)}>
+                            <View style={{ paddingVertical: 14, paddingHorizontal: 15 }}>
+                                <Row align="flex-start" gap={11}>
+                                    <Image source={{ uri: tk.img }} style={{ width: 36, height: 36, borderRadius: 12, backgroundColor: t.ink3 }} resizeMode="cover" />
+                                    <View style={{ flex: 1, minWidth: 0 }}>
+                                        <T w={600} s={14} lh={1.25} c={t.fg}>{tk.title}</T>
+                                        <T mono w={600} s={10} lh={1.4} ls={0.06} c={t.fg3} numberOfLines={1} style={{ marginTop: 5 }}>{tk.meta}</T>
+                                    </View>
+                                    <View style={{ paddingVertical: 4, paddingHorizontal: 8, borderRadius: 7, backgroundColor: col(tk.bg) }}>
+                                        <T mono w={600} s={10} lh={1.3} ls={0.05} c={col(tk.fg)}>{tk.priority}</T>
+                                    </View>
+                                </Row>
+                                <Row align="center" gap={6} style={{ marginTop: 12 }}>
+                                    <T mono w={600} s={9} lh={1} ls={0.08} c={col(tk.statusFg)} style={{ flex: 1 }}>{tk.status}</T>
+                                    {/* Just Read. An "Open" button beside a status already
+                                        reading OPEN said nothing, and a dashboard is for
+                                        seeing what needs doing — the doing happens in the
+                                        ticket itself. */}
+                                    <Press onPress={tk.read} style={{ flexDirection: 'row', alignItems: 'center', columnGap: 6, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 11, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line }}>
+                                        <T w={600} s={11} lh={1} c={t.fg}>Read</T>
+                                        <Glyph name="chevron-forward" size={12} color={t.fg3} />
+                                    </Press>
+                                </Row>
+                            </View>
+                        </Card>
+                        </Stagger>
+                    ))}
             </View>
 
             {/* This button has now read as "disabled" twice, for two different reasons,
@@ -271,18 +274,20 @@ export default function OverviewScreen() {
 
             <View style={{ borderRadius: 22, backgroundColor: t.ink2, borderWidth: 1, borderColor: t.line, overflow: 'hidden' }}>
                 {vm.recent.map((p, i) => (
-                    <Row key={i} align="center" gap={12} style={{ paddingVertical: 13, paddingHorizontal: 16, borderBottomWidth: 1, borderColor: t.line }}>
-                        <Image source={{ uri: p.img }} style={{ width: 34, height: 34, borderRadius: 11, backgroundColor: t.ink3 }} resizeMode="cover" />
-                        <View style={{ flex: 1, minWidth: 0 }}>
-                            <T w={600} s={14} lh={1.2}>{p.name}</T>
-                            <T mono w={600} s={10} lh={1.4} ls={0.08} c={t.fg3} style={{ marginTop: 3 }}>{p.sub}</T>
-                        </View>
-                        <View style={{ alignItems: 'flex-end' }}>
-                            <T w={700} s={14} lh={1} c={t.pos}>{p.amt}</T>
-                            <T mono w={600} s={9} lh={1} ls={0.06} c={t.fg3} style={{ marginTop: 5 }}>{p.date}</T>
-                        </View>
-                    </Row>
-                ))}
+                        <Stagger index={i} key={i}>
+                        <Row key={i} align="center" gap={12} style={{ paddingVertical: 13, paddingHorizontal: 16, borderBottomWidth: 1, borderColor: t.line }}>
+                            <Image source={{ uri: p.img }} style={{ width: 34, height: 34, borderRadius: 11, backgroundColor: t.ink3 }} resizeMode="cover" />
+                            <View style={{ flex: 1, minWidth: 0 }}>
+                                <T w={600} s={14} lh={1.2}>{p.name}</T>
+                                <T mono w={600} s={10} lh={1.4} ls={0.08} c={t.fg3} style={{ marginTop: 3 }}>{p.sub}</T>
+                            </View>
+                            <View style={{ alignItems: 'flex-end' }}>
+                                <T w={700} s={14} lh={1} c={t.pos}>{p.amt}</T>
+                                <T mono w={600} s={9} lh={1} ls={0.06} c={t.fg3} style={{ marginTop: 5 }}>{p.date}</T>
+                            </View>
+                        </Row>
+                        </Stagger>
+                    ))}
             </View>
                 </>
             )}

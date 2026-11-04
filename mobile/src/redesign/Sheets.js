@@ -9,7 +9,7 @@ import { useVm } from './AppContext';
 import { useT } from './ThemeContext';
 import { grotesk } from './theme';
 import { T, Eyebrow, Row, Press, Glyph, Field, Avatar, Composer, DocThumb, NoteBox } from './ui';
-import { useSheetIn, useFadeIn, Stagger, Pop } from './motion';
+import { useSheetIn, useFadeIn, Stagger } from './motion';
 import { useIdShield } from './shield';
 import { KeyboardScroll, useKeyboardHeight } from './keyboard';
 
@@ -2872,7 +2872,6 @@ export default function Sheets() {
                             tapped. A tester went for it, got nothing, and said so.
                             It now opens the profile — which is what every row below
                             it would have you believe it already did. */}
-                        <Pop>
                         <Press
                             onPress={vm.goProfile}
                             style={{ flexDirection: 'row', alignItems: 'center', gap: 13, marginBottom: 18, paddingVertical: 10, paddingHorizontal: 11, marginHorizontal: -11, borderRadius: 18 }}
@@ -2890,7 +2889,6 @@ export default function Sheets() {
                             </View>
                             <Glyph name="chevron-forward" size={16} color={t.fg3} />
                         </Press>
-                        </Pop>
                         {(vm.menuRows || []).map((m, i) => (
                             <Press key={i} onPress={m.go} style={{ flexDirection: 'row', alignItems: 'center', gap: 13, width: '100%', paddingVertical: 13, paddingHorizontal: 12, borderRadius: 16, borderWidth: 1, borderColor: t.line, backgroundColor: t.ink3, marginBottom: 8 }}>
                                 <View style={{ width: 34, height: 34, borderRadius: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: col(m.bg) }}>

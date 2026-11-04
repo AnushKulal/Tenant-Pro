@@ -3,6 +3,7 @@ import { View, ScrollView } from 'react-native';
 import { useVm } from '../AppContext';
 import { useT } from '../ThemeContext';
 import { T, Eyebrow, Card, Row, Pill, Press, Glyph, Face, Avatar } from '../ui';
+import { Stagger } from '../motion';
 
 export default function MeScreen() {
     const vm = useVm();
@@ -142,13 +143,15 @@ export default function MeScreen() {
                             <T w={400} s={12.5} lh={1.5} c={t.fg3} style={{ paddingBottom: 4 }}>{vm.myTimelineEmptyLine}</T>
                         )}
                         {vm.myTimeline.map((mt2, i) => (
-                            <Row key={i} gap={12} style={{ paddingVertical: 9 }}>
-                                <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: col(mt2.dot) }} />
-                                <T w={500} s={13} lh={1} c={t.fg} style={{ flex: 1 }}>{mt2.month}</T>
-                                <T mono w={600} s={9} lh={1} ls={0.06} c={t.fg3} style={{ marginRight: 10 }}>{mt2.method}</T>
-                                <T w={700} s={13} lh={1} c={col(mt2.fg)}>{mt2.amt}</T>
-                            </Row>
-                        ))}
+                        <Stagger index={i} key={i}>
+                                <Row key={i} gap={12} style={{ paddingVertical: 9 }}>
+                                    <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: col(mt2.dot) }} />
+                                    <T w={500} s={13} lh={1} c={t.fg} style={{ flex: 1 }}>{mt2.month}</T>
+                                    <T mono w={600} s={9} lh={1} ls={0.06} c={t.fg3} style={{ marginRight: 10 }}>{mt2.method}</T>
+                                    <T w={700} s={13} lh={1} c={col(mt2.fg)}>{mt2.amt}</T>
+                                </Row>
+                        </Stagger>
+                    ))}
                     </Card>
 
                     {/* Receipts — the most recent few, with a way through to the rest.
@@ -165,22 +168,24 @@ export default function MeScreen() {
                             </Press>
                         </Row>
                         {vm.myPayments.map((mp, i) => (
-                            <Row key={i} gap={12} style={{ paddingVertical: 13, paddingHorizontal: 18, borderTopWidth: 1, borderTopColor: t.line }}>
-                                <View style={{ width: 34, height: 34, borderRadius: 11, backgroundColor: t.lsoft, alignItems: 'center', justifyContent: 'center' }}>
-                                    <Glyph name="checkmark" size={16} color={t.pos} />
-                                </View>
-                                <View style={{ flex: 1, minWidth: 0 }}>
-                                    <T w={600} s={14} lh={1.2}>{mp.amt}</T>
-                                    <T mono w={600} s={10} lh={1.4} ls={0.06} c={t.fg3} style={{ marginTop: 4 }}>{mp.sub}</T>
-                                </View>
-                                {/* Was a PDF button that generated nothing. The
-                                    reference is what a tenant actually needs — it is
-                                    how a landlord finds the credit in their bank. */}
-                                {!!mp.ref && (
-                                    <T mono w={600} s={9} lh={1} ls={0.06} c={t.fg3}>{mp.ref}</T>
-                                )}
-                            </Row>
-                        ))}
+                        <Stagger index={i} key={i}>
+                                <Row key={i} gap={12} style={{ paddingVertical: 13, paddingHorizontal: 18, borderTopWidth: 1, borderTopColor: t.line }}>
+                                    <View style={{ width: 34, height: 34, borderRadius: 11, backgroundColor: t.lsoft, alignItems: 'center', justifyContent: 'center' }}>
+                                        <Glyph name="checkmark" size={16} color={t.pos} />
+                                    </View>
+                                    <View style={{ flex: 1, minWidth: 0 }}>
+                                        <T w={600} s={14} lh={1.2}>{mp.amt}</T>
+                                        <T mono w={600} s={10} lh={1.4} ls={0.06} c={t.fg3} style={{ marginTop: 4 }}>{mp.sub}</T>
+                                    </View>
+                                    {/* Was a PDF button that generated nothing. The
+                                        reference is what a tenant actually needs — it is
+                                        how a landlord finds the credit in their bank. */}
+                                    {!!mp.ref && (
+                                        <T mono w={600} s={9} lh={1} ls={0.06} c={t.fg3}>{mp.ref}</T>
+                                    )}
+                                </Row>
+                        </Stagger>
+                    ))}
                     </Card>)}
 
                     {/* Documents */}

@@ -3,7 +3,6 @@ import { View, ScrollView } from 'react-native';
 import { useVm } from '../AppContext';
 import { useT } from '../ThemeContext';
 import { T, Eyebrow, Card, Row, Pill, Press, Glyph, IconChip, Face, Avatar } from '../ui';
-import { Pop } from '../motion';
 import AlertBell from '../AlertBell';
 
 export default function PortalHomeScreen() {
@@ -23,7 +22,6 @@ export default function PortalHomeScreen() {
                     the only thing a face in the corner of an app has ever meant.
                     The whole block is the target, not just the circle: a 42px
                     avatar is a small thing to hit with a thumb. */}
-                <Pop>
                 <Press
                     onPress={vm.goTMe}
                     style={{ flexDirection: 'row', alignItems: 'center', columnGap: 12, paddingVertical: 6, paddingHorizontal: 7, marginHorizontal: -7, borderRadius: 16 }}
@@ -38,7 +36,6 @@ export default function PortalHomeScreen() {
                         </T>
                     </View>
                 </Press>
-                </Pop>
                 <View style={{ flex: 1 }} />
                 {/* Same bell the landlord has, same component. On the tenant's home
                     screen because this is where they land — an alert they have to go

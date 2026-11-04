@@ -3,6 +3,7 @@ import { View, ScrollView, Image } from 'react-native';
 import { useVm } from '../AppContext';
 import { useT } from '../ThemeContext';
 import { T, Eyebrow, Row, Press, Glyph } from '../ui';
+import { Stagger } from '../motion';
 
 export default function MyPlaceScreen() {
     const vm = useVm();
@@ -115,14 +116,16 @@ export default function MyPlaceScreen() {
                         <View style={{ borderRadius: 22, backgroundColor: t.ink2, borderWidth: 1, borderColor: t.line, paddingVertical: 16, paddingHorizontal: 18, marginBottom: 8 }}>
                             <Eyebrow s={10} ls={0.12} c={t.fg3} style={{ marginBottom: 12 }}>ROOMMATES</Eyebrow>
                             {vm.roommates.map((rm, i) => (
-                                <Row key={i} gap={12} style={{ paddingVertical: 7 }}>
-                                    <Image source={{ uri: rm.img }} style={{ width: 38, height: 38, borderRadius: 12, backgroundColor: t.ink3 }} resizeMode="cover" />
-                                    <View style={{ flex: 1 }}>
-                                        <T w={600} s={14} lh={1.2}>{rm.name}</T>
-                                        <T mono w={600} s={10} lh={1.4} ls={0.06} c={t.fg3} style={{ marginTop: 4 }}>{rm.co}</T>
-                                    </View>
-                                </Row>
-                            ))}
+                        <Stagger index={i} key={i}>
+                                    <Row key={i} gap={12} style={{ paddingVertical: 7 }}>
+                                        <Image source={{ uri: rm.img }} style={{ width: 38, height: 38, borderRadius: 12, backgroundColor: t.ink3 }} resizeMode="cover" />
+                                        <View style={{ flex: 1 }}>
+                                            <T w={600} s={14} lh={1.2}>{rm.name}</T>
+                                            <T mono w={600} s={10} lh={1.4} ls={0.06} c={t.fg3} style={{ marginTop: 4 }}>{rm.co}</T>
+                                        </View>
+                                    </Row>
+                        </Stagger>
+                    ))}
                         </View>
                     )}
 

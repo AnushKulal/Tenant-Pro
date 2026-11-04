@@ -17,7 +17,7 @@ import { useVm } from '../AppContext';
 import { useT } from '../ThemeContext';
 import { T, Card, Row, Press, Glyph, SearchBar } from '../ui';
 import { KeyboardScroll } from '../keyboard';
-import { Stagger, Pop } from '../motion';
+import { Stagger } from '../motion';
 
 export default function FindScreen() {
     const vm = useVm();
@@ -76,7 +76,6 @@ export default function FindScreen() {
             />
 
             <Row gap={8} style={{ marginTop: 10 }}>
-                <Pop>
                     <Press
                         onPress={d.openFilters}
                         style={{ flexDirection: 'row', alignItems: 'center', columnGap: 7, ...chip(d.activeCount > 0) }}
@@ -86,8 +85,6 @@ export default function FindScreen() {
                             {d.filterLabel.toUpperCase()}
                         </T>
                     </Press>
-                </Pop>
-                <Pop>
                     <Press
                         onPress={() => d.useLocation(5)}
                         style={{ flexDirection: 'row', alignItems: 'center', columnGap: 7, ...chip(!!d.filters.within) }}
@@ -97,7 +94,6 @@ export default function FindScreen() {
                             : <Glyph name="navigate-outline" size={14} color={d.filters.within ? t.on : t.fg2} />}
                         <T mono w={600} s={9} lh={1} ls={0.08} c={d.filters.within ? t.on : t.fg2}>NEAR ME</T>
                     </Press>
-                </Pop>
             </Row>
 
             <ScrollView
@@ -150,7 +146,6 @@ export default function FindScreen() {
                    Capped inside Stagger: past about the tenth card the delay is
                    longer than anybody waits before scrolling. */
                 <Stagger key={r.id} index={i}>
-                    <Pop>
                         <Press
                             onPress={r.open}
                             style={{ borderRadius: 22, overflow: 'hidden', backgroundColor: t.ink2, borderWidth: 1, borderColor: t.line, marginBottom: 10 }}
@@ -203,7 +198,6 @@ export default function FindScreen() {
                                 </Row>
                             ) : null}
                         </Press>
-                    </Pop>
                 </Stagger>
             ))}
 

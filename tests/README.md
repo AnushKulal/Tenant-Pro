@@ -15,6 +15,21 @@ is not already here — they are plain Node scripts that exit non-zero on failur
 | `ui.e2e.js` | the real app in a browser, clicking real buttons | a web build + Chromium |
 | `ui.discover.e2e.js` | place discovery, the profile surfaces, and listing a room | a web build + Chromium + a **re-seeded** DB |
 
+### Picking `E2E_TENANT`
+
+`ui.e2e.js` walks the tenant to the pay screen and expects to be offered UPI. The
+seed deliberately leaves ONE tenant with a payment already declared and awaiting
+the landlord, and that tenant's pay screen correctly says "awaiting confirmation"
+instead — so pointing the suite at them produces two failures that look like a
+regression in the pay screen and are not. Use one of the others:
+
+```bash
+mysql -e "SELECT tu.email FROM payments p
+          JOIN tenants t ON t.id = p.tenant_id
+          JOIN tenant_users tu ON tu.tenant_id = t.id
+          WHERE p.status = 'Declared'"   # <- do NOT use this one
+```
+
 ```bash
 # the four that need nothing but node
 cd backend && node ../tests/secretbox.test.js
