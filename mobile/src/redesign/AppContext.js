@@ -326,6 +326,18 @@ const REMINDER_LEAD = 2;
 
 const INITIAL_STATE = {
   route: 'boot', overlay: null, filter: 'all', who: 'amit', method: 'UPI', toast: '',
+  // Signing out is not instant, and it used to look like nothing had happened.
+  //
+  // It makes two calls to the server before anything on screen changes: hand back
+  // the push token, then end the session. On a free-tier host that has gone to
+  // sleep the first of those can take most of a minute, during which the sheet
+  // sits there with the button looking untapped. A tester reported it as the app
+  // being broken or laggy, which is the correct conclusion from what they could
+  // see — the app had given them nothing to tell them otherwise.
+  //
+  // Everything else in this app that waits on the network says so (`busy`,
+  // `saving`, 'Sending…'). This is the same flag for the one place that did not.
+  signingOut: false,
   // 'system' means follow the phone. RedesignRoot already reads useColorScheme for
   // this; the default was pinned to 'dark', so the app ignored a light phone.
   // `lq` is the ledger's own search box. It had a search bar drawn on it from the
@@ -4023,7 +4035,14 @@ function deriveVm(s, api) {
 
     isSignOut: s.overlay === 'signout',
     askSignOut: () => set('overlay', 'signout'),
-    confirmSignOut: () => api.signOut(),
+    // Read by the sheet to show the button as working. It clears itself: signing
+    // out ends in setState({ ...INITIAL_STATE }), where it is false again.
+    signingOut: !!s.signingOut,
+    // Ignored while one is already running. Two sign-outs in flight would send the
+    // refresh token twice, and the server reads a spent refresh token as theft —
+    // so an impatient double-tap on an unresponsive button could end every session
+    // on the account rather than just this one.
+    confirmSignOut: () => { if (!s.signingOut) api.signOut(); },
     isProfile: s.route === 'profile',
     // The owner's dock button opens a menu rather than being a tab, so it never
     // showed a selected state — which made "where am I?" unanswerable from the
@@ -8109,7 +8128,24 @@ export function AppProvider({ children }) {
     setState({ pushState: outcome });
   }, [setState]);
 
+  // How long sign-out will WAIT on the network before finishing without it.
+  //
+  // Not a cancellation: the request carries on and very probably still lands. What
+  // ends is the user staring at a sheet. Both calls below are already written to
+  // swallow their own failures, which is the same admission in slower form — if a
+  // dead network must not fail the sign-out, neither should a slow one hold it
+  // open for the fifty seconds a sleeping free-tier host can take to wake.
+  const waitCap = (p, ms) => Promise.race([
+    Promise.resolve(p).catch(() => null),
+    new Promise((res) => setTimeout(res, ms))
+  ]);
+
   const signOut = useCallback(async () => {
+    // Say so on screen before the first await, not after the last one. This is the
+    // whole fix for "I pressed it and nothing happened": see `signingOut` in
+    // INITIAL_STATE.
+    setState({ signingOut: true });
+
     // Forget the device FIRST, while the token still authenticates. After the reset
     // below there is nothing to authorise the call with, and the next person to sign in
     // on this handset would keep receiving the last person's notifications.
@@ -8124,7 +8160,8 @@ export function AppProvider({ children }) {
         const bind = stateRef.current.session && stateRef.current.session.role === 'tenant'
           ? apiPortal
           : apiOwner;
-        await bind.dropPushToken(token);
+        // Capped: this is a courtesy to the push service, not the sign-out.
+        await waitCap(bind.dropPushToken(token), 2500);
       }
     } catch (e) { /* signing out must never fail on this */ }
     pushRef.current = null;
@@ -8137,7 +8174,13 @@ export function AppProvider({ children }) {
     //
     // Awaited but incapable of failing: endServerSession swallows its own errors, so
     // a dead network costs a moment, not the sign-out.
-    try { await endServerSession(); } catch (e) { /* local sign-out is what matters */ }
+    // Capped at four seconds. Longer than the server normally needs and short
+    // enough that nobody concludes the app has hung — and if the cap does fire, the
+    // request is still in flight and will very likely revoke the session anyway. A
+    // session that outlives this by its remaining life is a worse outcome than a
+    // sign-out that works; a sign-out that appears not to work is worse than both,
+    // because the user force-quits the app and the session survives regardless.
+    try { await waitCap(endServerSession(), 4000); } catch (e) { /* local sign-out is what matters */ }
 
     try { await clearSession(); } catch (e) { /* clearing is best-effort */ }
     setToken(null);

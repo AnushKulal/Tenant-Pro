@@ -706,16 +706,35 @@ export default function Sheets() {
                                 <T w={700} s={20} lh={1.1} style={{ letterSpacing: -0.7 }}>Sign out?</T>
                                 <T w={400} s={13} lh={1.5} c={t.fg2} style={{ marginTop: 7 }}>You will need your email and password to get back in.</T>
                             </View>
-                            <Press onPress={vm.closeOverlay} style={{ width: 34, height: 34, borderRadius: 12, borderWidth: 1, borderColor: t.line, alignItems: 'center', justifyContent: 'center' }}>
+                            <Press
+                                onPress={vm.closeOverlay}
+                                disabled={vm.signingOut}
+                                style={{ width: 34, height: 34, borderRadius: 12, borderWidth: 1, borderColor: t.line, alignItems: 'center', justifyContent: 'center', opacity: vm.signingOut ? 0.4 : 1 }}
+                            >
                                 <Glyph name="close" size={17} color={t.fg2} />
                             </Press>
                         </Row>
+                        {/* Signing out is two network calls before anything on
+                            screen changes, and on a sleeping host the first can
+                            take most of a minute. Until this said so, the button
+                            looked untapped and the app looked broken. Same busy
+                            treatment every other waiting button in this file
+                            already uses. */}
                         <Row style={{ gap: 8 }}>
-                            <Press onPress={vm.closeOverlay} style={{ flex: 1, paddingVertical: 15, borderRadius: 999, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line, alignItems: 'center' }}>
+                            <Press
+                                onPress={vm.closeOverlay}
+                                disabled={vm.signingOut}
+                                style={{ flex: 1, paddingVertical: 15, borderRadius: 999, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line, alignItems: 'center', opacity: vm.signingOut ? 0.4 : 1 }}
+                            >
                                 <T w={600} s={14} lh={1} c={t.fg}>No, stay</T>
                             </Press>
-                            <Press onPress={vm.confirmSignOut} style={{ flex: 1, paddingVertical: 15, borderRadius: 999, backgroundColor: t.coral, alignItems: 'center' }}>
-                                <T w={700} s={14} lh={1} c="#fff">Yes, sign out</T>
+                            <Press
+                                onPress={vm.confirmSignOut}
+                                disabled={vm.signingOut}
+                                style={{ flex: 1, flexDirection: 'row', columnGap: 8, paddingVertical: 15, borderRadius: 999, backgroundColor: t.coral, alignItems: 'center', justifyContent: 'center', opacity: vm.signingOut ? 0.85 : 1 }}
+                            >
+                                {vm.signingOut ? <ActivityIndicator size="small" color="#fff" /> : null}
+                                <T w={700} s={14} lh={1} c="#fff">{vm.signingOut ? 'Signing out…' : 'Yes, sign out'}</T>
                             </Press>
                         </Row>
                     </View>

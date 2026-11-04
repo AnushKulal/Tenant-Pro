@@ -1,5 +1,22 @@
 # Rolling back
 
+## Start here
+
+| What is wrong | What to reach for | How long |
+|---|---|---|
+| The suggested-properties feature | Render env: `DISCOVER_ENABLED=false` | seconds |
+| Only the sample rooms on the Find screen | Render env: `SHOWCASE_LISTINGS=false` | seconds |
+| The header/content alignment | `mobile/src/appConfig.js` → `HEADER_LAYOUT = 'v1'`, then publish an OTA | ~2 min |
+| The whole redesign | `mobile/src/appConfig.js` → `UI_VERSION = 'v1'`, then publish an OTA | ~2 min |
+| The app in general, any cause | **Actions → Roll Back The App** | ~3 min |
+| The backend in general | revert `main` and push | ~5 min |
+| The app will not start at all | reinstall the APK from Releases | manual |
+
+The first four are flags: each reverts ONE decision that somebody wrote a flag
+for. The fifth reverts everything to a bundle that was already running on a real
+phone, including whatever nobody thought to flag. Reach for a flag when you know
+which feature is wrong, and for the rollback when you do not.
+
 ## The thing that catches people out
 
 **A `git revert` does not fix a broken app on a handset.** The phone has already
@@ -114,7 +131,17 @@ one that has taken the update are both correct, just different.
 
 ## If the app breaks after an update
 
-Publish a new OTA whose contents are the known-good bundle:
+**Actions → Roll Back The App.** Run it once with the `group` box empty: it lists
+the recent updates and changes nothing. Pick the version you want from that list,
+run it again with that ID, and it goes back on phones at the next launch.
+
+That is the fast path, and it needs no git at all. It works by republishing an
+update that already exists, which is the only thing that can work — Expo updates
+roll forward only, so "going back" always means publishing something newer whose
+contents are the older code.
+
+The git route does the same job from source, and is what you want when the good
+version is a commit rather than a published update:
 
 ```bash
 git fetch origin
@@ -124,7 +151,7 @@ git push -u origin rollback --force-with-lease
 
 Then **Actions → Publish OTA Update**, run against `rollback`.
 
-Phones pick it up on next launch. Nothing needs reinstalling.
+Either way, nothing needs reinstalling.
 
 ## If the app breaks so badly it cannot start
 

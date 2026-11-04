@@ -1,0 +1,106 @@
+name: Roll Back The App
+
+# Put an OLDER version of the app back on phones.
+#
+# ── Why this exists, and why a flag could not do it ──────────────────────────
+#
+# An Expo update only ever rolls FORWARD. There is no undo: a phone has already
+# downloaded a bundle and will keep running it until a NEWER one replaces it. So
+# "go back to the previous version" always means publishing something new whose
+# contents are the old, good code. `eas update:republish` does exactly that —
+# it takes an update that already exists and publishes it again, so it becomes
+# the newest one and every phone picks it up on next launch.
+#
+# A build-time flag in appConfig.js cannot do this. A flag reverts ONE decision
+# that somebody wrote a flag for, and only once a new bundle carrying that flag
+# has shipped. This reverts EVERYTHING back to a bundle that was already running
+# on a real phone, including whatever nobody thought to flag. The two are for
+# different days: the flag is for "this one feature is wrong", this is for
+# "ship what we had this morning".
+#
+# ── How to use it ────────────────────────────────────────────────────────────
+#
+#   1. Actions → Roll Back The App → Run workflow, leave `group` empty.
+#      It lists the recent updates and stops without changing anything.
+#   2. Find the one you want in the log. Each line has an ID, when it was
+#      published and the message it went out with.
+#   3. Run it again with that ID in `group`. That version goes back on phones.
+#
+# Step 1 changes nothing on purpose. The alternative is a box asking for an ID
+# you do not have yet, which invites guessing — on the one control you reach for
+# when something is already wrong.
+on:
+  workflow_dispatch:
+    inputs:
+      group:
+        description: 'Update group ID to put back. Leave EMPTY to just list recent updates.'
+        required: false
+        default: ''
+      message:
+        description: 'Message shown in the app for the rollback'
+        required: false
+        default: 'Reverting to a previous version'
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install EAS CLI
+        run: npm install -g eas-cli
+
+      - name: Install dependencies
+        working-directory: mobile
+        run: npm install
+
+      # Always listed, whether or not an ID was given: when one WAS given this is
+      # the record of what the channel looked like at the moment it was changed,
+      # which is the first thing anybody wants to know afterwards.
+      - name: List recent updates
+        working-directory: mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          for BRANCH in preview production; do
+            echo "──────── $BRANCH ────────"
+            eas update:list --branch "$BRANCH" --limit 15 --non-interactive || true
+          done
+
+      - name: Explain what to do next
+        if: ${{ github.event.inputs.group == '' }}
+        run: |
+          echo "Nothing was changed."
+          echo
+          echo "Pick the version you want from the list above — each group has an ID —"
+          echo "and run this workflow again with that ID in the 'group' box."
+
+      # Both channels, because the sideloaded APKs in use today are on 'preview'
+      # and Play Store builds would be on 'production'. Rolling back one and not
+      # the other leaves two different versions in the wild, which is the state
+      # that makes a bug report impossible to read.
+      - name: Put that version back
+        if: ${{ github.event.inputs.group != '' }}
+        working-directory: mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          # As data, never interpolated into the script body: a workflow input is
+          # arbitrary text, and pasting it into a shell is how a quote in a
+          # message becomes a broken script.
+          GROUP: ${{ github.event.inputs.group }}
+          MSG: ${{ github.event.inputs.message }}
+        run: |
+          M="$MSG"
+          if [ -z "$M" ]; then M="Reverting to a previous version"; fi
+          echo "Republishing group $GROUP"
+          eas update:republish --group "$GROUP" --message "$M" --non-interactive
+          echo
+          echo "Done. Phones pick this up the next time the app is launched."
+          echo "If the app will not start at all, an update cannot reach it —"
+          echo "reinstall the APK from Releases instead. See ROLLBACK.md."

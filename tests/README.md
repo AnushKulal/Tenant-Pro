@@ -16,6 +16,7 @@ is not already here — they are plain Node scripts that exit non-zero on failur
 | `ui.e2e.js` | the real app in a browser, clicking real buttons | a web build + Chromium |
 | `ui.discover.e2e.js` | place discovery, the profile surfaces, and listing a room | a web build + Chromium + a **re-seeded** DB |
 | `ui.layout.e2e.js` | the title really moving into the header as it scrolls away, and back | a web build + Chromium |
+| `ui.signout.e2e.js` | that signing out says so while it is happening, and finishes even when the server never answers | a web build + Chromium |
 
 ### Picking `E2E_TENANT`
 
