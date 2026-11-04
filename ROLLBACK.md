@@ -51,6 +51,18 @@ the variable back to `true` — or simply removing it — brings the feature bac
 every listing intact. Phones need no update either way; they ask the server on each
 visit to the screen.
 
+To confirm it took effect, run **Actions → Keep Backend Awake** and read the
+`discover` field it prints from `/healthz`:
+
+```
+"discover":"off (DISCOVER_ENABLED=false)"   switched off
+"discover":"on (19 rooms listed)"           on, with rooms to find
+"discover":"on (nothing listed yet)"        on, but the screen is empty
+```
+
+The last of those three is worth knowing apart from the others: it is a working
+feature with nothing in it, which needs rooms, not a rollback.
+
 This is deliberately the cheapest lever in this document. Reverting code takes
 minutes and can fail, and the moment you most want a feature gone is the moment you
 least want to be shipping something.

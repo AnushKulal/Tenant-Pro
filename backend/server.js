@@ -72,6 +72,22 @@ const initDb = require('./config/initDb');
 const { ensureDemoAccount } = require('./config/seedDemo');
 // Sample listed rooms, so discovery is not an empty screen on the day it ships.
 const { ensureShowcaseListings } = require('./config/seedShowcase');
+const { discoverEnabled } = require('./controllers/discoverController');
+
+// For /healthz. "off" when DISCOVER_ENABLED=false — the whole feature is hidden and
+// the room count would be misleading. Otherwise how many rooms a tenant can find:
+// zero is a working feature with an empty screen, which is a different problem from
+// a switched-off one and has to read differently.
+const discoverStatus = async () => {
+    if (!discoverEnabled()) return 'off (DISCOVER_ENABLED=false)';
+    try {
+        const [rows] = await db.query('SELECT COUNT(*) AS n FROM listings WHERE published = 1');
+        const n = Number(rows[0] && rows[0].n) || 0;
+        return n === 0 ? 'on (nothing listed yet)' : `on (${n} rooms listed)`;
+    } catch (e) {
+        return `on (count unavailable: ${e.code || e.message})`;
+    }
+};
 const { isMailConfigured, verifyMail, mailStatus } = require('./config/mailer');
 // Which storage the uploader chose. Reported by /healthz because the difference is
 // otherwise invisible until it hurts: in disk mode every uploaded photo and ID lives on
@@ -183,6 +199,12 @@ app.get('/healthz', async (req, res) => {
             // mean anybody has — each landlord's credentials are their own — only that
             // there is a key to seal them with.
             gateways: secretsReady() ? 'ready' : `not-configured (${secretsProblem()})`,
+            // Whether the Find screen has anything on it. Same reasoning as the
+            // fields above: a switched-off feature and a feature with nothing to
+            // show look identical from outside, and this URL is the only window
+            // onto the running server from a machine that cannot reach it directly.
+            // The count is of PUBLISHED rooms, which is exactly what a tenant sees.
+            discover: await discoverStatus(),
             time: new Date().toISOString()
         });
     } catch (e) {
