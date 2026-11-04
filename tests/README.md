@@ -1,6 +1,6 @@
 # Tests
 
-Six suites. None of them needs a CI service, a test framework, or a dependency that
+Nine suites. None of them needs a CI service, a test framework, or a dependency that
 is not already here — they are plain Node scripts that exit non-zero on failure.
 
 | File | What it drives | Needs |
@@ -13,6 +13,7 @@ is not already here — they are plain Node scripts that exit non-zero on failur
 | `refresh.e2e.js` | refresh tokens against a real server and a real MySQL | a running server + seeded DB + `E2E_SOCK` |
 | `api.e2e.js` | every HTTP endpoint, against a real server and a real MySQL | a running server + seeded DB |
 | `ui.e2e.js` | the real app in a browser, clicking real buttons | a web build + Chromium |
+| `ui.discover.e2e.js` | place discovery, the profile surfaces, and listing a room | a web build + Chromium + a **re-seeded** DB |
 
 ```bash
 # the four that need nothing but node

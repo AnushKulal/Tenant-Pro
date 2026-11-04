@@ -411,6 +411,15 @@ const INITIAL_STATE = {
   // for "no preference". Kept out of `look` so re-running the lookup does not have to
   // remember to clear it, and so closing the sheet can reset it in one place.
   askRoom: null,
+  // The landlord's listing for the room whose sheet is open. Loaded when the
+  // sheet opens rather than with the room list: most rooms are never listed, and
+  // fetching one per room would be a request per card on a screen that already
+  // renders fine without any of them.
+  ulist: {
+    unitId: null, loading: false, saving: false, loaded: false, error: '',
+    published: false, headline: '', description: '', deposit_months: 1,
+    preferred: 'Anyone', furnishing: 'Semi-furnished', amenities: []
+  },
 
   // ── ID documents ──
   // `docs` is whichever person's documents the landlord currently has open; it is
@@ -2788,12 +2797,65 @@ function deriveVm(s, api) {
     },
 
     isUnit: s.overlay === 'unit',
+    // The listing controls on the room sheet. Split out so the sheet markup stays
+    // readable and so the enum choices live beside the server's.
+    unitListing: (() => {
+      const l = s.ulist;
+      const AMEN = ['wifi', 'ac', 'food', 'laundry', 'parking', 'power', 'lift', 'housekeeping', 'water', 'security', 'kitchen'];
+      const LABEL = {
+        wifi: 'Wi-Fi', ac: 'AC', food: 'Meals', laundry: 'Laundry', parking: 'Parking',
+        power: 'Power backup', lift: 'Lift', housekeeping: 'Housekeeping',
+        water: 'Water', security: 'Security', kitchen: 'Kitchen'
+      };
+      const set = (patch) => api.setUnitListing(patch);
+      return {
+        loading: !!l.loading,
+        saving: !!l.saving,
+        loaded: !!l.loaded,
+        error: l.error || '',
+        hasError: !!l.error,
+        published: !!l.published,
+        // The toggle saves immediately. Everything else is a detail of a listing
+        // that already exists; this is the listing existing at all, and leaving it
+        // behind a separate Save is how a room ends up never actually listed.
+        toggle: () => api.saveUnitListing({ published: !l.published }),
+        statusLine: l.published
+          ? 'People looking for a place can find this room.'
+          : 'Only people with your invite code can see this room.',
+        headline: l.headline,
+        setHeadline: (e) => set({ headline: evStr(e) }),
+        description: l.description,
+        setDescription: (e) => set({ description: evStr(e) }),
+        deposits: [1, 2, 3].map((n) => ({
+          n, label: `${n} month${n === 1 ? '' : 's'}`, on: Number(l.deposit_months) === n,
+          go: () => set({ deposit_months: n })
+        })),
+        furnishings: ['Unfurnished', 'Semi-furnished', 'Fully furnished'].map((v) => ({
+          value: v, label: v, on: l.furnishing === v, go: () => set({ furnishing: v })
+        })),
+        preferreds: ['Anyone', 'Students', 'Working professionals', 'Families'].map((v) => ({
+          value: v, label: v, on: l.preferred === v, go: () => set({ preferred: v })
+        })),
+        amenities: AMEN.map((a) => ({
+          slug: a, label: LABEL[a], on: (l.amenities || []).includes(a),
+          go: () => set({
+            amenities: (l.amenities || []).includes(a)
+              ? l.amenities.filter((x) => x !== a)
+              : [...(l.amenities || []), a]
+          })
+        })),
+        save: () => api.saveUnitListing()
+      };
+    })(),
     unitSheet: (() => {
       const u = UNITS.find((x) => x.no === s.unit) || UNITS[0] || EMPTY_UNIT;
       const occ = occupantsOf(u.no);
       const free = u.cap - occ.length;
       return {
         no: u.no, type: u.type, rent: u.rent,
+        // The real row id, which the listing endpoints key on. The sheet itself is
+        // selected by unit NUMBER, which is unique only within a property.
+        unitId: u.id != null ? u.id : null,
         prop: propName(u.prop),
         share: `₹${inr(Math.round(Number(u.rent.replace(/[^0-9]/g, '')) / u.cap))} per bed`,
         beds: `${occ.length} of ${u.cap} ${u.cap === 1 ? 'bed' : 'beds'} taken`,
@@ -6332,6 +6394,77 @@ export function AppProvider({ children }) {
     setState({ overlay: null, disc: { ...stateRef.current.disc, open: null, also: [], openError: '' } });
   }, [setState]);
 
+  // ── Listing a room ────────────────────────────────────────────────────────
+  const loadUnitListing = useCallback(async (unitId) => {
+    if (unitId == null) return;
+    const blank = { ...INITIAL_STATE.ulist, unitId, loading: true };
+    setState({ ulist: blank });
+    try {
+      const res = await apiUnits.listing(unitId);
+      if (String(stateRef.current.ulist.unitId) !== String(unitId)) return;
+      const l = res.listing || {};
+      setState({
+        ulist: {
+          ...blank, loading: false, loaded: true,
+          published: !!l.published,
+          headline: l.headline || '',
+          description: l.description || '',
+          deposit_months: Number(l.deposit_months) || 1,
+          preferred: l.preferred || 'Anyone',
+          furnishing: l.furnishing || 'Semi-furnished',
+          amenities: Array.isArray(l.amenities) ? l.amenities : []
+        }
+      });
+    } catch (e) {
+      if (String(stateRef.current.ulist.unitId) !== String(unitId)) return;
+      setState({
+        ulist: {
+          ...blank, loading: false, loaded: true,
+          error: notDeployed(e)
+            ? 'Listing a room needs a newer version of the server than is running right now.'
+            : errText(e, 'Could not read this room\'s listing.')
+        }
+      });
+    }
+  }, [setState]);
+
+  const setUnitListing = useCallback((patch) => {
+    setState({ ulist: { ...stateRef.current.ulist, ...patch } });
+  }, [setState]);
+
+  const saveUnitListing = useCallback(async (overrides = null) => {
+    const before = stateRef.current.ulist;
+    const u = { ...before, ...(overrides || {}) };
+    if (u.unitId == null) return false;
+    setState({ ulist: { ...u, saving: true, error: '' } });
+    try {
+      const res = await apiUnits.saveListing(u.unitId, {
+        published: !!u.published,
+        headline: u.headline,
+        description: u.description,
+        deposit_months: u.deposit_months,
+        preferred: u.preferred,
+        furnishing: u.furnishing,
+        amenities: u.amenities
+      });
+      setState({ ulist: { ...stateRef.current.ulist, saving: false } });
+      flash(res.message || 'Saved');
+      return true;
+    } catch (e) {
+      // Put the switch back where it was. One left showing "listed" after the
+      // save failed is a landlord believing their room is advertised when it is
+      // not, and waiting for enquiries that cannot come.
+      setState({
+        ulist: {
+          ...stateRef.current.ulist, saving: false,
+          published: before.published,
+          error: errText(e, 'Could not save that.')
+        }
+      });
+      return false;
+    }
+  }, [setState, flash]);
+
   // Ask a landlord to be let into a property. The tenant side of the same table.
   const requestToJoin = useCallback(async ({ code, propertyId, name, requestedUnitId = null }) => {
     setState({ joining: true });
@@ -8050,6 +8183,18 @@ export function AppProvider({ children }) {
   // Resolve the stored session once, on mount.
   useEffect(() => { resolveSession(); }, [resolveSession]);
 
+  // Read the room's listing when its sheet opens, and only then. Keyed on the
+  // room so moving between rooms re-reads, and guarded on the overlay so closing
+  // the sheet does not start a fetch nobody will see.
+  useEffect(() => {
+    if (state.overlay !== 'unit') return;
+    const u = (state.data && state.data.units || []).find((x) => x.no === state.unit);
+    const id = u && u.id != null ? u.id : null;
+    if (id == null) return;
+    if (String(state.ulist.unitId) === String(id)) return;
+    loadUnitListing(id);
+  }, [state.overlay, state.unit, state.data, state.ulist.unitId, loadUnitListing]);
+
   // Load the search the first time the Find screen is opened, and not before.
   // Doing it at sign-in would mean every tenant who never looks for a place still
   // pays for the request; doing it on every visit would throw away a result set
@@ -8118,7 +8263,7 @@ export function AppProvider({ children }) {
       loadDocs, decideDoc, loadMyDocs, pickDocPhoto, addMyDoc, removeMyDoc,
       requestId, cancelIdRequest,
       lookupProperty, scanQrFromImage, resetDemo,
-      loadDiscover, setDiscoverFilter, applyDiscoverFilters, clearDiscoverFilters, useNearbyLocation, openListing, closeListing, sendTestPush, saveProfile, verifyContactCode, markAlertsSeen, openUpiPayment, declareMyPayment, startOnlinePayment, checkOnlinePayment,
+      loadUnitListing, setUnitListing, saveUnitListing, loadDiscover, setDiscoverFilter, applyDiscoverFilters, clearDiscoverFilters, useNearbyLocation, openListing, closeListing, sendTestPush, saveProfile, verifyContactCode, markAlertsSeen, openUpiPayment, declareMyPayment, startOnlinePayment, checkOnlinePayment,
       startGoogleSignIn, finishGoogleSignUp, cancelGoogleSignIn,
       openLeave, confirmLeave, withdrawLeave,
       submitClaim,
@@ -8134,7 +8279,7 @@ export function AppProvider({ children }) {
       loadDocs, decideDoc, loadMyDocs, pickDocPhoto, addMyDoc, removeMyDoc,
       requestId, cancelIdRequest,
       lookupProperty, scanQrFromImage, resetDemo,
-      loadDiscover, setDiscoverFilter, applyDiscoverFilters, clearDiscoverFilters, useNearbyLocation, openListing, closeListing, sendTestPush, saveProfile, verifyContactCode, markAlertsSeen, openUpiPayment, declareMyPayment, startOnlinePayment, checkOnlinePayment,
+      loadUnitListing, setUnitListing, saveUnitListing, loadDiscover, setDiscoverFilter, applyDiscoverFilters, clearDiscoverFilters, useNearbyLocation, openListing, closeListing, sendTestPush, saveProfile, verifyContactCode, markAlertsSeen, openUpiPayment, declareMyPayment, startOnlinePayment, checkOnlinePayment,
       startGoogleSignIn, finishGoogleSignUp, cancelGoogleSignIn,
       openLeave, confirmLeave, withdrawLeave,
       submitClaim,

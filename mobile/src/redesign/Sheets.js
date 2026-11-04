@@ -531,6 +531,112 @@ export default function Sheets() {
                             <T mono w={600} s={10} lh={1} ls={0.06} c={col(vm.unitSheet.bedFg)}>{vm.unitSheet.freeLine}</T>
                         </Row>
 
+                        {/* ── Listing this room ─────────────────────────────────
+                            A room is invisible to anybody searching until the
+                            landlord puts it here, which is the whole shape of the
+                            feature: being empty is not consent to being advertised.
+                            The switch saves on the spot; the detail below it is for
+                            a listing that already exists. */}
+                        {(() => {
+                            const L = vm.unitListing;
+                            const chip = (on) => ({
+                                paddingVertical: 8, paddingHorizontal: 12, borderRadius: 999,
+                                borderWidth: 1, borderColor: on ? t.lime : t.line,
+                                backgroundColor: on ? t.lime : t.ink3
+                            });
+                            return (
+                                <View style={{ marginBottom: 16 }}>
+                                    <Press
+                                        onPress={L.toggle}
+                                        disabled={L.saving || L.loading}
+                                        style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 13, paddingHorizontal: 14, borderRadius: 18, borderWidth: 1, borderColor: L.published ? t.lime : t.line, backgroundColor: L.published ? t.lsoft : t.ink3 }}
+                                    >
+                                        <View style={{ width: 34, height: 34, borderRadius: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: L.published ? t.lime : t.ink2 }}>
+                                            <Glyph name={L.published ? 'megaphone' : 'megaphone-outline'} size={16} color={L.published ? t.on : t.fg3} />
+                                        </View>
+                                        <View style={{ flex: 1, minWidth: 0 }}>
+                                            <T w={600} s={14} lh={1.2} c={t.fg}>
+                                                {L.published ? 'Listed for people looking' : 'List this room'}
+                                            </T>
+                                            <T w={400} s={11.5} lh={1.4} c={t.fg3} style={{ marginTop: 3 }}>
+                                                {L.loading ? 'Checking…' : L.statusLine}
+                                            </T>
+                                        </View>
+                                        {L.saving ? <ActivityIndicator size="small" color={t.accent} /> : (
+                                            <View style={{ width: 44, height: 26, borderRadius: 13, padding: 3, backgroundColor: L.published ? t.lime : t.line, alignItems: L.published ? 'flex-end' : 'flex-start' }}>
+                                                <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: L.published ? t.on : t.ink2 }} />
+                                            </View>
+                                        )}
+                                    </Press>
+
+                                    {L.hasError ? (
+                                        <Row gap={8} align="flex-start" style={{ marginTop: 9, padding: 11, borderRadius: 13, backgroundColor: t.csoft }}>
+                                            <Glyph name="alert-circle-outline" size={14} color={t.coral} />
+                                            <T w={500} s={11.5} lh={1.45} c={t.coral} style={{ flex: 1 }}>{L.error}</T>
+                                        </Row>
+                                    ) : null}
+
+                                    {L.published ? (
+                                        <View style={{ marginTop: 10, padding: 14, borderRadius: 18, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line }}>
+                                            <Eyebrow s={9} ls={0.12} c={t.fg3} style={{ marginBottom: 8 }}>HEADLINE</Eyebrow>
+                                            <TextInput
+                                                value={L.headline}
+                                                onChangeText={L.setHeadline}
+                                                placeholder="Quiet room, 10 min from the metro"
+                                                placeholderTextColor={t.fg3}
+                                                style={{ fontFamily: grotesk(500), fontSize: 13.5, color: t.fg, paddingVertical: 11, paddingHorizontal: 13, borderRadius: 13, backgroundColor: t.ink2, borderWidth: 1, borderColor: t.line }}
+                                            />
+
+                                            <Eyebrow s={9} ls={0.12} c={t.fg3} style={{ marginTop: 14, marginBottom: 8 }}>DEPOSIT</Eyebrow>
+                                            <Row gap={7} style={{ flexWrap: 'wrap' }}>
+                                                {L.deposits.map((dep) => (
+                                                    <Press key={dep.n} onPress={dep.go} style={chip(dep.on)}>
+                                                        <T w={600} s={12} lh={1} c={dep.on ? t.on : t.fg2}>{dep.label}</T>
+                                                    </Press>
+                                                ))}
+                                            </Row>
+
+                                            <Eyebrow s={9} ls={0.12} c={t.fg3} style={{ marginTop: 14, marginBottom: 8 }}>FURNISHING</Eyebrow>
+                                            <Row gap={7} style={{ flexWrap: 'wrap' }}>
+                                                {L.furnishings.map((f) => (
+                                                    <Press key={f.value} onPress={f.go} style={chip(f.on)}>
+                                                        <T w={600} s={12} lh={1} c={f.on ? t.on : t.fg2}>{f.label}</T>
+                                                    </Press>
+                                                ))}
+                                            </Row>
+
+                                            <Eyebrow s={9} ls={0.12} c={t.fg3} style={{ marginTop: 14, marginBottom: 8 }}>SUITS</Eyebrow>
+                                            <Row gap={7} style={{ flexWrap: 'wrap' }}>
+                                                {L.preferreds.map((f) => (
+                                                    <Press key={f.value} onPress={f.go} style={chip(f.on)}>
+                                                        <T w={600} s={12} lh={1} c={f.on ? t.on : t.fg2}>{f.label}</T>
+                                                    </Press>
+                                                ))}
+                                            </Row>
+
+                                            <Eyebrow s={9} ls={0.12} c={t.fg3} style={{ marginTop: 14, marginBottom: 8 }}>WHAT IS INCLUDED</Eyebrow>
+                                            <Row gap={7} style={{ flexWrap: 'wrap' }}>
+                                                {L.amenities.map((a) => (
+                                                    <Press key={a.slug} onPress={a.go} style={chip(a.on)}>
+                                                        <T w={600} s={12} lh={1} c={a.on ? t.on : t.fg2}>{a.label}</T>
+                                                    </Press>
+                                                ))}
+                                            </Row>
+
+                                            <Press
+                                                onPress={L.save}
+                                                disabled={L.saving}
+                                                style={{ marginTop: 16, paddingVertical: 13, borderRadius: 999, backgroundColor: t.lime, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', columnGap: 8 }}
+                                            >
+                                                {L.saving ? <ActivityIndicator size="small" color={t.on} /> : null}
+                                                <T w={700} s={13.5} c={t.on}>{L.saving ? 'Saving…' : 'Save listing'}</T>
+                                            </Press>
+                                        </View>
+                                    ) : null}
+                                </View>
+                            );
+                        })()}
+
                         <Eyebrow s={10} ls={0.12} style={{ marginBottom: 10 }}>WHO LIVES HERE</Eyebrow>
                         {(vm.unitSheet.occupants || []).map((oc, i) => (
                             <Press key={i} onPress={oc.open} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, width: '100%', paddingVertical: 12, paddingHorizontal: 13, borderRadius: 17, borderWidth: 1, borderColor: t.line, backgroundColor: t.ink3, marginBottom: 7 }}>
