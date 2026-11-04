@@ -634,3 +634,47 @@ CREATE TABLE IF NOT EXISTS `sessions` (
   KEY `account` (`account_kind`, `account_id`),
   KEY `expires_at` (`expires_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- ── Listings ─────────────────────────────────────────────────────────────────
+-- A room its landlord has chosen to show to people looking for somewhere to live.
+--
+-- This table exists because of a decision recorded in tenantPortalRoutes.js: a
+-- tenant can resolve a property BY CODE and there is deliberately no browse-all,
+-- since that would let any account enumerate every landlord's portfolio. Being
+-- discoverable therefore has to be something a landlord opts into, one room at a
+-- time, rather than a side effect of having a vacancy. A row here IS that opt-in,
+-- and `published` is the switch.
+--
+-- Nothing about the room is copied here. Rent, capacity, split, photo and status
+-- live on `units`; name, type, address and map pin live on `properties`. Copying
+-- the rent into a listing would mean a landlord raising it in one place and the
+-- other going stale, which is how a tenant ends up asking to join at a price that
+-- no longer exists.
+CREATE TABLE IF NOT EXISTS `listings` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `unit_id` int(11) NOT NULL,
+  -- Denormalised from units -> properties -> owner_id on purpose: every query here
+  -- filters or scopes by landlord, and carrying it saves a two-table join on the
+  -- hottest read in the feature.
+  `owner_id` int(11) NOT NULL,
+  `published` tinyint(1) NOT NULL DEFAULT 0,
+  `headline` varchar(150) DEFAULT NULL,
+  `description` text DEFAULT NULL,
+  -- When somebody could actually move in. NULL means "now", which is different from
+  -- a date in the past and is what an empty room should say.
+  `available_from` date DEFAULT NULL,
+  `deposit_months` decimal(4,1) NOT NULL DEFAULT 1.0,
+  `preferred` enum('Anyone','Students','Working professionals','Families') NOT NULL DEFAULT 'Anyone',
+  `furnishing` enum('Unfurnished','Semi-furnished','Fully furnished') NOT NULL DEFAULT 'Semi-furnished',
+  -- Comma-separated slugs rather than a join table. The set is small, fixed and only
+  -- ever read whole; a listing_amenities table would be three more queries for a
+  -- feature whose entire payload fits in one row.
+  `amenities` varchar(400) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `unit_id` (`unit_id`),
+  KEY `published_owner` (`published`, `owner_id`),
+  CONSTRAINT `listings_ibfk_1` FOREIGN KEY (`unit_id`) REFERENCES `units` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `listings_ibfk_2` FOREIGN KEY (`owner_id`) REFERENCES `owners` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;

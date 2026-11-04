@@ -72,8 +72,32 @@ const FIRST = ['Rahul', 'Priya', 'Anjali', 'Vikram', 'Sneha', 'Arjun', 'Kavya', 
     'Deepa', 'Sandeep', 'Ritu', 'Harish', 'Nisha', 'Varun', 'Swathi', 'Akash'];
 const LAST = ['Sharma', 'Kulal', 'Reddy', 'Nair', 'Iyer', 'Shetty', 'Rao', 'Hegde', 'Pai', 'Menon',
     'Gowda', 'Bhat', 'Kamath', 'Prabhu', 'Shenoy', 'Naik'];
-const LOCALITY = ['Indiranagar', 'Koramangala', 'Whitefield', 'HSR Layout', 'Jayanagar', 'Malleshwaram',
-    'BTM Layout', 'Marathahalli', 'Hebbal', 'Rajajinagar', 'Banashankari', 'Yelahanka'];
+// Localities with their real approximate centres. The coordinates matter: the
+// discovery feature filters and ranks by distance, and a map pin generated at
+// random inside a bounding box makes "2 km away" a number that cannot be checked
+// against anything. With these, Koramangala really is about 4 km from Indiranagar,
+// so a wrong radius filter is visible rather than plausible.
+const AREAS = [
+    ['Indiranagar', 12.9784, 77.6408],
+    ['Koramangala', 12.9352, 77.6245],
+    ['Whitefield', 12.9698, 77.7500],
+    ['HSR Layout', 12.9121, 77.6446],
+    ['Jayanagar', 12.9250, 77.5938],
+    ['Malleshwaram', 13.0035, 77.5647],
+    ['BTM Layout', 12.9166, 77.6101],
+    ['Marathahalli', 12.9591, 77.6974],
+    ['Hebbal', 13.0358, 77.5970],
+    ['Rajajinagar', 12.9916, 77.5522],
+    ['Banashankari', 12.9250, 77.5468],
+    ['Yelahanka', 13.1007, 77.5963]
+];
+const LOCALITY = AREAS.map(([n]) => n);
+// A pin within roughly a kilometre of the locality centre, so rooms in one area
+// cluster the way real ones do instead of all sharing a coordinate.
+const pinFor = (locality) => {
+    const a = AREAS.find(([n]) => n === locality) || AREAS[0];
+    return [(a[1] + (rng() - 0.5) * 0.018).toFixed(7), (a[2] + (rng() - 0.5) * 0.018).toFixed(7)];
+};
 const PROP_WORD = ['Residency', 'Nest', 'Heights', 'Enclave', 'Courtyard', 'Villa', 'Mansion', 'Homes'];
 const PROP_NAME = ['Sunrise', 'Green Meadows', 'Lotus', 'Silver Oak', 'Palm', 'Orchid', 'Maple', 'Tulip',
     'Banyan', 'Cedar', 'Jasmine', 'Amber'];
@@ -141,13 +165,14 @@ const main = async () => {
 
     for (let p = 0; p < propCount; p += 1) {
         const pname = `${pick(PROP_NAME)} ${pick(PROP_WORD)}`;
+        const locality = pick(LOCALITY);
+        const [lat, lng] = pinFor(locality);
         const [pr] = await db.query(
             `INSERT INTO properties (owner_id, name, property_type, address, locality, city, pincode, latitude, longitude)
              VALUES (?, ?, ?, ?, ?, 'Bengaluru', ?, ?, ?)`,
             [ownerId, pname, pick(['PG', 'Apartment', 'Independent House']),
-                `${int(1, 200)}, ${pick(['1st', '2nd', '3rd', '4th'])} Cross`, pick(LOCALITY),
-                `5600${String(int(1, 99)).padStart(2, '0')}`,
-                (12.8 + rng() * 0.35).toFixed(7), (77.5 + rng() * 0.35).toFixed(7)]
+                `${int(1, 200)}, ${pick(['1st', '2nd', '3rd', '4th'])} Cross`, locality,
+                `5600${String(int(1, 99)).padStart(2, '0')}`, lat, lng]
         );
         made.props += 1;
 
@@ -369,10 +394,159 @@ const main = async () => {
         }
     }
 
+    // ── A market to search ───────────────────────────────────────────────────
+    // Discovery is worth nothing against one landlord's three properties: every
+    // filter returns either everything or nothing, and a ranking with four
+    // candidates cannot be told apart from an unsorted list. So the seed builds a
+    // small market around the main account — other landlords, other areas, other
+    // price bands — and publishes listings across it.
+    //
+    // The spread is deliberate rather than random. There is something in every
+    // price band, every room size and several areas, so each filter has a result
+    // to find and an empty result to find as well. A generated set that happened
+    // to be all mid-priced two-sharing rooms in Koramangala would let a broken
+    // budget filter pass unnoticed.
+    const MARKET = [
+        // name,            locality,        type,                 band,       rooms
+        ['Lakeview PG', 'HSR Layout', 'PG', 'budget', 4],
+        ['Cedar Stay', 'Koramangala', 'PG', 'mid', 3],
+        ['Nandi Residency', 'Indiranagar', 'Apartment', 'premium', 2],
+        ['Orchid House', 'Jayanagar', 'Independent House', 'mid', 3],
+        ['Skyline Rooms', 'Whitefield', 'Hostel', 'budget', 4],
+        ['Fig Tree Homes', 'Malleshwaram', 'Apartment', 'mid', 2],
+        ['Amber Terrace', 'BTM Layout', 'PG', 'budget', 3],
+        ['Greenway Suites', 'Marathahalli', 'Apartment', 'premium', 2]
+    ];
+    const BAND = { budget: [4500, 9000], mid: [9000, 17000], premium: [17000, 34000] };
+    const AMENITY_POOL = ['wifi', 'ac', 'food', 'laundry', 'parking', 'power', 'lift',
+        'gym', 'housekeeping', 'water', 'security', 'balcony', 'kitchen'];
+    const FURNISH = ['Unfurnished', 'Semi-furnished', 'Fully furnished'];
+    const PREFER = ['Anyone', 'Students', 'Working professionals', 'Families'];
+    const BLURB = {
+        PG: 'Run as a PG with meals, housekeeping and a warden on site.',
+        Hostel: 'Hostel-style sharing, closest to the tech parks on this side of town.',
+        Apartment: 'Full apartment in a gated block, quiet and well kept.',
+        'Independent House': 'Independent house with its own entrance and no shared stairwell.'
+    };
+
+    let listed = 0;
+    let marketOwners = 0;
+    for (let m = 0; m < MARKET.length; m += 1) {
+        const [pname, locality, ptype, band, roomCount] = MARKET[m];
+        const lname = name();
+        const [mo] = await db.query(
+            'INSERT INTO owners (name, email, phone, password_hash) VALUES (?, ?, ?, ?)',
+            [lname, `host${m}${SEED}${SEED_DOMAIN}`, phone(), hash]
+        );
+        marketOwners += 1;
+        const [mlat, mlng] = pinFor(locality);
+        const [mp] = await db.query(
+            `INSERT INTO properties (owner_id, name, property_type, address, locality, city, pincode, latitude, longitude)
+             VALUES (?, ?, ?, ?, ?, 'Bengaluru', ?, ?, ?)`,
+            [mo.insertId, pname, ptype, `${int(1, 90)}, ${pick(['1st', '2nd', '3rd', '5th'])} Main`,
+                locality, `5600${String(int(1, 99)).padStart(2, '0')}`, mlat, mlng]
+        );
+        made.props += 1;
+
+        for (let u = 0; u < roomCount; u += 1) {
+            // Room size drives the rent, not the other way round: a four-sharing
+            // room costs more in total and less per head, which is the whole
+            // reason the per-head figure is computed rather than stored.
+            const capacity = u === 0 ? 1 : (u === 1 ? 2 : int(3, 4));
+            const [lo, hi] = BAND[band];
+            const perHead = money(lo, hi, 500);
+            const rent = perHead * capacity;
+            const [un] = await db.query(
+                `INSERT INTO units (property_id, unit_number, room_type, capacity, rent_split_type, base_rent, status)
+                 VALUES (?, ?, ?, ?, 'Equal', ?, 'Vacant')`,
+                [mp.insertId, `${u + 1}0${m + 1}`,
+                    capacity === 1 ? 'Single' : (capacity === 2 ? 'Double Sharing' : 'Triple Sharing'),
+                    capacity, rent]
+            );
+            made.units += 1;
+
+            // Partly fill some rooms. This is what makes "Last spot" appear, and
+            // what makes a full room exist so the vacancy filter has something to
+            // exclude — a feature that never excludes anything is untested.
+            const take = capacity > 1 && chance(0.55) ? int(1, capacity) : 0;
+            for (let k = 0; k < take; k += 1) {
+                const tn = name();
+                await db.query(
+                    `INSERT INTO tenants (owner_id, unit_id, name, phone, email, deposit, rent_share, move_in_date, next_rent_due, status)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Active')`,
+                    [mo.insertId, un.insertId, tn, phone(), emailFor(tn, 900 + listed * 10 + k),
+                        perHead, perHead, daysFromNow(-int(20, 300)), daysFromNow(int(1, 28))]
+                );
+                made.tenants += 1;
+            }
+            if (take >= capacity) continue;   // full: nothing to list
+
+            const amen = [];
+            for (const a of AMENITY_POOL) if (chance(band === 'premium' ? 0.55 : 0.33)) amen.push(a);
+            if (ptype === 'PG' || ptype === 'Hostel') { if (!amen.includes('food')) amen.push('food'); }
+            if (!amen.includes('wifi')) amen.push('wifi');
+
+            // Most places are free now; a few are not, so the availability ranking
+            // and the "Free in N days" line both have a case to show.
+            const soon = chance(0.3) ? daysFromNow(int(5, 45)) : null;
+
+            await db.query(
+                `INSERT INTO listings (unit_id, owner_id, published, headline, description,
+                                       available_from, deposit_months, preferred, furnishing, amenities)
+                 VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?)`,
+                [un.insertId, mo.insertId,
+                    `${capacity === 1 ? 'Private room' : `${capacity}-sharing`} in ${locality}`,
+                    `${BLURB[ptype] || ''} ${capacity === 1 ? 'This one is a private room.' : `Room sleeps ${capacity}.`} ${int(5, 25)} minutes from the metro.`.trim(),
+                    soon, pick([1, 1, 1, 2, 2, 3]),
+                    ptype === 'Hostel' ? 'Students' : pick(PREFER),
+                    band === 'premium' ? 'Fully furnished' : pick(FURNISH),
+                    amen.join(',')]
+            );
+            listed += 1;
+        }
+    }
+
+    // The main landlord's own empty rooms, published too, so the owner side of the
+    // feature has something to open and the account under test appears in its own
+    // search results the way a real one would.
+    const [ownVacant] = await db.query(
+        `SELECT u.id, u.capacity FROM units u
+         JOIN properties p ON p.id = u.property_id
+         WHERE p.owner_id = ?
+           AND (SELECT COUNT(*) FROM tenants t WHERE t.unit_id = u.id AND t.status = 'Active') < u.capacity
+         LIMIT 3`,
+        [ownerId]
+    );
+    for (const v of ownVacant) {
+        await db.query(
+            `INSERT INTO listings (unit_id, owner_id, published, headline, description, deposit_months, preferred, furnishing, amenities)
+             VALUES (?, ?, 1, ?, ?, 2, 'Anyone', 'Semi-furnished', 'wifi,power,water,parking')`,
+            [v.id, ownerId, 'Room available', 'Listed from the landlord app. Ask to join and I will confirm the same day.']
+        );
+        listed += 1;
+    }
+
+    // One listing left UNPUBLISHED on purpose. Discovery must not show it, and
+    // nothing else in the seed proves that the published flag is read at all.
+    const [hidden] = await db.query(
+        `SELECT u.id FROM units u JOIN properties p ON p.id = u.property_id
+         WHERE p.owner_id = ? AND u.id NOT IN (SELECT unit_id FROM listings) LIMIT 1`,
+        [ownerId]
+    );
+    if (hidden.length) {
+        await db.query(
+            `INSERT INTO listings (unit_id, owner_id, published, headline) VALUES (?, ?, 0, ?)`,
+            [hidden[0].id, ownerId, 'Draft — not published']
+        );
+    }
+
+    log(`   · market: ${marketOwners} other landlords, ${listed} published listings`);
+
     log('');
     log('✅ Seeded:');
     log(`   ${made.props} properties · ${made.units} rooms · ${made.tenants} tenants`);
     log(`   ${made.users} portal accounts · ${made.payments} payments · ${made.requests} requests · ${made.joins} join request`);
+    log(`   ${listed} published listings to search, across ${marketOwners + 1} landlords`);
     log('');
     log('   LANDLORD');
     log(`     ${ownerEmail}`);

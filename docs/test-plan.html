@@ -1,0 +1,1236 @@
+<title>TenantPro — Test Plan</title>
+
+<style>
+  /* ── Tokens ──────────────────────────────────────────────────────────────
+     Light is the base set. The two dark blocks redefine ONLY tokens, so no
+     component style is trapped behind a media query or a [data-theme] stamp.
+     Palette is pulled from the app's own world — olive-lime, amber, coral —
+     rather than a generic doc grey, with neutrals biased green so they read
+     as chosen alongside the accent. */
+  :root {
+    --ground:        #F6F8F2;
+    --surface:       #FFFFFF;
+    --surface-2:     #EDF0E5;
+    --ink:           #14160F;
+    --ink-2:         #4A5041;
+    --ink-3:         #787E6C;
+    --rule:          #DCE0D2;
+    --rule-2:        #C7CDB8;
+    --accent:        #4C6810;
+    --accent-soft:   #E8F2CE;
+    --pass:          #3D6A2C;
+    --pass-soft:     #DEEDD4;
+    --fail:          #A5322A;
+    --fail-soft:     #F6DDDA;
+    --warn:          #8E6206;
+    --warn-soft:     #F7E9C8;
+
+    --serif: Georgia, "Iowan Old Style", "Palatino Linotype", "Book Antiqua", ui-serif, serif;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:      #0F1108;
+      --surface:     #171A10;
+      --surface-2:   #1F2317;
+      --ink:         #E9EBE0;
+      --ink-2:       #A9AF9B;
+      --ink-3:       #7D8472;
+      --rule:        #292E1F;
+      --rule-2:      #3A4029;
+      --accent:      #C2ED45;
+      --accent-soft: #232C10;
+      --pass:        #9AD35E;
+      --pass-soft:   #1D2A14;
+      --fail:        #E9796B;
+      --fail-soft:   #2E1614;
+      --warn:        #DFB449;
+      --warn-soft:   #2B2110;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground:      #0F1108;
+    --surface:     #171A10;
+    --surface-2:   #1F2317;
+    --ink:         #E9EBE0;
+    --ink-2:       #A9AF9B;
+    --ink-3:       #7D8472;
+    --rule:        #292E1F;
+    --rule-2:      #3A4029;
+    --accent:      #C2ED45;
+    --accent-soft: #232C10;
+    --pass:        #9AD35E;
+    --pass-soft:   #1D2A14;
+    --fail:        #E9796B;
+    --fail-soft:   #2E1614;
+    --warn:        #DFB449;
+    --warn-soft:   #2B2110;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.55;
+    margin: 0;
+    padding: 0 20px 80px;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  .wrap { max-width: 860px; margin: 0 auto; }
+
+  /* ── Masthead ─────────────────────────────────────────────────────────── */
+  header.top {
+    padding: 44px 0 26px;
+    border-bottom: 2px solid var(--ink);
+  }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin: 0 0 14px;
+  }
+  h1 {
+    font-family: var(--serif);
+    font-weight: 700;
+    font-size: clamp(30px, 7vw, 46px);
+    line-height: 1.08;
+    letter-spacing: -0.015em;
+    text-wrap: balance;
+    margin: 0 0 14px;
+  }
+  .standfirst {
+    font-size: 16.5px;
+    line-height: 1.62;
+    color: var(--ink-2);
+    max-width: 62ch;
+    margin: 0;
+  }
+
+  /* ── Run summary ──────────────────────────────────────────────────────── */
+  .runbar {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    background: var(--ground);
+    border-bottom: 1px solid var(--rule);
+    padding: 12px 0;
+    margin-bottom: 8px;
+  }
+  .counts {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 14px;
+  }
+  .tally {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-variant-numeric: tabular-nums;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .tally b { font-size: 15px; letter-spacing: 0; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+  .dot.p { background: var(--pass); }
+  .dot.f { background: var(--fail); }
+  .dot.o { background: var(--rule-2); }
+  .meter {
+    height: 5px;
+    border-radius: 3px;
+    background: var(--surface-2);
+    overflow: hidden;
+    display: flex;
+    margin-top: 11px;
+  }
+  .meter i { display: block; height: 100%; transition: width .25s ease; }
+  .meter .mp { background: var(--pass); }
+  .meter .mf { background: var(--fail); }
+  button.reset {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    background: none;
+    border: 1px solid var(--rule);
+    border-radius: 999px;
+    padding: 5px 12px;
+    cursor: pointer;
+    margin-left: auto;
+  }
+  button.reset:hover { color: var(--ink); border-color: var(--rule-2); }
+
+  /* ── Callouts ─────────────────────────────────────────────────────────── */
+  .note {
+    border-left: 3px solid var(--accent);
+    background: var(--accent-soft);
+    padding: 15px 17px;
+    margin: 26px 0;
+    border-radius: 0 8px 8px 0;
+  }
+  .note.warn { border-left-color: var(--warn); background: var(--warn-soft); }
+  .note h4 {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin: 0 0 8px;
+    color: var(--ink-2);
+  }
+  .note p { margin: 0 0 9px; font-size: 14.5px; line-height: 1.6; color: var(--ink-2); }
+  .note p:last-child { margin-bottom: 0; }
+  .note strong { color: var(--ink); }
+
+  /* ── Feature groups ───────────────────────────────────────────────────── */
+  section.group { margin-top: 46px; }
+  .ghead {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    padding-bottom: 11px;
+    border-bottom: 1px solid var(--rule-2);
+    margin-bottom: 6px;
+  }
+  .gletter {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: var(--accent);
+    flex: none;
+  }
+  .ghead h2 {
+    font-family: var(--serif);
+    font-size: clamp(20px, 4.6vw, 26px);
+    font-weight: 700;
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+    margin: 0;
+    flex: 1;
+  }
+  .gcount {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink-3);
+    font-variant-numeric: tabular-nums;
+    flex: none;
+  }
+  .why {
+    font-size: 14.5px;
+    line-height: 1.6;
+    color: var(--ink-2);
+    margin: 12px 0 20px;
+    max-width: 66ch;
+  }
+
+  /* ── Cases ────────────────────────────────────────────────────────────── */
+  ol.cases { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 9px; }
+
+  li.case {
+    display: grid;
+    grid-template-columns: 34px 1fr;
+    gap: 13px;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 11px;
+    padding: 14px 15px;
+    transition: border-color .15s ease, background .15s ease;
+  }
+  li.case[data-state="pass"] { background: var(--pass-soft); border-color: var(--pass); }
+  li.case[data-state="fail"] { background: var(--fail-soft); border-color: var(--fail); }
+
+  button.mark {
+    width: 30px; height: 30px;
+    border-radius: 8px;
+    border: 1.5px solid var(--rule-2);
+    background: var(--surface);
+    cursor: pointer;
+    font-family: var(--mono);
+    font-size: 15px;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--ink-3);
+    display: flex; align-items: center; justify-content: center;
+    padding: 0;
+    flex: none;
+    margin-top: 1px;
+  }
+  button.mark:hover { border-color: var(--ink-3); }
+  button.mark:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  li.case[data-state="pass"] button.mark { background: var(--pass); border-color: var(--pass); color: var(--surface); }
+  li.case[data-state="fail"] button.mark { background: var(--fail); border-color: var(--fail); color: var(--surface); }
+
+  .cid {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    color: var(--ink-3);
+    margin-bottom: 5px;
+  }
+  li.case[data-state="pass"] .cid { color: var(--pass); }
+  li.case[data-state="fail"] .cid { color: var(--fail); }
+
+  .act { font-size: 15px; line-height: 1.55; margin: 0 0 8px; color: var(--ink); }
+  .exp {
+    font-size: 14px;
+    line-height: 1.55;
+    margin: 0;
+    padding-left: 11px;
+    border-left: 2px solid var(--rule-2);
+    color: var(--ink-2);
+  }
+  li.case[data-state="pass"] .exp { border-left-color: var(--pass); }
+  li.case[data-state="fail"] .exp { border-left-color: var(--fail); }
+  .exp::before {
+    content: "Expect ";
+    font-family: var(--mono);
+    font-size: 9.5px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    display: block;
+    margin-bottom: 2px;
+  }
+
+  code {
+    font-family: var(--mono);
+    font-size: 0.87em;
+    background: var(--surface-2);
+    padding: 1.5px 5px;
+    border-radius: 4px;
+    color: var(--ink);
+    word-break: break-word;
+  }
+  li.case[data-state="pass"] code,
+  li.case[data-state="fail"] code { background: rgba(0,0,0,0.07); }
+
+  .tag {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 9.5px;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    padding: 2px 7px;
+    border-radius: 4px;
+    margin-left: 7px;
+    vertical-align: 1.5px;
+    background: var(--warn-soft);
+    color: var(--warn);
+    border: 1px solid var(--warn);
+  }
+  .tag.key { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+
+  footer.foot {
+    margin-top: 54px;
+    padding-top: 22px;
+    border-top: 2px solid var(--ink);
+    font-size: 14px;
+    color: var(--ink-2);
+    line-height: 1.6;
+  }
+  footer.foot p { margin: 0 0 10px; max-width: 64ch; }
+  footer.foot p:last-child { margin-bottom: 0; }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; }
+  }
+  @media (max-width: 520px) {
+    body { padding: 0 15px 70px; }
+    li.case { grid-template-columns: 30px 1fr; gap: 11px; padding: 13px 13px; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="top">
+    <p class="eyebrow">TenantPro · Manual QA</p>
+    <h1>Test plan: guests, passwords, payments and the map</h1>
+    <p class="standfirst">
+      Everything shipped since the bug batch, in the order it makes sense to test.
+      Tap the box on each case to mark it passed or failed — twice for failed, a
+      third time to clear. Your run is saved in this browser, so you can close the
+      page and come back to it.
+    </p>
+  </header>
+
+  <div class="runbar">
+    <div class="counts">
+      <span class="tally"><span class="dot p"></span><b id="n-pass">0</b> passed</span>
+      <span class="tally"><span class="dot f"></span><b id="n-fail">0</b> failed</span>
+      <span class="tally"><span class="dot o"></span><b id="n-open">0</b> left</span>
+      <button class="reset" id="reset">Reset run</button>
+    </div>
+    <div class="meter"><i class="mp" id="bar-pass" style="width:0%"></i><i class="mf" id="bar-fail" style="width:0%"></i></div>
+  </div>
+
+  <div class="note warn">
+    <h4>Do these two things first</h4>
+    <p>
+      <strong>1. Take the update.</strong> The app never polls for updates — it only
+      checks when it launches or returns to the foreground, and then you have to tap
+      the prompt. Swipe the app away completely, reopen it, and accept the update.
+      The notes should mention confirming payments.
+    </p>
+    <p>
+      <strong>2. Check the server deployed.</strong> Render should be green on the
+      latest commit to <code>main</code>. Every guest, payment and map test below
+      talks to it — if it hasn't deployed, they will all fail for the same reason
+      and tell you nothing.
+    </p>
+  </div>
+
+  <div class="note">
+    <h4>What you'll need</h4>
+    <p>
+      A landlord account with at least one property and one room with a free bed, a
+      tenant account you can sign in as, and a property code to hand. Two phones make
+      the guest and payment sections much easier, but one works if you sign in and out.
+      The seeded demo landlord account is fine for all of this.
+    </p>
+    <p>
+      Cases marked <span class="tag key">key</span> are the ones that were broken or
+      missing — if you only have ten minutes, do those.
+    </p>
+  </div>
+
+  <!-- ── A ────────────────────────────────────────────────────────────── -->
+  <section class="group" data-group="A">
+    <div class="ghead">
+      <span class="gletter">A</span>
+      <h2>Joining as a guest</h2>
+      <span class="gcount">10 cases</span>
+    </div>
+    <p class="why">
+      This used to be a lie: the button kept your property code, then sent you to the
+      full registration form, so the person it was aimed at — someone standing in the
+      building who wants in now — still had to invent a name, an email and a password.
+      It should now ask for a phone number and a photo of an ID, and nothing else.
+    </p>
+    <ol class="cases">
+      <li class="case" data-id="A1">
+        <button class="mark" aria-label="Mark case A1"></button>
+        <div>
+          <div class="cid">A1</div>
+          <p class="act">On the tenant sign-in screen, tap <strong>Join as a guest</strong>.</p>
+          <p class="exp">A two-step screen opens asking for a property code first. No account form anywhere.</p>
+        </div>
+      </li>
+      <li class="case" data-id="A2">
+        <button class="mark" aria-label="Mark case A2"></button>
+        <div>
+          <div class="cid">A2</div>
+          <p class="act">Enter a property code that doesn't exist and continue.</p>
+          <p class="exp">Refused with a message naming the problem. You stay on step 1.</p>
+        </div>
+      </li>
+      <li class="case" data-id="A3">
+        <button class="mark" aria-label="Mark case A3"></button>
+        <div>
+          <div class="cid">A3</div>
+          <p class="act">Enter a real property code.</p>
+          <p class="exp">Advances to step 2 and names the property you're joining, so you can tell you typed the right code.</p>
+        </div>
+      </li>
+      <li class="case" data-id="A4">
+        <button class="mark" aria-label="Mark case A4"></button>
+        <div>
+          <div class="cid">A4</div>
+          <p class="act">Type a 9-digit phone number.</p>
+          <p class="exp">Rejected — a mobile number is 10 digits. Submit stays unavailable.</p>
+        </div>
+      </li>
+      <li class="case" data-id="A5">
+        <button class="mark" aria-label="Mark case A5"></button>
+        <div>
+          <div class="cid">A5</div>
+          <p class="act">Fill in a valid phone but attach no ID photo.</p>
+          <p class="exp">Can't submit. The ID is required, and the screen says so rather than failing silently.</p>
+        </div>
+      </li>
+      <li class="case" data-id="A6">
+        <button class="mark" aria-label="Mark case A6"></button>
+        <div>
+          <div class="cid">A6</div>
+          <p class="act">Add a government ID photo (camera or gallery) and submit. <span class="tag key">key</span></p>
+          <p class="exp">You are signed in immediately as a guest. You were never asked for a name, an email or a password.</p>
+        </div>
+      </li>
+      <li class="case" data-id="A7">
+        <button class="mark" aria-label="Mark case A7"></button>
+        <div>
+          <div class="cid">A7</div>
+          <p class="act">Find your guest ID in the profile tab and write it down.</p>
+          <p class="exp">A six-character code shown as <code>GUEST ID · XXXXXX</code>. You need it for B and C.</p>
+        </div>
+      </li>
+      <li class="case" data-id="A8">
+        <button class="mark" aria-label="Mark case A8"></button>
+        <div>
+          <div class="cid">A8</div>
+          <p class="act">On the landlord account, open the bell.</p>
+          <p class="exp">The request is listed, named <code>Guest XXXXXX</code>, with the phone number and a way to see the ID they uploaded.</p>
+        </div>
+      </li>
+      <li class="case" data-id="A9">
+        <button class="mark" aria-label="Mark case A9"></button>
+        <div>
+          <div class="cid">A9</div>
+          <p class="act">Accept them into a room.</p>
+          <p class="exp">They appear in People. On the guest's phone, the property and room now show under My place.</p>
+        </div>
+      </li>
+      <li class="case" data-id="A10">
+        <button class="mark" aria-label="Mark case A10"></button>
+        <div>
+          <div class="cid">A10</div>
+          <p class="act">Try joining as a guest again using a phone number that already belongs to a full tenant account. <span class="tag key">key</span></p>
+          <p class="exp">Refused outright. A guest must never be able to reach an existing account by typing its phone number.</p>
+        </div>
+      </li>
+    </ol>
+  </section>
+
+  <!-- ── B ────────────────────────────────────────────────────────────── -->
+  <section class="group" data-group="B">
+    <div class="ghead">
+      <span class="gletter">B</span>
+      <h2>Signing back in as a guest</h2>
+      <span class="gcount">5 cases</span>
+    </div>
+    <p class="why">
+      A guest has no email and no password, so the guest ID plus the phone number is
+      the whole credential. Both halves have to be required, and neither should be
+      guessable in bulk.
+    </p>
+    <ol class="cases">
+      <li class="case" data-id="B1">
+        <button class="mark" aria-label="Mark case B1"></button>
+        <div>
+          <div class="cid">B1</div>
+          <p class="act">Sign out of the guest account, then choose to sign in with a guest ID.</p>
+          <p class="exp">A screen asking for the guest ID and the phone number. No password field.</p>
+        </div>
+      </li>
+      <li class="case" data-id="B2">
+        <button class="mark" aria-label="Mark case B2"></button>
+        <div>
+          <div class="cid">B2</div>
+          <p class="act">Right phone, wrong guest ID.</p>
+          <p class="exp">Refused, without hinting which half was wrong.</p>
+        </div>
+      </li>
+      <li class="case" data-id="B3">
+        <button class="mark" aria-label="Mark case B3"></button>
+        <div>
+          <div class="cid">B3</div>
+          <p class="act">Right guest ID, wrong phone.</p>
+          <p class="exp">Also refused. The code alone is not enough.</p>
+        </div>
+      </li>
+      <li class="case" data-id="B4">
+        <button class="mark" aria-label="Mark case B4"></button>
+        <div>
+          <div class="cid">B4</div>
+          <p class="act">Both correct.</p>
+          <p class="exp">Signed straight in, with the same property and room as before.</p>
+        </div>
+      </li>
+      <li class="case" data-id="B5">
+        <button class="mark" aria-label="Mark case B5"></button>
+        <div>
+          <div class="cid">B5</div>
+          <p class="act">Type the guest ID in lower case.</p>
+          <p class="exp">Still works — the field upper-cases it. Nobody should be locked out by a keyboard.</p>
+        </div>
+      </li>
+    </ol>
+  </section>
+
+  <!-- ── C ────────────────────────────────────────────────────────────── -->
+  <section class="group" data-group="C">
+    <div class="ghead">
+      <span class="gletter">C</span>
+      <h2>The landlord as the recovery path</h2>
+      <span class="gcount">7 cases</span>
+    </div>
+    <p class="why">
+      There is no password reset for an account with no email, so if a guest changes
+      phones the landlord is the only way back in — they hold the government ID that
+      person uploaded, and can check a face against it. This is brand new, and its
+      failure mode is a credential appearing on screen when it shouldn't.
+    </p>
+    <ol class="cases">
+      <li class="case" data-id="C1">
+        <button class="mark" aria-label="Mark case C1"></button>
+        <div>
+          <div class="cid">C1</div>
+          <p class="act">As the landlord, open the guest from People and scroll to the bottom. <span class="tag key">key</span></p>
+          <p class="exp">A <code>GUEST SIGN-IN ID</code> card, with the code hidden behind dots — not readable yet.</p>
+        </div>
+      </li>
+      <li class="case" data-id="C2">
+        <button class="mark" aria-label="Mark case C2"></button>
+        <div>
+          <div class="cid">C2</div>
+          <p class="act">Read what the card says before you reveal anything.</p>
+          <p class="exp">It explains that this person has no email or password, and that you are the only one who can give them the code.</p>
+        </div>
+      </li>
+      <li class="case" data-id="C3">
+        <button class="mark" aria-label="Mark case C3"></button>
+        <div>
+          <div class="cid">C3</div>
+          <p class="act">Tap <strong>Show guest ID</strong>.</p>
+          <p class="exp">The real code appears, and matches exactly what you wrote down in A7. The wording changes to tell you to check their face against the ID on file first.</p>
+        </div>
+      </li>
+      <li class="case" data-id="C4">
+        <button class="mark" aria-label="Mark case C4"></button>
+        <div>
+          <div class="cid">C4</div>
+          <p class="act">Tap the copy button.</p>
+          <p class="exp">A confirmation that it copied, and pasting anywhere gives the code.</p>
+        </div>
+      </li>
+      <li class="case" data-id="C5">
+        <button class="mark" aria-label="Mark case C5"></button>
+        <div>
+          <div class="cid">C5</div>
+          <p class="act">Tap <strong>Hide</strong>.</p>
+          <p class="exp">Back to dots.</p>
+        </div>
+      </li>
+      <li class="case" data-id="C6">
+        <button class="mark" aria-label="Mark case C6"></button>
+        <div>
+          <div class="cid">C6</div>
+          <p class="act">Go back and open a normal tenant — someone with an email and password.</p>
+          <p class="exp">No guest card at all. Not an empty one, not one showing dots — absent.</p>
+        </div>
+      </li>
+      <li class="case" data-id="C7">
+        <button class="mark" aria-label="Mark case C7"></button>
+        <div>
+          <div class="cid">C7</div>
+          <p class="act">With two guests: reveal the first one's code, go back, open the second. <span class="tag key">key</span></p>
+          <p class="exp">The second one's code is hidden. Revealing one person must never leave the next person's credential already on screen.</p>
+        </div>
+      </li>
+    </ol>
+  </section>
+
+  <!-- ── D ────────────────────────────────────────────────────────────── -->
+  <section class="group" data-group="D">
+    <div class="ghead">
+      <span class="gletter">D</span>
+      <h2>A guest completing their profile</h2>
+      <span class="gcount">8 cases</span>
+    </div>
+    <p class="why">
+      This is the upgrade from "guest at one property" to a real account that travels.
+      It should hand over a working email and password, retire the guest code, and stop
+      the landlord seeing them as <code>Guest XXXXXX</code> for ever.
+    </p>
+    <ol class="cases">
+      <li class="case" data-id="D1">
+        <button class="mark" aria-label="Mark case D1"></button>
+        <div>
+          <div class="cid">D1</div>
+          <p class="act">As the guest, open the profile tab.</p>
+          <p class="exp">A card saying you are here as a guest, showing the guest ID, why finishing matters, and how your landlord currently sees you.</p>
+        </div>
+      </li>
+      <li class="case" data-id="D2">
+        <button class="mark" aria-label="Mark case D2"></button>
+        <div>
+          <div class="cid">D2</div>
+          <p class="act">Tap <strong>Complete my profile</strong>.</p>
+          <p class="exp">Asks for a name, an email and a password. Nothing you already gave is asked for again.</p>
+        </div>
+      </li>
+      <li class="case" data-id="D3">
+        <button class="mark" aria-label="Mark case D3"></button>
+        <div>
+          <div class="cid">D3</div>
+          <p class="act">Try a password shorter than six characters.</p>
+          <p class="exp">Can't submit.</p>
+        </div>
+      </li>
+      <li class="case" data-id="D4">
+        <button class="mark" aria-label="Mark case D4"></button>
+        <div>
+          <div class="cid">D4</div>
+          <p class="act">Try an email that already belongs to another tenant, then one that belongs to a landlord.</p>
+          <p class="exp">Both refused, each saying which kind of account already has it.</p>
+        </div>
+      </li>
+      <li class="case" data-id="D5">
+        <button class="mark" aria-label="Mark case D5"></button>
+        <div>
+          <div class="cid">D5</div>
+          <p class="act">Submit a valid name, email and password.</p>
+          <p class="exp">Confirms you can now sign in with the email and password.</p>
+        </div>
+      </li>
+      <li class="case" data-id="D6">
+        <button class="mark" aria-label="Mark case D6"></button>
+        <div>
+          <div class="cid">D6</div>
+          <p class="act">Sign out and sign in with the new email and password.</p>
+          <p class="exp">Works, and everything — room, documents, payment history — is still there.</p>
+        </div>
+      </li>
+      <li class="case" data-id="D7">
+        <button class="mark" aria-label="Mark case D7"></button>
+        <div>
+          <div class="cid">D7</div>
+          <p class="act">On the landlord account, open that person again. <span class="tag key">key</span></p>
+          <p class="exp">The guest sign-in ID card is gone entirely, and their real name has replaced <code>Guest XXXXXX</code> in People.</p>
+        </div>
+      </li>
+      <li class="case" data-id="D8">
+        <button class="mark" aria-label="Mark case D8"></button>
+        <div>
+          <div class="cid">D8</div>
+          <p class="act">Back on their phone, look at the profile tab.</p>
+          <p class="exp">The guest card is gone. Nothing still nags them to finish something they've finished.</p>
+        </div>
+      </li>
+    </ol>
+  </section>
+
+  <!-- ── E ────────────────────────────────────────────────────────────── -->
+  <section class="group" data-group="E">
+    <div class="ghead">
+      <span class="gletter">E</span>
+      <h2>Forgot password, end to end</h2>
+      <span class="gcount">10 cases</span>
+    </div>
+    <p class="why">
+      Two steps: a six-digit code by email, then a new password. The code always goes
+      to the account's own registered address, never to whatever was typed in the
+      request, so a reset can't be redirected. E9 is the one that was crashing.
+    </p>
+    <ol class="cases">
+      <li class="case" data-id="E1">
+        <button class="mark" aria-label="Mark case E1"></button>
+        <div>
+          <div class="cid">E1</div>
+          <p class="act">Tap forgot password and enter a mobile number that isn't registered.</p>
+          <p class="exp">Told plainly that no account is registered with those details — not a fake success.</p>
+        </div>
+      </li>
+      <li class="case" data-id="E2">
+        <button class="mark" aria-label="Mark case E2"></button>
+        <div>
+          <div class="cid">E2</div>
+          <p class="act">Enter a registered <strong>mobile number</strong>, not the email.</p>
+          <p class="exp">Accepted, and it tells you which partly-hidden email address the code went to.</p>
+        </div>
+      </li>
+      <li class="case" data-id="E3">
+        <button class="mark" aria-label="Mark case E3"></button>
+        <div>
+          <div class="cid">E3</div>
+          <p class="act">Open that inbox.</p>
+          <p class="exp">A six-digit code arrives, from the no-reply identity, saying it expires in 15 minutes.</p>
+        </div>
+      </li>
+      <li class="case" data-id="E4">
+        <button class="mark" aria-label="Mark case E4"></button>
+        <div>
+          <div class="cid">E4</div>
+          <p class="act">Enter a wrong code.</p>
+          <p class="exp">Refused as invalid or expired. You stay on the step.</p>
+        </div>
+      </li>
+      <li class="case" data-id="E5">
+        <button class="mark" aria-label="Mark case E5"></button>
+        <div>
+          <div class="cid">E5</div>
+          <p class="act">Right code, but a new password under six characters.</p>
+          <p class="exp">Refused, and says the minimum.</p>
+        </div>
+      </li>
+      <li class="case" data-id="E6">
+        <button class="mark" aria-label="Mark case E6"></button>
+        <div>
+          <div class="cid">E6</div>
+          <p class="act">Right code and a valid password.</p>
+          <p class="exp">Success, and it points you at signing in.</p>
+        </div>
+      </li>
+      <li class="case" data-id="E7">
+        <button class="mark" aria-label="Mark case E7"></button>
+        <div>
+          <div class="cid">E7</div>
+          <p class="act">Sign in with the new password, then try the old one.</p>
+          <p class="exp">New works. Old is refused.</p>
+        </div>
+      </li>
+      <li class="case" data-id="E8">
+        <button class="mark" aria-label="Mark case E8"></button>
+        <div>
+          <div class="cid">E8</div>
+          <p class="act">Go through forgot password again and re-enter the code you already used.</p>
+          <p class="exp">Refused. A code is spent once.</p>
+        </div>
+      </li>
+      <li class="case" data-id="E9">
+        <button class="mark" aria-label="Mark case E9"></button>
+        <div>
+          <div class="cid">E9</div>
+          <p class="act">With a guest account that hasn't completed a profile, tap forgot password and enter the guest's phone number. <span class="tag key">key</span></p>
+          <p class="exp">A clear message that this is a guest account with no password, telling them to sign in with their guest ID and phone instead. <strong>Not</strong> "Server error. Please try again." — that was the bug.</p>
+        </div>
+      </li>
+      <li class="case" data-id="E10">
+        <button class="mark" aria-label="Mark case E10"></button>
+        <div>
+          <div class="cid">E10</div>
+          <p class="act">Do E2 to E7 again on the <strong>landlord</strong> sign-in screen.</p>
+          <p class="exp">Same behaviour. A code issued for one account type must never reset the other, so a landlord code should not work on a tenant account with the same email.</p>
+        </div>
+      </li>
+    </ol>
+  </section>
+
+  <!-- ── F ────────────────────────────────────────────────────────────── -->
+  <section class="group" data-group="F">
+    <div class="ghead">
+      <span class="gletter">F</span>
+      <h2>Confirming or rejecting a claimed payment</h2>
+      <span class="gcount">13 cases</span>
+    </div>
+    <p class="why">
+      Until now a tenant could tap "I've paid" and nothing in the app could ever
+      answer it — the claim sat there counting toward nothing while every screen still
+      called them overdue. Confirming is the moment the money becomes real: it counts
+      toward your totals <em>and</em> moves their next rent date, which is what clears
+      the month.
+    </p>
+    <ol class="cases">
+      <li class="case" data-id="F1">
+        <button class="mark" aria-label="Mark case F1"></button>
+        <div>
+          <div class="cid">F1</div>
+          <p class="act">As a tenant, mark rent as paid for exactly the rent amount, with a past date and a reference number.</p>
+          <p class="exp">Told it's been sent to the landlord and clears the month only once they confirm. Your dues do <strong>not</strong> drop yet.</p>
+        </div>
+      </li>
+      <li class="case" data-id="F2">
+        <button class="mark" aria-label="Mark case F2"></button>
+        <div>
+          <div class="cid">F2</div>
+          <p class="act">Switch to the landlord and look at the bell. <span class="tag key">key</span></p>
+          <p class="exp">The number went up by one. Declared payments count on the bell alongside people asking to join.</p>
+        </div>
+      </li>
+      <li class="case" data-id="F3">
+        <button class="mark" aria-label="Mark case F3"></button>
+        <div>
+          <div class="cid">F3</div>
+          <p class="act">Open the bell and read the order of the rows.</p>
+          <p class="exp">A payments row, sitting <strong>above</strong> "tenants are overdue" — deliberately, since the person claiming may be one of the ones listed as overdue.</p>
+        </div>
+      </li>
+      <li class="case" data-id="F4">
+        <button class="mark" aria-label="Mark case F4"></button>
+        <div>
+          <div class="cid">F4</div>
+          <p class="act">Tap that row.</p>
+          <p class="exp">A queue headed <code>TENANTS SAY THEY HAVE PAID</code>, with a line totalling the money claimed and not yet counted.</p>
+        </div>
+      </li>
+      <li class="case" data-id="F5">
+        <button class="mark" aria-label="Mark case F5"></button>
+        <div>
+          <div class="cid">F5</div>
+          <p class="act">Look at the row for the exact-rent payment.</p>
+          <p class="exp">No amber warning on it — the amount is what was expected.</p>
+        </div>
+      </li>
+      <li class="case" data-id="F6">
+        <button class="mark" aria-label="Mark case F6"></button>
+        <div>
+          <div class="cid">F6</div>
+          <p class="act">Tap the row to open the decision.</p>
+          <p class="exp">The amount is the biggest thing on screen, confirmed as matching their rent, with the date paid, the method, the reference to check against your bank statement, and how long it's been waiting.</p>
+        </div>
+      </li>
+      <li class="case" data-id="F7">
+        <button class="mark" aria-label="Mark case F7"></button>
+        <div>
+          <div class="cid">F7</div>
+          <p class="act">Tap <strong>Confirm payment</strong>. <span class="tag key">key</span></p>
+          <p class="exp">A confirmation naming the amount and the tenant. The queue empties and the bell number drops.</p>
+        </div>
+      </li>
+      <li class="case" data-id="F8">
+        <button class="mark" aria-label="Mark case F8"></button>
+        <div>
+          <div class="cid">F8</div>
+          <p class="act">Now check four places: the tenant's card, the overdue list, the rent-collected figure, and the tenant's own app. <span class="tag key">key</span></p>
+          <p class="exp">Their next rent date moved forward a month; they're no longer overdue; collected went up by the amount; and their own screen agrees. All four must tell the same story.</p>
+        </div>
+      </li>
+      <li class="case" data-id="F9">
+        <button class="mark" aria-label="Mark case F9"></button>
+        <div>
+          <div class="cid">F9</div>
+          <p class="act">As the tenant, declare a payment for <em>less</em> than the rent.</p>
+          <p class="exp">In the landlord's queue that row is outlined in amber and says how much short it is — visible while skimming, without opening it.</p>
+        </div>
+      </li>
+      <li class="case" data-id="F10">
+        <button class="mark" aria-label="Mark case F10"></button>
+        <div>
+          <div class="cid">F10</div>
+          <p class="act">Open it and read the warning, then reject it with a note.</p>
+          <p class="exp">It warns that confirming would credit only what they claim and leave the rest owed. After rejecting, the due date does <strong>not</strong> move.</p>
+        </div>
+      </li>
+      <li class="case" data-id="F11">
+        <button class="mark" aria-label="Mark case F11"></button>
+        <div>
+          <div class="cid">F11</div>
+          <p class="act">Look at the tenant's own payment history.</p>
+          <p class="exp">The claim is still listed and marked rejected — it didn't silently vanish — and they can see the reason you gave.</p>
+        </div>
+      </li>
+      <li class="case" data-id="F12">
+        <button class="mark" aria-label="Mark case F12"></button>
+        <div>
+          <div class="cid">F12</div>
+          <p class="act">Declare a cash payment with no reference number, then open it as the landlord.</p>
+          <p class="exp">The reference row is absent altogether — not present showing a dash.</p>
+        </div>
+      </li>
+      <li class="case" data-id="F13">
+        <button class="mark" aria-label="Mark case F13"></button>
+        <div>
+          <div class="cid">F13</div>
+          <p class="act">Clear the queue, then open it again.</p>
+          <p class="exp">Says there's nothing to confirm, and explains that nothing counts toward your totals until you confirm it.</p>
+        </div>
+      </li>
+    </ol>
+  </section>
+
+  <!-- ── G ────────────────────────────────────────────────────────────── -->
+  <section class="group" data-group="G">
+    <div class="ghead">
+      <span class="gletter">G</span>
+      <h2>Putting a property on the map</h2>
+      <span class="gcount">12 cases</span>
+    </div>
+    <p class="why">
+      The landlord drops a pin, the address fields fill themselves in, and the tenant
+      gets a route to their own front door. The map is drawn from tiles rather than a
+      native map component, so it can arrive over the air — G2 is how you tell the
+      MapTiler key actually reached the app.
+    </p>
+    <ol class="cases">
+      <li class="case" data-id="G1">
+        <button class="mark" aria-label="Mark case G1"></button>
+        <div>
+          <div class="cid">G1</div>
+          <p class="act">Edit a property and find the pin row.</p>
+          <p class="exp">A row offering to pin it on the map, showing the current coordinates if it already has one.</p>
+        </div>
+      </li>
+      <li class="case" data-id="G2">
+        <button class="mark" aria-label="Mark case G2"></button>
+        <div>
+          <div class="cid">G2</div>
+          <p class="act">Open the picker and look at the top of the map. <span class="tag key">key</span></p>
+          <p class="exp">No amber "development tiles" banner. If it's there, the MapTiler key didn't reach this build.</p>
+        </div>
+      </li>
+      <li class="case" data-id="G3">
+        <button class="mark" aria-label="Mark case G3"></button>
+        <div>
+          <div class="cid">G3</div>
+          <p class="act">Drag the map around, and pinch or use the buttons to zoom.</p>
+          <p class="exp">The map moves under a pin that stays dead centre, and the coordinates update as you go. Tiles keep loading.</p>
+        </div>
+      </li>
+      <li class="case" data-id="G4">
+        <button class="mark" aria-label="Mark case G4"></button>
+        <div>
+          <div class="cid">G4</div>
+          <p class="act">Search for a landmark near the property.</p>
+          <p class="exp">Results appear over the map after a moment's pause — not one request per keystroke. Tapping one jumps the map there.</p>
+        </div>
+      </li>
+      <li class="case" data-id="G5">
+        <button class="mark" aria-label="Mark case G5"></button>
+        <div>
+          <div class="cid">G5</div>
+          <p class="act">Tap <strong>Use my current location</strong> the first time. <span class="tag key">key</span></p>
+          <p class="exp">The phone asks for location permission, with the map and the reason visible behind it. Allowing moves the pin to where you're standing.</p>
+        </div>
+      </li>
+      <li class="case" data-id="G6">
+        <button class="mark" aria-label="Mark case G6"></button>
+        <div>
+          <div class="cid">G6</div>
+          <p class="act">Deny location, then tap it again.</p>
+          <p class="exp">A message saying location is off and pointing at phone settings — and dragging the map still works. No dead button, no crash.</p>
+        </div>
+      </li>
+      <li class="case" data-id="G7">
+        <button class="mark" aria-label="Mark case G7"></button>
+        <div>
+          <div class="cid">G7</div>
+          <p class="act">Place the pin on a real building and tap <strong>Use this location</strong>. <span class="tag key">key</span></p>
+          <p class="exp">Back in the form with the street, locality, city and pincode filled in from the place you picked — you don't have to type them.</p>
+        </div>
+      </li>
+      <li class="case" data-id="G8">
+        <button class="mark" aria-label="Mark case G8"></button>
+        <div>
+          <div class="cid">G8</div>
+          <p class="act">Correct one of those fields by hand — say the flat number.</p>
+          <p class="exp">Your typing sticks. Auto-fill is a starting point, not a lock.</p>
+        </div>
+      </li>
+      <li class="case" data-id="G9">
+        <button class="mark" aria-label="Mark case G9"></button>
+        <div>
+          <div class="cid">G9</div>
+          <p class="act">Save, leave the property, and come back to it.</p>
+          <p class="exp">The pin is still there and a <strong>Directions</strong> button is offered instead of an invitation to pin it.</p>
+        </div>
+      </li>
+      <li class="case" data-id="G10">
+        <button class="mark" aria-label="Mark case G10"></button>
+        <div>
+          <div class="cid">G10</div>
+          <p class="act">Tap <strong>Directions</strong>.</p>
+          <p class="exp">Your maps app opens with a route to that exact point — not a search for the address text.</p>
+        </div>
+      </li>
+      <li class="case" data-id="G11">
+        <button class="mark" aria-label="Mark case G11"></button>
+        <div>
+          <div class="cid">G11</div>
+          <p class="act">As a tenant of that property, open My place.</p>
+          <p class="exp">A Directions button on the property card, routing to the building the landlord pinned.</p>
+        </div>
+      </li>
+      <li class="case" data-id="G12">
+        <button class="mark" aria-label="Mark case G12"></button>
+        <div>
+          <div class="cid">G12</div>
+          <p class="act">Now look at a property that has <em>no</em> pin, from both sides.</p>
+          <p class="exp">The tenant is told their landlord hasn't pinned it yet — no button to a guessed location. The landlord is invited to pin it, and told why.</p>
+        </div>
+      </li>
+    </ol>
+  </section>
+
+  <!-- ── H ────────────────────────────────────────────────────────────── -->
+  <section class="group" data-group="H">
+    <div class="ghead">
+      <span class="gletter">H</span>
+      <h2>Things that could have broken</h2>
+      <span class="gcount">6 cases</span>
+    </div>
+    <p class="why">
+      The sign-in check that every authenticated request passes through was rewritten,
+      and two columns changed shape. None of this should be visible — which is exactly
+      why it's worth a glance.
+    </p>
+    <ol class="cases">
+      <li class="case" data-id="H1">
+        <button class="mark" aria-label="Mark case H1"></button>
+        <div>
+          <div class="cid">H1</div>
+          <p class="act">Sign in as the landlord and load the dashboard. <span class="tag key">key</span></p>
+          <p class="exp">Normal sign-in, and every figure loads. No "not authorized" and no server error.</p>
+        </div>
+      </li>
+      <li class="case" data-id="H2">
+        <button class="mark" aria-label="Mark case H2"></button>
+        <div>
+          <div class="cid">H2</div>
+          <p class="act">Open the app on a device that was already signed in before today's deploy. <span class="tag key">key</span></p>
+          <p class="exp">Still signed in. Nobody was logged out by the change to how tokens are checked.</p>
+        </div>
+      </li>
+      <li class="case" data-id="H3">
+        <button class="mark" aria-label="Mark case H3"></button>
+        <div>
+          <div class="cid">H3</div>
+          <p class="act">Record a payment yourself, as the landlord, against a tenant.</p>
+          <p class="exp">Saved straight away with no confirmation step — it's your own statement about your own money — and their next rent date still moves.</p>
+        </div>
+      </li>
+      <li class="case" data-id="H4">
+        <button class="mark" aria-label="Mark case H4"></button>
+        <div>
+          <div class="cid">H4</div>
+          <p class="act">Accept one join request and decline another.</p>
+          <p class="exp">Both still work, and the bell number drops each time.</p>
+        </div>
+      </li>
+      <li class="case" data-id="H5">
+        <button class="mark" aria-label="Mark case H5"></button>
+        <div>
+          <div class="cid">H5</div>
+          <p class="act">Switch the theme between light, dark and system.</p>
+          <p class="exp">Everything follows, including the new payment queue and the guest ID card.</p>
+        </div>
+      </li>
+      <li class="case" data-id="H6">
+        <button class="mark" aria-label="Mark case H6"></button>
+        <div>
+          <div class="cid">H6</div>
+          <p class="act">Open a maintenance ticket and send a reply.</p>
+          <p class="exp">The thread loads and the message posts. Untouched by this work, but it shares the same auth path.</p>
+        </div>
+      </li>
+    </ol>
+  </section>
+
+  <div class="note warn">
+    <h4>One thing you can't check by tapping</h4>
+    <p>
+      <strong>The 90-day guest session.</strong> Guests used to be signed out every
+      seven days and had no way back in except a code they never wrote down. That's now
+      ninety days — but only for tokens issued <em>after</em> the deploy, and proving
+      the old behaviour is gone would mean waiting eight days for it not to happen.
+      A guest who was already signed in keeps their old seven-day session until it runs
+      out and they sign in again. Treat it as verified by the server tests rather than
+      by hand.
+    </p>
+  </div>
+
+  <div class="note">
+    <h4>Expected gaps — don't report these as bugs</h4>
+    <p>
+      <strong>An ex-guest gets a confusing refusal.</strong> When a tenancy ends the
+      guest code is retired, so someone who left and still has their old code is
+      refused without being told they've left the property. Known, small, not yet fixed.
+    </p>
+    <p>
+      <strong>No guest notice on the dashboard.</strong> The prompt to finish a profile
+      is only in the profile tab so far, not on the home screen.
+    </p>
+    <p>
+      <strong>No receipts screen.</strong> A tenant can't yet open a confirmed payment
+      and get a rent receipt — that's the next piece of work.
+    </p>
+  </div>
+
+  <footer class="foot">
+    <p>
+      <strong>When something fails,</strong> the useful details are: which case, what
+      you saw instead, and whether it failed every time or just once. A screenshot of
+      the actual screen beats a description of it.
+    </p>
+    <p>
+      Anything in group F or G that fails on <em>every</em> tenant and property at once
+      is far more likely to be the server not having deployed than a bug in the app —
+      check that before going case by case.
+    </p>
+  </footer>
+
+</div>
+
+<script>
+  // A test run is worth keeping across a page reload — you will be switching to the
+  // app and back constantly, and losing 40 ticks to an accidental refresh would make
+  // the page worse than paper.
+  (function () {
+    var KEY = 'tenantpro-testplan-v1';
+    var STATES = ['', 'pass', 'fail'];
+    var GLYPH = { '': '', pass: '✓', fail: '✕' };
+    var saved = {};
+
+    try { saved = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) { saved = {}; }
+
+    var cases = Array.prototype.slice.call(document.querySelectorAll('li.case'));
+
+    function persist() {
+      try { localStorage.setItem(KEY, JSON.stringify(saved)); } catch (e) { /* private mode: run is just not saved */ }
+    }
+
+    function paint(li) {
+      var id = li.getAttribute('data-id');
+      var st = saved[id] || '';
+      li.setAttribute('data-state', st);
+      var btn = li.querySelector('button.mark');
+      btn.textContent = GLYPH[st];
+      btn.setAttribute('aria-pressed', st ? 'true' : 'false');
+      btn.setAttribute('title', st === 'pass' ? 'Passed' : st === 'fail' ? 'Failed' : 'Not tested');
+    }
+
+    function tally() {
+      var p = 0, f = 0;
+      cases.forEach(function (li) {
+        var st = saved[li.getAttribute('data-id')];
+        if (st === 'pass') p++; else if (st === 'fail') f++;
+      });
+      var total = cases.length;
+      document.getElementById('n-pass').textContent = p;
+      document.getElementById('n-fail').textContent = f;
+      document.getElementById('n-open').textContent = total - p - f;
+      document.getElementById('bar-pass').style.width = (p / total * 100) + '%';
+      document.getElementById('bar-fail').style.width = (f / total * 100) + '%';
+    }
+
+    cases.forEach(function (li) {
+      paint(li);
+      li.querySelector('button.mark').addEventListener('click', function () {
+        var id = li.getAttribute('data-id');
+        var next = STATES[(STATES.indexOf(saved[id] || '') + 1) % STATES.length];
+        if (next) saved[id] = next; else delete saved[id];
+        paint(li);
+        tally();
+        persist();
+      });
+    });
+
+    // Per-group counts, so each heading says how many of its own cases are done.
+    Array.prototype.forEach.call(document.querySelectorAll('section.group'), function (sec) {
+      var own = sec.querySelectorAll('li.case').length;
+      var el = sec.querySelector('.gcount');
+      function refresh() {
+        var done = 0;
+        Array.prototype.forEach.call(sec.querySelectorAll('li.case'), function (li) {
+          if (saved[li.getAttribute('data-id')]) done++;
+        });
+        el.textContent = done ? done + ' of ' + own + ' done' : own + ' cases';
+      }
+      sec.addEventListener('click', function (e) { if (e.target.closest('button.mark')) setTimeout(refresh, 0); });
+      refresh();
+    });
+
+    document.getElementById('reset').addEventListener('click', function () {
+      saved = {};
+      persist();
+      cases.forEach(paint);
+      tally();
+      Array.prototype.forEach.call(document.querySelectorAll('section.group'), function (sec) {
+        sec.querySelector('.gcount').textContent = sec.querySelectorAll('li.case').length + ' cases';
+      });
+    });
+
+    tally();
+  })();
+</script>
