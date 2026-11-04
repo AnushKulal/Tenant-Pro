@@ -1,9 +1,10 @@
 import React from 'react';
-import { View, ScrollView } from 'react-native';
+import { View } from 'react-native';
 import { useVm } from '../AppContext';
 import { useT } from '../ThemeContext';
 import { T, Eyebrow, Card, Row, Pill, Press, Glyph, Face, Avatar } from '../ui';
 import { Stagger } from '../motion';
+import { Body, ScreenTitle } from '../layout';
 
 export default function MeScreen() {
     const vm = useVm();
@@ -13,11 +14,8 @@ export default function MeScreen() {
     const cr = vm.myCredit;
 
     return (
-        <ScrollView
-            contentContainerStyle={{ paddingTop: 14, paddingHorizontal: 18, paddingBottom: 22 }}
-            showsVerticalScrollIndicator={false}
-        >
-            <T w={700} s={32} lh={1.02} style={{ letterSpacing: -1.6, marginBottom: 16 }}>My profile</T>
+        <Body bottom={22} was={{ top: 14 }}>
+            <ScreenTitle style={{ marginBottom: 16 }}>My profile</ScreenTitle>
 
             {/* A guest joined with a phone number and a photo of an ID and nothing
                 else. Everything in the app works for them, but the account is tied to
@@ -249,6 +247,6 @@ export default function MeScreen() {
                     </Press>
                 </>
             )}
-        </ScrollView>
+        </Body>
     );
 }

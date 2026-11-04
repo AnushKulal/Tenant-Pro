@@ -10,6 +10,7 @@ is not already here — they are plain Node scripts that exit non-zero on failur
 | `gateway.test.js` | the gateway controllers, with `db` and `fetch` stubbed | nothing |
 | `vm.gateway.test.js` | the real `deriveVm`, with react-native stubbed | `mobile/node_modules` |
 | `refresh.client.test.js` | the real axios interceptor: refresh-on-401, retry, and when NOT to sign out | nothing |
+| `layout.test.js` | the header/content alignment rule: when the header takes the title over, that a focused field can never end under it, and that the flag really reverts | `mobile/node_modules` |
 | `refresh.e2e.js` | refresh tokens against a real server and a real MySQL | a running server + seeded DB + `E2E_SOCK` |
 | `api.e2e.js` | every HTTP endpoint, against a real server and a real MySQL | a running server + seeded DB |
 | `ui.e2e.js` | the real app in a browser, clicking real buttons | a web build + Chromium |
@@ -37,7 +38,12 @@ cd backend && node ../tests/session.test.js
 cd backend && node ../tests/gateway.test.js
 cd mobile  && node ../tests/refresh.client.test.js
 cd mobile  && node ../tests/vm.gateway.test.js
+cd mobile  && node ../tests/layout.test.js
 ```
+
+The three that run from `mobile/` do so because they import the app's own source
+— the real `deriveVm`, the real axios interceptor, the real `layout.js` — through
+a babel require hook, rather than a copy of the logic that agrees with it today.
 
 ## The two end-to-end suites
 

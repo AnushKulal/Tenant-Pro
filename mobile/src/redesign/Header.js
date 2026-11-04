@@ -1,24 +1,92 @@
 // File: mobile/src/redesign/Header.js
-// Owner shell header (chrome): scope search / back button + notifications bell.
+//
+// Region 2 of the three a phone screen has: the bar that sits directly below the
+// system bars and above all content. See layout.js for the rule it follows and
+// the flag that reverts it.
+//
+// It holds, left to right: a navigation slot (back, or the scope search), the
+// screen's title once the body has scrolled past its own, and at most two action
+// buttons. Two is the limit from the platform guidance and also the practical one
+// — a third does not fit next to a title on a narrow phone without the title
+// truncating to nothing.
+//
+// WHO GETS ONE
+//
+// Before the alignment rule: the landlord only. A tenant had no header, so the
+// back chevron, the title and the bell were each re-drawn inside whichever tenant
+// screen wanted them. The tenant side now gets the same region, with the bell it
+// was already using moved into it.
+//
+// Four landlord screens still opt out (ledger, people, support, ticket): each
+// draws its own search bar and title in its body, and giving them a second header
+// above that would be two headers, not one. They satisfy the rule their own way.
+// That is a real exception, not an oversight — it is listed here so the next
+// person does not have to work out why those four look different.
 import React from 'react';
 import { View } from 'react-native';
 import { useVm } from './AppContext';
 import { useT } from './ThemeContext';
 import { T, Row, Press, Glyph } from './ui';
 import AlertBell from './AlertBell';
+import { StickyTitle } from './layout';
+import { isLayoutRule } from '../appConfig';
 
 const BTN = { flexBasis: 36, flexGrow: 0, flexShrink: 0, width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center' };
 
 export default function Header() {
     const vm = useVm();
     const t = useT();
-    if (!vm.showHeader) return null;
+
+    const ownerHeader = !!vm.showHeader;
+    // The tenant header only exists with the rule on; with the flag at 'v1' this
+    // component behaves exactly as it did, which is to say the tenant has none.
+    // Which tenant routes get one — and the three that own their own chrome — is
+    // decided next to the landlord's equivalent in deriveVm, so the two cannot
+    // drift apart.
+    const tenantHeader = isLayoutRule() && !!vm.showTenantHeader && !ownerHeader;
+
+    if (!ownerHeader && !tenantHeader) return null;
+
+    const bar = { backgroundColor: t.ink, paddingTop: 12, paddingHorizontal: 18, paddingBottom: 10 };
+
+    if (tenantHeader) {
+        // A dock destination is somewhere you switch TO, not somewhere you came
+        // from, so it gets no back chevron — the dock is how you leave it.
+        // Anything else on the tenant side is a step inwards, and does.
+        // `showTenantDock` is already exactly "this route is a dock destination",
+        // so it answers this rather than a second list drifting out of step with
+        // the first.
+        const inward = !vm.showTenantDock;
+        return (
+            <Row gap={8} style={bar}>
+                {inward && vm.canGoBack ? (
+                    <Press
+                        onPress={vm.goBack}
+                        hitSlop={8}
+                        style={{ ...BTN, borderWidth: 1, borderColor: t.line }}
+                    >
+                        <Glyph name="chevron-back" size={17} color={t.fg} />
+                    </Press>
+                ) : null}
+
+                <StickyTitle />
+
+                {/* The one action a tenant screen needs in the chrome. It used to
+                    live inside the portal home screen's body, which meant it was
+                    only reachable from that one screen and scrolled away even
+                    there. */}
+                <AlertBell
+                    onPress={vm.openTAlerts}
+                    has={vm.hasTAlerts}
+                    urgent={vm.tBellUrgent}
+                    count={vm.tBellCount}
+                />
+            </Row>
+        );
+    }
 
     return (
-        <Row
-            gap={8}
-            style={{ backgroundColor: t.ink, paddingTop: 12, paddingHorizontal: 18, paddingBottom: 10 }}
-        >
+        <Row gap={8} style={bar}>
             {vm.showSearch && (
                 <Press
                     onPress={vm.openSearch}
@@ -60,6 +128,14 @@ export default function Header() {
                     </T>
                 </>
             )}
+
+            {/* No sticky title on this side, and that is a decision rather than
+                an omission. A landlord's dock screen already spends the whole bar
+                on the scope search, which is a flexing element: a title beside it
+                leaves both too narrow to read. A landlord's inner screen already
+                shows where it is, in `backTitle` above — in the same place and at
+                the same size the sticky one would use. There is no screen here
+                with room for it and a reason to want it. */}
 
             {vm.scoped && (
                 <Press onPress={vm.clearScope} style={{ ...BTN, borderWidth: 1, borderColor: t.line }}>

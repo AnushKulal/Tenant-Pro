@@ -18,6 +18,7 @@ import { useT } from '../ThemeContext';
 import { T, Card, Row, Press, Glyph, SearchBar } from '../ui';
 import { KeyboardScroll } from '../keyboard';
 import { Stagger } from '../motion';
+import { ScreenTitle, bodyPad } from '../layout';
 
 export default function FindScreen() {
     const vm = useVm();
@@ -45,13 +46,18 @@ export default function FindScreen() {
 
     return (
         <KeyboardScroll
-            contentContainerStyle={{ paddingTop: 14, paddingHorizontal: 18, paddingBottom: 26 }}
+            contentContainerStyle={bodyPad({ bottom: 26, was: { top: 14 } })}
             showsVerticalScrollIndicator={false}
         >
-            <T w={700} s={32} lh={1.02} style={{ letterSpacing: -1.6, marginBottom: 4 }}>Find a place</T>
-            <T w={400} s={13} lh={1.4} c={t.fg2} style={{ marginBottom: 14 }}>
-                {d.loaded && !d.hasError && !d.off ? `${d.countLine} listed near Bengaluru` : vm.findLine}
-            </T>
+            {/* The title and its line of context, measured together so the header
+                does not take over while the sentence explaining the screen is
+                still on screen. */}
+            <ScreenTitle
+                sub={d.loaded && !d.hasError && !d.off ? `${d.countLine} listed near Bengaluru` : vm.findLine}
+                subStyle={{ marginBottom: 14 }}
+            >
+                Find a place
+            </ScreenTitle>
 
             {vm.portalLinked && (
                 <View style={{ flexDirection: 'row', alignItems: 'flex-start', columnGap: 11, padding: 14, borderRadius: 18, backgroundColor: t.asoft, borderWidth: 1, borderColor: t.line, marginBottom: 14 }}>

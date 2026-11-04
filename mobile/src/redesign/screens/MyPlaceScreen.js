@@ -1,22 +1,22 @@
 import React from 'react';
-import { View, ScrollView, Image } from 'react-native';
+import { View, Image } from 'react-native';
 import { useVm } from '../AppContext';
 import { useT } from '../ThemeContext';
 import { T, Eyebrow, Row, Press, Glyph } from '../ui';
 import { Stagger } from '../motion';
+import { Body, useTitleAnchor } from '../layout';
 
 export default function MyPlaceScreen() {
     const vm = useVm();
     const t = useT();
     const me = vm.me;
+    const anchor = useTitleAnchor('My place');
 
     return (
-        <ScrollView
-            contentContainerStyle={{ paddingHorizontal: 18, paddingTop: 14, paddingBottom: 22 }}
-            showsVerticalScrollIndicator={false}
-        >
-            {/* Header */}
-            <Row gap={11} style={{ marginBottom: 16 }}>
+        <Body bottom={22} was={{ top: 14 }}>
+            {/* This screen's title row, and the anchor for the header's sticky
+                copy of it: scroll past this and "My place" appears in the bar. */}
+            <Row {...anchor} gap={11} style={{ marginBottom: 16 }}>
                 <Press
                     onPress={vm.backFromStay}
                     style={{ width: 36, height: 36, borderRadius: 12, borderWidth: 1, borderColor: t.line, alignItems: 'center', justifyContent: 'center' }}
@@ -227,6 +227,6 @@ export default function MyPlaceScreen() {
                     ) : null}
                 </View>
             )}
-        </ScrollView>
+        </Body>
     );
 }

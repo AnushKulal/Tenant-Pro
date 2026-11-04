@@ -1,22 +1,27 @@
 import React from 'react';
-import { View, ScrollView } from 'react-native';
+import { View } from 'react-native';
 import { useVm } from '../AppContext';
 import { useT } from '../ThemeContext';
 import { T, Eyebrow, Card, Row, Pill, Press, Glyph, IconChip, Face, Avatar } from '../ui';
 import AlertBell from '../AlertBell';
+import { Body, useTitleAnchor } from '../layout';
+import { isLayoutRule } from '../../appConfig';
 
 export default function PortalHomeScreen() {
     const vm = useVm();
     const t = useT();
     const me = vm.me || {};
 
+    // This screen's title is the tenant's own name, under their photograph. It is
+    // a title in every sense except the markup, so it anchors the header's sticky
+    // copy the same way a plain ScreenTitle would: scroll the greeting away and
+    // the name appears in the bar.
+    const anchor = useTitleAnchor(me.name || 'Home');
+
     return (
-        <ScrollView
-            contentContainerStyle={{ paddingTop: 14, paddingHorizontal: 18, paddingBottom: 22 }}
-            showsVerticalScrollIndicator={false}
-        >
+        <Body bottom={22} was={{ top: 14 }}>
             {/* Welcome header */}
-            <Row gap={12} style={{ marginBottom: 20 }}>
+            <Row {...anchor} gap={12} style={{ marginBottom: 20 }}>
                 {/* Your own picture and name open your profile. They did nothing at
                     all until a tester tapped them expecting exactly that — which is
                     the only thing a face in the corner of an app has ever meant.
@@ -37,15 +42,20 @@ export default function PortalHomeScreen() {
                     </View>
                 </Press>
                 <View style={{ flex: 1 }} />
-                {/* Same bell the landlord has, same component. On the tenant's home
-                    screen because this is where they land — an alert they have to go
-                    hunting for is one they will not see. */}
-                <AlertBell
-                    onPress={vm.openTAlerts}
-                    has={vm.hasTAlerts}
-                    urgent={vm.tBellUrgent}
-                    count={vm.tBellCount}
-                />
+                {/* The bell lived here because this screen was the only place a
+                    tenant had to put one: there was no header on their side. Now
+                    there is, and it carries the bell on every tenant screen rather
+                    than just this one — so this copy would be the same bell twice
+                    on the same screen. With the alignment rule off it is still the
+                    only one there is. */}
+                {isLayoutRule() ? null : (
+                    <AlertBell
+                        onPress={vm.openTAlerts}
+                        has={vm.hasTAlerts}
+                        urgent={vm.tBellUrgent}
+                        count={vm.tBellCount}
+                    />
+                )}
                 <Press
                     onPress={vm.askSignOut}
                     style={{
@@ -263,6 +273,6 @@ export default function PortalHomeScreen() {
                     </Press>
                 </Card>
             )}
-        </ScrollView>
+        </Body>
     );
 }

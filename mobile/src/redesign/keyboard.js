@@ -22,6 +22,8 @@
 // scrolled somewhere you did not put it.
 import React from 'react';
 import { Keyboard, Platform, ScrollView, TextInput, Dimensions } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { clampFocusScroll, useBodyScroll } from './layout';
 
 // The keyboard's height right now, 0 when it is closed.
 //
@@ -71,6 +73,23 @@ export const KeyboardScroll = React.forwardRef(function KeyboardScroll(
     const offset = React.useRef(0);      // where the list is scrolled to right now
     const restore = React.useRef(null);  // where it was before we moved it
     const kb = useKeyboardHeight();
+    const insets = useSafeAreaInsets();
+    // Kept in a ref because the keyboard listeners below are subscribed once and
+    // would otherwise close over the inset from first render.
+    const safeTop = React.useRef(insets.top);
+    safeTop.current = insets.top;
+    // Reports this body's scroll position to the header above it, so the header
+    // knows when the screen's own title has scrolled away. See layout.js.
+    //
+    // Only in 'pad' mode, which is the full-screen page. A bottom sheet also
+    // scrolls, and also uses this component — but a sheet is not a screen body.
+    // Reporting from one would flip the header's title to match how far you had
+    // scrolled inside a sheet sitting ON TOP of the screen that owns the title.
+    const reportScroll = useBodyScroll(onScroll);
+    const spy = React.useCallback((e) => {
+        if (mode === 'pad') reportScroll(e);
+        else if (onScroll) onScroll(e);
+    }, [mode, reportScroll, onScroll]);
 
     // Let a parent still hold the ref while we keep our own.
     const setRef = React.useCallback((node) => {
@@ -81,8 +100,8 @@ export const KeyboardScroll = React.forwardRef(function KeyboardScroll(
 
     const track = React.useCallback((e) => {
         offset.current = (e && e.nativeEvent && e.nativeEvent.contentOffset && e.nativeEvent.contentOffset.y) || 0;
-        if (onScroll) onScroll(e);
-    }, [onScroll]);
+        spy(e);
+    }, [spy]);
 
     React.useEffect(() => {
         const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
@@ -113,7 +132,27 @@ export const KeyboardScroll = React.forwardRef(function KeyboardScroll(
                     restore.current = null;
                     return;
                 }
-                const target = offset.current + overlap;
+                // Scrolling the field up by the whole overlap is right only if
+                // there is that much room above it. A field near the TOP of a long
+                // page has less, and shifting it by the full amount slides it
+                // under the header — you are then typing into something the header
+                // is sitting on, which is the exact thing WCAG 2.2 names. The
+                // clamp can only reduce the shift, so the common case is
+                // unaffected. See layout.js.
+                // Only on a full-screen page. In 'lifted' mode the container is a
+                // sheet that has moved up out of the keyboard's way and there is
+                // no header above it to protect the field from.
+                const shift = mode === 'pad'
+                    ? clampFocusScroll(overlap, y, safeTop.current)
+                    : overlap;
+                if (shift <= 0) {
+                    // No room to move it into. Leaving it where it is at least
+                    // keeps it visible under the keyboard's own edge rather than
+                    // hiding it under the header instead.
+                    restore.current = null;
+                    return;
+                }
+                const target = offset.current + shift;
                 if (inner.current && inner.current.scrollTo) {
                     inner.current.scrollTo({ y: target, animated: true });
                 }

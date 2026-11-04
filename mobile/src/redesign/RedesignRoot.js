@@ -19,6 +19,7 @@ import { useEnter, useWipe } from './motion';
 import { Monogram, T, Glyph, Press } from './ui';
 
 import Header from './Header';
+import { LayoutProvider } from './layout';
 import DeckDock from './DeckDock';
 import Sheets from './Sheets';
 import Toast from './Toast';
@@ -228,13 +229,25 @@ function Shell() {
             {/* status-bar spacer — the ink field runs under the OS status bar */}
             <View style={{ height: insets.top, backgroundColor: t.ink }} />
 
-            <Header />
+            {/* The header and the body it sits above, in that order, as the two
+                regions below the system bars. They are wrapped together because
+                the header shows the BODY's title once the body has scrolled past
+                it, and a scroll offset cannot travel between siblings on its own
+                — layout.js is that one wire.
 
-            {/* `animation: tpup .3s ease both` — remount per route so each screen
-                rises+fades in exactly as the prototype's screens do. */}
-            <ScreenStage key={state.route}>
-                <Screen />
-            </ScreenStage>
+                Keyed by route so arriving at a new screen starts with a clean
+                latch. Without it you leave one screen scrolled halfway down and
+                arrive at the top of the next with the previous screen's name
+                still in the bar. */}
+            <LayoutProvider key={state.route}>
+                <Header />
+
+                {/* `animation: tpup .3s ease both` — remount per route so each screen
+                    rises+fades in exactly as the prototype's screens do. */}
+                <ScreenStage>
+                    <Screen />
+                </ScreenStage>
+            </LayoutProvider>
 
             {showDock ? (
                 /* A sheet is modal, so the dock must not sit on top of it. Relying

@@ -1,22 +1,21 @@
 import React from 'react';
-import { View, ScrollView } from 'react-native';
+import { View } from 'react-native';
 import { useVm } from '../AppContext';
 import { useT } from '../ThemeContext';
 import { T, Eyebrow, Row, Press, Glyph, IconChip } from '../ui';
 import PushTestCard from '../PushTestCard';
+import { Body, useTitleAnchor } from '../layout';
 
 export default function TenantSettingsScreen() {
     const vm = useVm();
     const t = useT();
     const col = (v) => (v && (v[0] === '#' || v.startsWith('rgb')) ? v : t[v]);
+    const anchor = useTitleAnchor('Settings');
 
     return (
-        <ScrollView
-            contentContainerStyle={{ paddingTop: 14, paddingHorizontal: 18, paddingBottom: 22 }}
-            showsVerticalScrollIndicator={false}
-        >
-            {/* Header */}
-            <Row gap={11} style={{ marginBottom: 16 }}>
+        <Body bottom={22} was={{ top: 14 }}>
+            {/* Title row, and the anchor for the header's sticky copy of it. */}
+            <Row {...anchor} gap={11} style={{ marginBottom: 16 }}>
                 <Press
                     onPress={vm.goTMe}
                     style={{ width: 36, height: 36, borderRadius: 12, borderWidth: 1, borderColor: t.line, alignItems: 'center', justifyContent: 'center' }}
@@ -120,6 +119,6 @@ export default function TenantSettingsScreen() {
                     {vm.build.bundleLine.toUpperCase()}{vm.build.hasUpdate ? ` · ${vm.build.updateShort.toUpperCase()}` : ''}
                 </Eyebrow>
             </View>
-        </ScrollView>
+        </Body>
     );
 }

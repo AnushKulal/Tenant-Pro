@@ -1,8 +1,9 @@
 import React from 'react';
-import { View, ScrollView } from 'react-native';
+import { View } from 'react-native';
 import { useVm } from '../AppContext';
 import { useT } from '../ThemeContext';
 import { T, Card, Row, Press, Glyph, Avatar } from '../ui';
+import { Body, useTitleAnchor } from '../layout';
 
 export default function HelpScreen() {
     const vm = useVm();
@@ -10,13 +11,11 @@ export default function HelpScreen() {
     const col = (v) => (v && (v[0] === '#' || v.startsWith('rgb')) ? v : t[v]);
     const requests = vm.requests || [];
     const landlord = vm.landlord || {};
+    const anchor = useTitleAnchor('Help');
 
     return (
-        <ScrollView
-            contentContainerStyle={{ paddingHorizontal: 18, paddingTop: 14, paddingBottom: 22 }}
-            showsVerticalScrollIndicator={false}
-        >
-            <Row align="flex-start" justify="space-between" gap={12} style={{ marginBottom: 4 }}>
+        <Body bottom={22} was={{ top: 14 }}>
+            <Row {...anchor} align="flex-start" justify="space-between" gap={12} style={{ marginBottom: 4 }}>
                 <T w={700} s={32} lh={1.02} style={{ letterSpacing: -1.6, flexShrink: 1 }}>Help</T>
                 <Press
                     onPress={vm.openNewRequest}
@@ -129,6 +128,6 @@ export default function HelpScreen() {
                     <Glyph name="chevron-forward" size={16} color={t.fg3} />
                 </Press>
             )}
-        </ScrollView>
+        </Body>
     );
 }

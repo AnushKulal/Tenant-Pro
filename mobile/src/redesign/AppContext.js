@@ -1686,6 +1686,20 @@ function deriveVm(s, api) {
     showSearch: !!mod,
     // Ledger owns its own search and title; People has its own search bar.
     showHeader: owner && !['ledger', 'people', 'support', 'ticket'].includes(s.route),
+    // The tenant's half of the same decision. The tenant side had no header at
+    // all, so each screen that wanted a back chevron, a title or the bell drew
+    // its own — see Header.js and layout.js for why that is now one bar instead.
+    //
+    // The three exclusions are screens that genuinely own their chrome:
+    //   scan        a live camera. The guidance's "floating header" case: a bar
+    //               with a background would sit on top of the viewfinder.
+    //   tagreement  a document, with its own full-bleed reading header.
+    //   tcheckout   a payment flow that must not offer a second way out
+    //               mid-transaction next to its own.
+    // Each already draws its own back chevron, so a header here would be two
+    // back buttons on one screen pointing at different places.
+    showTenantHeader: !!(s.session && s.session.role === 'tenant')
+      && !['scan', 'tagreement', 'tcheckout'].includes(s.route),
     showBack: !mod,
     backTitle: { property: 'Properties & units', profile: 'My profile', settings: 'Settings', tenant: 'People' }[s.route] || '',
     // The header's back chevron walks the same trail the phone's back gesture does,

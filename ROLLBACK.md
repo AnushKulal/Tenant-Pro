@@ -90,6 +90,28 @@ UPDATE listings l
 
 Set `published = 1` to bring them back.
 
+## If the new header/content alignment looks wrong
+
+This one is in the app, not on the server, so there is no environment variable
+for it — a layout lives in the bundle the phone is running. The switch is a single
+constant:
+
+**`mobile/src/appConfig.js` → `HEADER_LAYOUT = 'v1'`**
+
+Then **Actions → Publish OTA Update**. About two minutes, no rebuild, no store
+submission, nothing on the server, no data touched. Phones pick it up on next
+launch.
+
+`'v1'` is not an approximation of the old layout, it is the old layout: every
+screen hands `bodyPad` the exact padding it used to carry, the tenant header never
+mounts, the sticky title never mounts, and the keyboard handler goes back to
+scrolling by the full overlap. `tests/layout.test.js` asserts that side of the flag
+as well as this one, so the revert is tested rather than hoped for.
+
+Mixed versions are fine while it rolls out. The flag changes nothing a server
+reads and nothing stored on a phone, so a handset still on the previous bundle and
+one that has taken the update are both correct, just different.
+
 ## If the app breaks after an update
 
 Publish a new OTA whose contents are the known-good bundle:
