@@ -55,6 +55,29 @@ This is deliberately the cheapest lever in this document. Reverting code takes
 minutes and can fail, and the moment you most want a feature gone is the moment you
 least want to be shipping something.
 
+### The sample rooms specifically
+
+The Find screen is seeded with eighteen listed rooms across eight showcase
+properties, so it is not an empty list on a database where no real landlord has
+published anything yet (`backend/config/seedShowcase.js`). Those landlords cannot
+be signed into — their password is a random string thrown away at the moment the
+hash is made — and their email addresses all end in `@showcase.invalid`, a reserved
+domain that can never be a real mailbox.
+
+`SHOWCASE_LISTINGS=false` stops them being topped up on boot. It does **not** delete
+the rows already there; removing sample data is a deliberate act, not something a
+restart should do on its own. To take them off the screen without deleting
+anything:
+
+```sql
+UPDATE listings l
+  JOIN owners o ON o.id = l.owner_id
+   SET l.published = 0
+ WHERE o.email LIKE '%@showcase.invalid';
+```
+
+Set `published = 1` to bring them back.
+
 ## If the app breaks after an update
 
 Publish a new OTA whose contents are the known-good bundle:

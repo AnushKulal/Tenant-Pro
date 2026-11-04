@@ -2,3 +2,8 @@
 # Python bytecode from vendored skills
 __pycache__/
 *.pyc
+
+# Screenshots the browser suites write on every run. Output, not source.
+tests/uishots/
+tests/shots2/
+tests/shots3/

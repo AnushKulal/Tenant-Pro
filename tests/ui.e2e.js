@@ -11,7 +11,11 @@
 // hand-off, and anything else behind a native module. Those are native code; the web
 // build stubs them.
 const path = require('path');
-const { chromium } = require(path.join(__dirname, 'node_modules/playwright-core'));
+// Plain `playwright`, resolved the normal way. This used to point at
+// tests/node_modules/playwright-core, which only existed on the machine where it
+// was first written: anywhere else the suite died with a module-resolution stack
+// trace before running a single assertion.
+const { chromium } = require('playwright');
 const fs = require('fs');
 
 const SHOTS = path.join(__dirname, 'uishots');
@@ -30,6 +34,18 @@ const section = (s) => console.log('\n' + s);
 // clicking through would not notice.
 const consoleErrors = [];
 const failedRequests = [];
+
+// Requests whose failure says nothing about this app.
+//
+// Fonts and favicons were always here. The stock-photo hosts joined them when the
+// sample listings arrived: seeded rows point their images at picsum.photos and
+// randomuser.me, and a sandbox with no route to either fails every one of them. That
+// is the network's answer, not a bug in a screen — and treating it as a failure
+// turned a green suite red while every assertion about the app still passed.
+//
+// An image served by OUR api is not in this list and never should be: that failing
+// is a real bug in uploads.
+const IGNORABLE = /\.ttf|favicon|picsum\.photos|randomuser\.me/i;
 
 const OWNER = process.env.E2E_OWNER;
 const TENANT = process.env.E2E_TENANT;
@@ -53,7 +69,7 @@ page.on('console', (m) => {
 });
 page.on('pageerror', (e) => consoleErrors.push('PAGEERROR: ' + e.message));
 page.on('requestfailed', (r) => {
-    if (/\.ttf|favicon/i.test(r.url())) return;
+    if (IGNORABLE.test(r.url())) return;
     failedRequests.push(`${r.method()} ${r.url()} — ${r.failure() && r.failure().errorText}`);
 });
 
@@ -342,7 +358,7 @@ section('THE TENANT PORTAL (fresh session)');
 const tctx = await browser.newContext({ viewport: { width: 420, height: 900 }, deviceScaleFactor: 2 });
 const tpage = await tctx.newPage();
 tpage.on('pageerror', (e) => consoleErrors.push('PAGEERROR(tenant): ' + e.message));
-tpage.on('requestfailed', (r) => { if (!/\.ttf|favicon/i.test(r.url())) failedRequests.push(`${r.method()} ${r.url()}`); });
+tpage.on('requestfailed', (r) => { if (!IGNORABLE.test(r.url())) failedRequests.push(`${r.method()} ${r.url()}`); });
 
 const tSettle = (ms = 900) => tpage.waitForTimeout(ms);
 const tFind = async (t, timeout = 5000) => {

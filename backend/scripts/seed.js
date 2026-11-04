@@ -133,6 +133,12 @@ const wipe = async () => {
     // deleting them takes their properties, units, tenants and payments with them.
     await db.query(`DELETE FROM tenant_users WHERE email LIKE '%${SEED_DOMAIN}' OR guest_code LIKE 'SEED%'`);
     await db.query(`DELETE FROM owners WHERE email LIKE '%${SEED_DOMAIN}'`);
+    // The sample listed rooms the SERVER seeds at boot (config/seedShowcase.js) go
+    // too. They are attributable the same way — a reserved email domain — and a
+    // fixture that quietly contains nineteen rooms this script did not create is a
+    // fixture whose assertions depend on how the server was restarted. They come
+    // back on the next boot, which is the right time for them to come back.
+    await db.query("DELETE FROM owners WHERE email LIKE '%@showcase.invalid'");
     log('   done.');
 };
 

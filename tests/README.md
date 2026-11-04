@@ -67,19 +67,41 @@ writes.
 run several times in quick succession, which is the limiter doing its job. Restart
 the server to clear it — the counter is in memory.
 
-For the UI suite, build the app for web against the local server first:
+`api.e2e.js` talks to `http://127.0.0.1:4000` unless `E2E_BASE` says otherwise, and
+`backend/.env` usually sets `PORT=5000`. Check which one your server actually
+printed; a refused connection here is almost always this and not the suite.
+
+```bash
+E2E_BASE=http://127.0.0.1:5000 E2E_OWNER=... E2E_TENANT=... node ../tests/api.e2e.js
+```
+
+For the UI suites, build the app for web against the local server first. The URL
+baked in at build time is the one the browser will call, so it has to match the port
+the server is really on:
 
 ```bash
 cd mobile
-EXPO_PUBLIC_API_URL=http://127.0.0.1:4000 npx expo export --platform web --output-dir /tmp/webdist
-cd /tmp/webdist && python3 -m http.server 4173 &
+EXPO_PUBLIC_API_URL=http://127.0.0.1:5000 npx expo export --platform web --output-dir /tmp/webdist
+npx serve -s /tmp/webdist -l 8080 &
 
-CHROME_PATH=/path/to/chrome UI_URL=http://127.0.0.1:4173 \
-E2E_OWNER=... E2E_TENANT=... node tests/ui.e2e.js
+UI_URL=http://127.0.0.1:8080 E2E_OWNER=... E2E_TENANT=... node tests/ui.e2e.js
+UI_URL=http://127.0.0.1:8080 node tests/ui.discover.e2e.js
 ```
 
-It needs `playwright-core`, which is not a project dependency —
-`npm i playwright-core` wherever you run it from.
+Both suites `require('playwright')` and resolve it the ordinary way, so an install
+anywhere up the tree works. `refresh.client.test.js` uses the app's own axios from
+`mobile/node_modules` — the same build the app runs, since what it tests is the
+interceptor's behaviour inside that build.
+
+### What the sample listings do to a test run
+
+The server seeds showcase landlords and listed rooms at boot
+(`backend/config/seedShowcase.js`). `scripts/seed.js --wipe` removes them along with
+everything else, and they come back on the next RESTART, not on the next request —
+so a suite run after a wipe sees only the seeded fixtures, which is what its
+assertions are written against. If you restart the server mid-run, expect eighteen
+extra listed rooms to appear in discovery. `SHOWCASE_LISTINGS=false` keeps them out
+entirely.
 
 ### What the UI suite does and does not cover
 

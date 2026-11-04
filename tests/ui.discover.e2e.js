@@ -20,7 +20,12 @@
 //   node tests/ui.discover.e2e.js
 //
 // Chromium comes from playwright; nothing here needs a device.
+const { chromium } = require('playwright');
 const fs = require('fs');
+
+// Where the compiled web build is being served. Overridable, because the port a
+// static server picks is not always the one you asked for.
+const UI_URL = process.env.UI_URL || 'http://localhost:8080';
 const SHOT = __dirname + '/shots2';
 fs.mkdirSync(SHOT, { recursive: true });
 
@@ -73,7 +78,7 @@ async function signIn(page, who, id, pw) {
   let page = await b.newPage({ viewport: { width: 420, height: 900 }, deviceScaleFactor: 2 });
   const errs = [];
   page.on('pageerror', e => errs.push(String(e).slice(0, 160)));
-  await page.goto('http://localhost:8080', { waitUntil: 'networkidle' });
+  await page.goto(UI_URL, { waitUntil: 'networkidle' });
   await page.waitForTimeout(2200);
   await primer(page);
   await signIn(page, "I'm a tenant", 'sandeep.naik1000@example.com', 'Test@1234');
@@ -208,7 +213,7 @@ async function signIn(page, who, id, pw) {
   page = await b.newPage({ viewport: { width: 420, height: 900 }, deviceScaleFactor: 2 });
   const oerrs = [];
   page.on('pageerror', e => oerrs.push(String(e).slice(0, 160)));
-  await page.goto('http://localhost:8080', { waitUntil: 'networkidle' });
+  await page.goto(UI_URL, { waitUntil: 'networkidle' });
   await page.waitForTimeout(2200);
   await primer(page);
   await signIn(page, "I'm a Landlord", 'landlord20260101@example.com', 'Test@1234');

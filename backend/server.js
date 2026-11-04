@@ -70,6 +70,8 @@ const { protect, requireOwner } = require('./middleware/authMiddleware');
 const { initCronJobs, checkAndSendRentReminders } = require('./services/cronService');
 const initDb = require('./config/initDb');
 const { ensureDemoAccount } = require('./config/seedDemo');
+// Sample listed rooms, so discovery is not an empty screen on the day it ships.
+const { ensureShowcaseListings } = require('./config/seedShowcase');
 const { isMailConfigured, verifyMail, mailStatus } = require('./config/mailer');
 // Which storage the uploader chose. Reported by /healthz because the difference is
 // otherwise invisible until it hurts: in disk mode every uploaded photo and ID lives on
@@ -244,6 +246,10 @@ app.listen(PORT, () => {
     } catch (err) {
         console.error('❌ Demo seed failed:', err.message);
     }
+    // The rooms the Find screen shows before any real landlord has listed one.
+    // Create-if-missing, scoped entirely to rows it made itself, and it swallows its
+    // own failures — see config/seedShowcase.js. SHOWCASE_LISTINGS=false skips it.
+    await ensureShowcaseListings();
     // push_tokens has no foreign key -- it points at one of two account tables -- so
     // nothing removes a token when its account is deleted. Once on boot is enough;
     // sends already ignore orphans, this stops them piling up for ever.

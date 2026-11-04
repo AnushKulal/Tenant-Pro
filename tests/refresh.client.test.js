@@ -12,8 +12,22 @@
 // reads a spent token as theft and ends every session on the account. The feature
 // meant to stop people being logged out would log them out, at scale, on cold start.
 const path = require('path');
-const axios = require(path.join(__dirname, 'node_modules/axios'));
 const fs = require('fs');
+
+// The axios the APP uses, not a second copy installed next to the tests. This file
+// rebuilds api.js's interceptor and runs it against a stub adapter, so testing it
+// against a different axios build would be testing something the app never runs.
+// Falls back to a tests-local install if one happens to be there, and says what to
+// do rather than throwing a module-resolution stack trace at whoever runs it.
+const axiosPath = [
+    path.join(__dirname, 'node_modules/axios'),
+    path.join(__dirname, '..', 'mobile/node_modules/axios')
+].find((p) => fs.existsSync(p));
+if (!axiosPath) {
+    console.error('axios not found. Run `npm install` in mobile/ first — this suite uses the app\'s own copy.');
+    process.exit(1);
+}
+const axios = require(axiosPath);
 
 let ok = 0, bad = 0;
 const fails = [];
