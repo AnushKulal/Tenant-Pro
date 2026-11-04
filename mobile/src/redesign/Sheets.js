@@ -9,7 +9,7 @@ import { useVm } from './AppContext';
 import { useT } from './ThemeContext';
 import { grotesk } from './theme';
 import { T, Eyebrow, Row, Press, Glyph, Field, Avatar, Composer, DocThumb, NoteBox } from './ui';
-import { useSheetIn, useFadeIn } from './motion';
+import { useSheetIn, useFadeIn, Stagger, Pop } from './motion';
 import { useIdShield } from './shield';
 import { KeyboardScroll, useKeyboardHeight } from './keyboard';
 
@@ -2761,7 +2761,16 @@ export default function Sheets() {
 
                 {vm.isMenu && (
                     <View>
-                        <Row style={{ gap: 13, marginBottom: 18 }}>
+                        {/* Your own face and name, at the top of your own menu, used
+                            to be the one thing on this sheet that did nothing when
+                            tapped. A tester went for it, got nothing, and said so.
+                            It now opens the profile — which is what every row below
+                            it would have you believe it already did. */}
+                        <Pop>
+                        <Press
+                            onPress={vm.goProfile}
+                            style={{ flexDirection: 'row', alignItems: 'center', gap: 13, marginBottom: 18, paddingVertical: 10, paddingHorizontal: 11, marginHorizontal: -11, borderRadius: 18 }}
+                        >
                             {vm.ownerImg ? (
                                 <Image source={{ uri: vm.ownerImg }} style={{ width: 48, height: 48, borderRadius: 16, backgroundColor: t.ink3 }} resizeMode="cover" />
                             ) : (
@@ -2773,7 +2782,9 @@ export default function Sheets() {
                                 <T w={600} s={16} lh={1.2} numberOfLines={1}>{vm.ownerName || 'Your account'}</T>
                                 <Eyebrow s={10} ls={0.08} style={{ marginTop: 4 }} numberOfLines={1}>{(vm.ownerEmail || '').toUpperCase()}</Eyebrow>
                             </View>
-                        </Row>
+                            <Glyph name="chevron-forward" size={16} color={t.fg3} />
+                        </Press>
+                        </Pop>
                         {(vm.menuRows || []).map((m, i) => (
                             <Press key={i} onPress={m.go} style={{ flexDirection: 'row', alignItems: 'center', gap: 13, width: '100%', paddingVertical: 13, paddingHorizontal: 12, borderRadius: 16, borderWidth: 1, borderColor: t.line, backgroundColor: t.ink3, marginBottom: 8 }}>
                                 <View style={{ width: 34, height: 34, borderRadius: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: col(m.bg) }}>
@@ -2785,6 +2796,253 @@ export default function Sheets() {
                         ))}
                     </View>
                 )}
+
+                {/* ── Filters for the place search ──────────────────────────────
+                    Everything here changes local state only. Nothing searches until
+                    "Show places" is pressed, because a sheet that fires a request
+                    per chip spends the whole time you are choosing showing you the
+                    results of a choice you have already moved on from. */}
+                {vm.isDiscFilter && (() => {
+                    const d = vm.discover;
+                    const chip = (on) => ({
+                        paddingVertical: 10, paddingHorizontal: 14, borderRadius: 999,
+                        borderWidth: 1, borderColor: on ? t.lime : t.line,
+                        backgroundColor: on ? t.lime : t.ink3
+                    });
+                    const label = (text) => (
+                        <Eyebrow s={9} ls={0.12} c={t.fg3} style={{ marginTop: 18, marginBottom: 9 }}>{text}</Eyebrow>
+                    );
+                    return (
+                        <View>
+                            <Row style={{ marginBottom: 2 }}>
+                                <T w={700} s={21} lh={1.1} style={{ flex: 1, letterSpacing: -0.9 }}>Filters</T>
+                                {d.activeCount > 0 ? (
+                                    <Press onPress={d.clear} hitSlop={8}>
+                                        <T mono w={600} s={9} ls={0.12} c={t.coral}>CLEAR ALL</T>
+                                    </Press>
+                                ) : null}
+                            </Row>
+
+                            {label('BUDGET, PER PERSON')}
+                            <Row gap={7} style={{ flexWrap: 'wrap' }}>
+                                {d.budgets.map((b, i) => (
+                                    <Press
+                                        key={i}
+                                        onPress={() => d.setFilter(b.on ? { min: null, max: null } : { min: b.lo, max: b.hi })}
+                                        style={chip(b.on)}
+                                    >
+                                        <T w={600} s={12.5} lh={1} c={b.on ? t.on : t.fg2}>{b.label}</T>
+                                    </Press>
+                                ))}
+                            </Row>
+
+                            {label('ROOM')}
+                            <Row gap={7} style={{ flexWrap: 'wrap' }}>
+                                {d.sizes.map((z, i) => (
+                                    <Press key={i} onPress={() => d.setFilter({ rooms: z.on ? null : z.n })} style={chip(z.on)}>
+                                        <T w={600} s={12.5} lh={1} c={z.on ? t.on : t.fg2}>{z.label}</T>
+                                    </Press>
+                                ))}
+                            </Row>
+
+                            {d.types.length ? label('KIND OF PLACE') : null}
+                            <Row gap={7} style={{ flexWrap: 'wrap' }}>
+                                {d.types.map((ty, i) => (
+                                    <Press key={i} onPress={() => d.setFilter({ type: ty.on ? '' : ty.value })} style={chip(ty.on)}>
+                                        <T w={600} s={12.5} lh={1} c={ty.on ? t.on : t.fg2}>{ty.label}</T>
+                                    </Press>
+                                ))}
+                            </Row>
+
+                            {d.areas.length ? label('AREA') : null}
+                            <Row gap={7} style={{ flexWrap: 'wrap' }}>
+                                {d.areas.map((a, i) => (
+                                    <Press key={i} onPress={() => d.setFilter({ area: a.on ? '' : a.value })} style={chip(a.on)}>
+                                        <T w={600} s={12.5} lh={1} c={a.on ? t.on : t.fg2}>{a.label}</T>
+                                    </Press>
+                                ))}
+                            </Row>
+
+                            {label('FURNISHING')}
+                            <Row gap={7} style={{ flexWrap: 'wrap' }}>
+                                {d.furnishings.map((f, i) => (
+                                    <Press key={i} onPress={() => d.setFilter({ furnishing: f.on ? '' : f.value })} style={chip(f.on)}>
+                                        <T w={600} s={12.5} lh={1} c={f.on ? t.on : t.fg2}>{f.label}</T>
+                                    </Press>
+                                ))}
+                            </Row>
+
+                            {label('DISTANCE FROM ME')}
+                            <Row gap={7} style={{ flexWrap: 'wrap' }}>
+                                {d.distances.map((x, i) => (
+                                    <Press
+                                        key={i}
+                                        /* Choosing a radius with no coordinate yet asks for
+                                           one. Greying these out until location is granted
+                                           would hide the only thing that explains why the
+                                           app wants it. */
+                                        onPress={() => (d.hasLocation ? d.setFilter({ within: x.on ? null : x.n }) : d.useLocation(x.n))}
+                                        style={chip(x.on)}
+                                    >
+                                        <T w={600} s={12.5} lh={1} c={x.on ? t.on : t.fg2}>{x.label}</T>
+                                    </Press>
+                                ))}
+                            </Row>
+                            {!d.hasLocation ? (
+                                <T w={400} s={11.5} lh={1.45} c={t.fg3} style={{ marginTop: 9 }}>
+                                    Choosing a distance will ask for your location. It is used to measure and sort, and is not sent to any landlord.
+                                </T>
+                            ) : null}
+
+                            <Row gap={8} style={{ marginTop: 22 }}>
+                                <Press onPress={vm.closeOverlay} style={{ paddingVertical: 15, paddingHorizontal: 20, borderRadius: 999, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line }}>
+                                    <T w={600} s={13.5} c={t.fg2}>Cancel</T>
+                                </Press>
+                                <Press
+                                    onPress={d.apply}
+                                    style={{ flex: 1, paddingVertical: 15, borderRadius: 999, backgroundColor: t.lime, alignItems: 'center' }}
+                                >
+                                    <T w={700} s={14} c={t.on}>Show places</T>
+                                </Press>
+                            </Row>
+                        </View>
+                    );
+                })()}
+
+                {/* ── One place, in full ────────────────────────────────────────
+                    Re-fetched when it opens rather than read out of the list, so a
+                    room taken down since the search says so BEFORE somebody asks to
+                    join it rather than after. */}
+                {vm.isListing && (() => {
+                    const sh = vm.discover.sheet;
+                    if (!sh.open) return null;
+                    if (sh.hasError) {
+                        return (
+                            <View style={{ paddingVertical: 10 }}>
+                                <Row gap={9} align="flex-start" style={{ padding: 13, borderRadius: 16, backgroundColor: t.csoft }}>
+                                    <Glyph name="alert-circle" size={16} color={t.coral} />
+                                    <T w={500} s={12.5} lh={1.45} c={t.coral} style={{ flex: 1 }}>{sh.error}</T>
+                                </Row>
+                                <Press onPress={sh.close} style={{ marginTop: 14, paddingVertical: 15, borderRadius: 999, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line, alignItems: 'center' }}>
+                                    <T w={600} s={13.5} c={t.fg2}>Back to places</T>
+                                </Press>
+                            </View>
+                        );
+                    }
+                    const fact = (icon, head, body) => (
+                        <View style={{ flex: 1, minWidth: 0, paddingVertical: 12, paddingHorizontal: 13, borderRadius: 16, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line }}>
+                            <Row gap={6}>
+                                <Glyph name={icon} size={12} color={t.fg3} />
+                                <Eyebrow s={8} ls={0.1} c={t.fg3}>{head}</Eyebrow>
+                            </Row>
+                            <T w={600} s={13.5} lh={1.25} c={t.fg} style={{ marginTop: 6 }}>{body}</T>
+                        </View>
+                    );
+                    return (
+                        <View>
+                            {sh.img ? (
+                                <Image source={{ uri: sh.img }} style={{ width: '100%', height: 168, borderRadius: 20, backgroundColor: t.ink3, marginBottom: 14 }} resizeMode="cover" />
+                            ) : null}
+
+                            <Row gap={10} align="flex-start">
+                                <View style={{ flex: 1, minWidth: 0 }}>
+                                    <T w={700} s={21} lh={1.12} style={{ letterSpacing: -0.9 }}>{sh.property}</T>
+                                    <T mono w={600} s={9} lh={1.5} ls={0.08} c={t.fg3} style={{ marginTop: 5 }}>
+                                        {[sh.loc, sh.type].filter(Boolean).join(' · ')}
+                                    </T>
+                                </View>
+                                <View style={{ alignItems: 'flex-end' }}>
+                                    <T w={700} s={21} lh={1.1} c={t.lime}>{sh.rent}</T>
+                                    <T w={400} s={11} lh={1.3} c={t.fg3} style={{ marginTop: 3 }}>{sh.rentNote}</T>
+                                </View>
+                            </Row>
+
+                            {sh.loading ? (
+                                <Row gap={9} style={{ paddingVertical: 12 }}>
+                                    <ActivityIndicator size="small" color={t.accent} />
+                                    <T mono w={600} s={9} ls={0.12} c={t.fg3}>LOADING THE DETAIL</T>
+                                </Row>
+                            ) : null}
+
+                            {sh.headline ? (
+                                <T w={600} s={14} lh={1.4} c={t.fg} style={{ marginTop: 14 }}>{sh.headline}</T>
+                            ) : null}
+                            {sh.description ? (
+                                <T w={400} s={13} lh={1.55} c={t.fg2} style={{ marginTop: 7 }}>{sh.description}</T>
+                            ) : null}
+
+                            <Row gap={8} style={{ marginTop: 16 }} align="stretch">
+                                {fact('bed-outline', 'ROOM', sh.size)}
+                                {fact('people-outline', 'SPACE', sh.spots)}
+                            </Row>
+                            <Row gap={8} style={{ marginTop: 8 }} align="stretch">
+                                {fact('wallet-outline', 'DEPOSIT', sh.deposit)}
+                                {fact('calendar-outline', 'MOVE IN', sh.available)}
+                            </Row>
+                            <Row gap={8} style={{ marginTop: 8 }} align="stretch">
+                                {fact('cube-outline', 'FURNISHING', sh.furnishing || '—')}
+                                {fact('person-outline', 'SUITS', sh.preferred)}
+                            </Row>
+
+                            {sh.amenities.length ? (
+                                <>
+                                    <Eyebrow s={9} ls={0.12} c={t.fg3} style={{ marginTop: 18, marginBottom: 9 }}>WHAT IS INCLUDED</Eyebrow>
+                                    <Row gap={7} style={{ flexWrap: 'wrap' }}>
+                                        {sh.amenities.map((a, i) => (
+                                            <Row key={i} gap={6} style={{ paddingVertical: 8, paddingHorizontal: 12, borderRadius: 999, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line }}>
+                                                <Glyph name="checkmark" size={11} color={t.pos} />
+                                                <T w={500} s={12} lh={1} c={t.fg2}>{a}</T>
+                                            </Row>
+                                        ))}
+                                    </Row>
+                                </>
+                            ) : null}
+
+                            {sh.also.length ? (
+                                <>
+                                    <Eyebrow s={9} ls={0.12} c={t.fg3} style={{ marginTop: 18, marginBottom: 9 }}>
+                                        {`ALSO FREE HERE · ${sh.also.length}`}
+                                    </Eyebrow>
+                                    {sh.also.map((a) => (
+                                        <Press
+                                            key={a.id}
+                                            onPress={a.go}
+                                            style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, paddingHorizontal: 13, borderRadius: 14, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line, marginBottom: 7 }}
+                                        >
+                                            <T w={500} s={13} lh={1} c={t.fg} style={{ flex: 1 }}>{a.line}</T>
+                                            <T mono w={600} s={9} ls={0.06} c={t.fg3}>{a.spots.toUpperCase()}</T>
+                                            <Glyph name="chevron-forward" size={14} color={t.fg3} />
+                                        </Press>
+                                    ))}
+                                </>
+                            ) : null}
+
+                            <Row gap={9} align="flex-start" style={{ marginTop: 16, padding: 13, borderRadius: 16, backgroundColor: t.asoft }}>
+                                <Glyph name="information-circle" size={15} color={t.amber} />
+                                <T w={400} s={11.5} lh={1.5} c={t.fg2} style={{ flex: 1 }}>
+                                    Asking to join sends {sh.landlord || 'the landlord'} a request with your profile. Nothing is booked and no money moves until they accept.
+                                </T>
+                            </Row>
+
+                            <Row gap={8} style={{ marginTop: 16 }}>
+                                <Press onPress={sh.close} style={{ paddingVertical: 15, paddingHorizontal: 20, borderRadius: 999, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line }}>
+                                    <T w={600} s={13.5} c={t.fg2}>Close</T>
+                                </Press>
+                                <Press
+                                    onPress={sh.ask}
+                                    disabled={!sh.canAsk || sh.asking}
+                                    style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', columnGap: 8, paddingVertical: 15, borderRadius: 999, backgroundColor: sh.canAsk ? t.lime : t.ink3, borderWidth: 1, borderColor: sh.canAsk ? t.lime : t.line }}
+                                >
+                                    {sh.asking ? <ActivityIndicator size="small" color={t.on} /> : null}
+                                    {sh.pending ? <Glyph name="checkmark-circle" size={14} color={t.fg3} /> : null}
+                                    <T w={700} s={14} c={sh.canAsk ? t.on : t.fg3}>
+                                        {sh.asking ? 'Sending…' : sh.cta}
+                                    </T>
+                                </Press>
+                            </Row>
+                        </View>
+                    );
+                })()}
             </KeyboardScroll>
             </Animated.View>
         </View>

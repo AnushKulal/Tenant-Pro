@@ -15,6 +15,10 @@ export default function DeckDock() {
     const col = (v) => (v && (v[0] === '#' || v.startsWith('rgb')) ? v : t[v]);
 
     const tenant = !!(vm.showTenantDock || vm.tenantSide);
+    // Whether the profile button is the selected tab, which decides what the
+    // avatar inside it has to be drawn against.
+    const tmeOn = vm.tmeBg === 'lime';
+    const youOn = vm.youBg === 'lime';
     const items = (tenant ? vm.tenantDock : vm.dock) || [];
     const ls = tenant ? 0.06 : 0.08;
 
@@ -75,7 +79,16 @@ export default function DeckDock() {
                             ...DOCK_RADIUS
                         }}
                     >
-                        <Avatar uri={vm.me && vm.me.img} name={vm.meFullName} size={22} radius={11} />
+                        {/* On the lime (selected) button the default pale-lime disc
+                            disappears, so the colours are taken from the button. */}
+                        <Avatar
+                            uri={vm.me && vm.me.img}
+                            name={vm.meFullName}
+                            size={22}
+                            radius={11}
+                            bg={tmeOn ? 'rgba(10,10,12,0.16)' : t.lsoft}
+                            fg={tmeOn ? t.on : t.accent}
+                        />
                         <T mono w={600} s={8} lh={1} ls={0.06} c={col(vm.tmeFg)}>ME</T>
                     </Press>
                 ) : (
@@ -91,12 +104,19 @@ export default function DeckDock() {
                             alignItems: 'center',
                             justifyContent: 'center',
                             rowGap: 4,
-                            backgroundColor: t.ink2,
+                            backgroundColor: col(vm.youBg || 'ink2'),
                             ...DOCK_RADIUS
                         }}
                     >
-                        <Avatar uri={vm.ownerImg} name={vm.ownerName} size={22} radius={11} />
-                        <T mono w={600} s={8} lh={1} ls={0.06} c={t.fg2}>YOU</T>
+                        <Avatar
+                            uri={vm.ownerImg}
+                            name={vm.ownerName}
+                            size={22}
+                            radius={11}
+                            bg={youOn ? 'rgba(10,10,12,0.16)' : t.lsoft}
+                            fg={youOn ? t.on : t.accent}
+                        />
+                        <T mono w={600} s={8} lh={1} ls={0.06} c={youOn ? t.on : t.fg2}>YOU</T>
                     </Press>
                 )}
             </View>

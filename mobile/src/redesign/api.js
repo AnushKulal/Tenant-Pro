@@ -336,7 +336,12 @@ export const units = {
     add: (form) => body(http.post('/units', form, MULTIPART)),
     update: (id, form) => body(http.put(`/units/${id}`, form, MULTIPART)),
     remove: (id) => body(http.delete(`/units/${id}`)),
-    settings: (id, payload) => body(http.put(`/units/${id}/settings`, payload))
+    settings: (id, payload) => body(http.put(`/units/${id}/settings`, payload)),
+    // A room's listing — the landlord's opt-in to being found by somebody looking
+    // for a place. Reads for a room that has never been listed too, so the sheet
+    // opens on a form rather than an error.
+    listing: (id) => body(http.get(`/units/${id}/listing`)),
+    saveListing: (id, payload) => body(http.put(`/units/${id}/listing`, payload))
 };
 
 export const tenants = {
@@ -389,6 +394,19 @@ export const payments = {
 // ── Tenant portal (tenant JWT) ────────────────────────────────────────────────
 export const portal = {
     me: () => body(http.get('/tenant-portal/me')),
+    // ── Finding somewhere to live ────────────────────────────────────────────
+    // Every filter is optional and empty ones are dropped rather than sent blank:
+    // `type=` is not the same request as no type at all, and the server would read
+    // the first as "a property whose type is the empty string" and return nothing.
+    discover: (filters = {}) => {
+        const params = {};
+        Object.entries(filters).forEach(([k, v]) => {
+            if (v === null || v === undefined || v === '' || v === false) return;
+            params[k] = v;
+        });
+        return body(http.get('/tenant-portal/discover', { params }));
+    },
+    discoverOne: (id) => body(http.get(`/tenant-portal/discover/${id}`)),
     // Counts and a stamp, polled while the app is open. See `owner.pulse` for why.
     pulse: () => body(http.get('/tenant-portal/pulse')),
     payments: () => body(http.get('/tenant-portal/payments')),

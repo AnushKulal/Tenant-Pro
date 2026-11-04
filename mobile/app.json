@@ -72,6 +72,7 @@
         "Tenant portal Phase 1: role selection + tenant accounts"
       ],
       "releaseVersion": "1.0.0"
-    }
+    },
+    "scheme": "tenantpro"
   }
 }

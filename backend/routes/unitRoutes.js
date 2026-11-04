@@ -9,6 +9,7 @@ const {
     getAvailableUnits,
     updateUnitSettings
 } = require('../controllers/unitController'); 
+const { getListing, saveListing } = require('../controllers/listingController');
 const { protect } = require('../middleware/authMiddleware');
 const upload = require('../middleware/uploadMiddleware'); 
 
@@ -26,5 +27,11 @@ router.delete('/:id', protect, deleteUnit);
 
 // --- Reminders Notifications ---
 router.put('/:id/settings', protect, updateUnitSettings);
+
+// --- Listing a room for people who are looking ---
+// Opt-in per room. Nothing becomes discoverable by being empty; it becomes
+// discoverable because the landlord published it here.
+router.get('/:id/listing', protect, getListing);
+router.put('/:id/listing', protect, saveListing);
 
 module.exports = router;

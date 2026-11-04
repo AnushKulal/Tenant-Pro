@@ -32,6 +32,7 @@ const {
     addMyDocument,
     deleteMyDocument
 } = require('../controllers/documentController');
+const { discover, discoverOne } = require('../controllers/discoverController');
 const { claimAccount } = require('../controllers/guestController');
 const { savePushToken, dropPushToken, sendTestPush } = require('../controllers/pushController');
 
@@ -58,6 +59,18 @@ router.delete('/push-token', dropPushToken);
 // the expiry guard with the others, because "are notifications working" is a question
 // about the handset and not about the tenancy.
 router.post('/push-test', sendTestPush);
+
+// ── Finding somewhere to live ─────────────────────────────────────────────────
+// Deliberately ABOVE requireLiveStay. The person most in need of this endpoint is
+// the one whose stay has just ended: locking them out of the search for a new place
+// because their old place is over would be exactly backwards. It is also reachable
+// by an account that has never been linked to a tenancy at all, which is the whole
+// point of it.
+//
+// This does not reopen the browse-all that the join-request comment below rules
+// out: it reads only rooms a landlord explicitly published.
+router.get('/discover', discover);
+router.get('/discover/:id', discoverOne);
 
 // ── Guest stay expiry ─────────────────────────────────────────────────────────
 // Applied to everything BELOW this line, which deliberately leaves two routes above

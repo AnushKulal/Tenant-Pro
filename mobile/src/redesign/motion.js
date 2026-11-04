@@ -7,7 +7,7 @@
 // CSS animations don't exist in RN, so these are the Animated equivalents with
 // the same durations, easings and values. All use the native driver (transform/
 // opacity only), so they run off the JS thread and stay smooth.
-import { useEffect, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Animated, Easing } from 'react-native';
 
 // CSS `ease` = cubic-bezier(.25,.1,.25,1); the sheet curve is given explicitly.
@@ -74,4 +74,86 @@ export function useWipe(key, { duration = DUR.wipe } = {}) {
         return () => a.stop();
     }, [key, t, duration]);
     return { opacity: t };
+}
+
+// ── Additions for the discovery work ─────────────────────────────────────────
+// Everything below is still transform + opacity only, so it keeps running on the
+// native driver. Nothing here needs a native module, which matters because the
+// whole point of staying inside Animated is that these ship over the air.
+
+// A list that assembles instead of appearing. Each child rises on the same curve
+// as a screen entrance, offset by its position.
+//
+// The delay is CAPPED. Uncapped, the twentieth card waits two fifths of a second
+// after the first, by which time the person has already scrolled past it and sees
+// an empty row animating in behind their thumb. Past the cap everything arrives
+// together, which nobody notices because it is below the fold.
+export function useStagger(index = 0, { step = 28, cap = 10, distance = 10, duration = 260 } = {}) {
+    return useEnter({ distance, duration, delay: Math.min(index, cap) * step });
+}
+
+export function Stagger({ index = 0, children, style, ...rest }) {
+    const s = useStagger(index, rest);
+    return <Animated.View style={[style, s]}>{children}</Animated.View>;
+}
+
+// Press feedback: the thing you touched gets smaller while your finger is down.
+//
+// Worth having because this app routes by state rather than by a navigator, so a
+// tap that opens a sheet or changes a screen has no system-provided "something
+// happened" of its own. Spring rather than timing: a press that eases back looks
+// mechanical, one that settles looks like it was pushed.
+export function usePress({ to = 0.97 } = {}) {
+    const v = useRef(new Animated.Value(1)).current;
+    const spring = (toValue) =>
+        Animated.spring(v, { toValue, useNativeDriver: true, speed: 42, bounciness: 5 }).start();
+    return {
+        style: { transform: [{ scale: v }] },
+        onPressIn: () => spring(to),
+        onPressOut: () => spring(1)
+    };
+}
+
+// `usePress` wrapped around whatever is inside it, so a caller can add the feel
+// without rewriting a Press into an Animated.View by hand.
+//
+// It clones its child to attach the handlers rather than wrapping it in another
+// touchable: two nested touchables means the outer one swallows presses meant for
+// the inner, which is how a button stops working.
+export function Pop({ children, to = 0.97, style }) {
+    const p = usePress({ to });
+    const child = React.Children.only(children);
+    return (
+        <Animated.View style={[style, p.style]}>
+            {React.cloneElement(child, {
+                onPressIn: (e) => { p.onPressIn(); if (child.props.onPressIn) child.props.onPressIn(e); },
+                onPressOut: (e) => { p.onPressOut(); if (child.props.onPressOut) child.props.onPressOut(e); }
+            })}
+        </Animated.View>
+    );
+}
+
+// A number that counts up to its value instead of snapping to it.
+//
+// Used where a figure changes under the user — a result count that drops from 22
+// to 3 as a filter is applied. The jump is the only evidence the filter did
+// anything, and a jump is easy to miss.
+export function useCountUp(value, { duration = 420 } = {}) {
+    const [shown, setShown] = React.useState(value);
+    const from = useRef(value);
+    useEffect(() => {
+        const start = from.current;
+        if (start === value) return;
+        const began = Date.now();
+        const id = setInterval(() => {
+            const k = Math.min(1, (Date.now() - began) / duration);
+            // ease-out, so it decelerates into the final figure rather than
+            // stopping dead on it
+            const eased = 1 - (1 - k) ** 3;
+            setShown(Math.round(start + (value - start) * eased));
+            if (k >= 1) { clearInterval(id); from.current = value; }
+        }, 16);
+        return () => { clearInterval(id); from.current = value; };
+    }, [value, duration]);
+    return shown;
 }

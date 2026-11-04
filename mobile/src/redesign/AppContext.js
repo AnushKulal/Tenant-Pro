@@ -103,6 +103,15 @@ const evStr = (e) => (e && e.target && typeof e.target.value === 'string' ? e.ta
 
 // "1 Feb 2026" — how the design writes a date in prose.
 const MON_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+// "2026-03-14" -> "14 Mar". Reads a date-only string by hand rather than through
+// `new Date(...)`, which on some engines treats a bare yyyy-mm-dd as UTC midnight
+// and renders it as the day before anywhere west of Greenwich.
+const dmy = (v) => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(v || ''));
+  if (!m) return '';
+  return `${Number(m[3])} ${MON_SHORT[Number(m[2]) - 1] || ''}`.trim();
+};
 // Pull the property code out of whatever was scanned, typed or pasted: a bare code,
 // a full join link, or a link with a query string on the end.
 //
@@ -381,6 +390,23 @@ const INITIAL_STATE = {
   // matched nothing and the screen said "no property matches that code" about a
   // code that was perfectly valid.
   look: { code: '', loading: false, error: '', place: null },
+  // ── Finding somewhere to live ─────────────────────────────────────────────
+  // `filters` is what the user has chosen; `results` is what the server answered
+  // for some earlier set of filters. They are separate because they move at
+  // different speeds: a filter changes the instant a chip is tapped, a result set
+  // changes a network round trip later, and merging the two would make the sheet
+  // feel as though it were lagging behind the finger.
+  //
+  // `near` is the tenant's own coordinate, filled only once they ask for nearby
+  // places. Holding it from the start would mean asking for location permission
+  // on a screen that has not yet given anybody a reason to grant it.
+  disc: {
+    loading: false, error: '', results: [], total: 0, loaded: false,
+    facets: { types: [], areas: [], rent_min: 0, rent_max: 0, published: 0 },
+    filters: { q: '', type: '', area: '', min: null, max: null, rooms: null, within: null, furnishing: '', sort: 'suggested' },
+    near: null, locating: false,
+    open: null, openLoading: false, openError: '', also: []
+  },
   // The room the tenant has picked while looking at a property, as a unit id, or null
   // for "no preference". Kept out of `look` so re-running the lookup does not have to
   // remember to clear it, and so closing the sheet can reset it in one place.
@@ -2463,6 +2489,8 @@ function deriveVm(s, api) {
     isRecord: s.overlay === 'record',
     isPay: s.overlay === 'pay',
     isMenu: s.overlay === 'menu',
+    isDiscFilter: s.overlay === 'discfilter',
+    isListing: s.overlay === 'listing',
     // Record a payment for real. `who.rentRaw` is the figure the sheet is showing,
     // so what is confirmed is exactly what is sent.
     confirmRecord: () => {
@@ -3921,6 +3949,10 @@ function deriveVm(s, api) {
     askSignOut: () => set('overlay', 'signout'),
     confirmSignOut: () => api.signOut(),
     isProfile: s.route === 'profile',
+    // The owner's dock button opens a menu rather than being a tab, so it never
+    // showed a selected state — which made "where am I?" unanswerable from the
+    // dock once you were on the profile. It now lights up like the others.
+    youBg: ['profile', 'settings', 'support'].includes(s.route) ? 'lime' : 'ink2',
     // Real account details from the signed-in session (the prototype hard-coded
     // the demo landlord here).
     // All four open the same prefilled form. `editable` is carried so a row that
@@ -5065,6 +5097,183 @@ function deriveVm(s, api) {
     // the server. Walk-through: the demo catalogue, filterable as before.
     // There is deliberately no browse-all for real accounts — that would let anyone
     // with a tenant login enumerate every landlord's portfolio.
+    // ── Finding somewhere to live ─────────────────────────────────────────────
+    // Everything a card shows is computed here rather than in the screen, for the
+    // usual reason: two screens showing the same listing cannot then disagree
+    // about what it costs. The `why` chips come from the server, because the
+    // sentences have to be the ones the ranking actually used.
+    discover: (() => {
+      const d = s.disc;
+      const f = d.filters;
+      const card = (r) => ({
+        id: r.listing_id,
+        property: r.property,
+        room: `Room ${r.room}`,
+        loc: [r.locality, r.city].filter(Boolean).join(', '),
+        type: String(r.type || '').toUpperCase(),
+        img: mediaUrl(r.image),
+        // Stands in for a photograph nobody uploaded. Chosen from the kind of
+        // place so the tile still says something rather than being decoration.
+        icon: r.type === 'PG' ? 'bed-outline'
+            : r.type === 'Hostel' ? 'people-outline'
+            : r.type === 'Apartment' ? 'business-outline'
+            : 'home-outline',
+        rent: money(r.rent),
+        rentNote: r.shared ? 'per person' : 'per month',
+        deposit: `${money(r.deposit)} deposit`,
+        // "2 sharing" says more than "capacity 2" to somebody deciding whether
+        // they will be sharing a room with a stranger.
+        size: r.capacity === 1 ? 'Private room' : `${r.capacity} sharing`,
+        spots: r.spots_left === 1 ? '1 spot left' : `${r.spots_left} spots left`,
+        tight: r.spots_left === 1,
+        near: r.distance_km === null ? '' : (r.distance_km < 1 ? `${Math.round(r.distance_km * 1000)} m away` : `${r.distance_km} km away`),
+        why: Array.isArray(r.why) ? r.why : [],
+        amenities: (r.amenities || []).slice(0, 4).map((a) => a.label),
+        furnishing: r.furnishing,
+        open: () => api.openListing(r.listing_id)
+      });
+
+      // The count on the filter button. Sort is excluded: it is always set to
+      // something, so counting it would mean the button reads "1" on a search
+      // nobody has filtered.
+      const active = [f.type, f.area, f.furnishing].filter(Boolean).length
+        + (f.min != null || f.max != null ? 1 : 0)
+        + (f.rooms != null ? 1 : 0)
+        + (f.within != null ? 1 : 0);
+
+      const SORTS = [
+        ['suggested', 'Suggested'], ['cheapest', 'Cheapest'],
+        ['nearest', 'Nearest'], ['newest', 'Newest']
+      ];
+
+      return {
+        loading: !!d.loading,
+        loaded: !!d.loaded,
+        error: d.error || '',
+        hasError: !!d.error,
+        results: (d.results || []).map(card),
+        total: d.total || 0,
+        countLine: d.total === 1 ? '1 place' : `${d.total} places`,
+        empty: d.loaded && !d.loading && !d.error && d.results.length === 0,
+        // Two different empty states. Nothing published at all is the landlord's
+        // side being empty; nothing matching is the filters being too tight. One
+        // of those is fixed by widening a filter and the other is not, so they
+        // must not share a sentence.
+        emptyReason: (d.facets && d.facets.published === 0)
+          ? 'No landlord has listed a room yet. Ask yours for an invite code instead.'
+          : 'Nothing matches those filters. Try widening the budget or the area.',
+        emptyCanClear: !!(d.facets && d.facets.published > 0) && active > 0,
+
+        q: f.q,
+        // `s` is the state this view-model was derived from. Reading it here rather
+        // than from a ref is what keeps the box controlled: the ref is not in scope
+        // in deriveVm, and reaching for it threw on the first keystroke.
+        setQ: (e) => setState({ disc: { ...s.disc, filters: { ...s.disc.filters, q: evStr(e) } } }),
+        submitQ: () => api.loadDiscover(),
+        clearQ: () => api.loadDiscover({ q: '' }),
+
+        filters: f,
+        activeCount: active,
+        filterLabel: active ? `Filters · ${active}` : 'Filters',
+        openFilters: () => setState({ overlay: 'discfilter' }),
+        setFilter: (patch) => api.setDiscoverFilter(patch),
+        apply: () => api.applyDiscoverFilters(),
+        clear: () => api.clearDiscoverFilters(),
+
+        sorts: SORTS.map(([key, label]) => ({
+          key, label, on: f.sort === key,
+          go: () => api.loadDiscover({ sort: key })
+        })),
+
+        // Facets come from the whole published set, so the sheet can offer an area
+        // the current filters exclude.
+        types: (d.facets.types || []).map((v) => ({ value: v, label: v, on: f.type === v })),
+        areas: (d.facets.areas || []).map((v) => ({ value: v, label: v, on: f.area.toLowerCase() === v.toLowerCase() })),
+        rentFloor: d.facets.rent_min || 0,
+        rentCeil: d.facets.rent_max || 0,
+        // Round bands rather than a slider: a two-handled slider is a poor target
+        // on a phone, and nobody's budget is ₹13,470.
+        budgets: [[0, 8000, 'Under ₹8k'], [8000, 15000, '₹8k – ₹15k'], [15000, 25000, '₹15k – ₹25k'], [25000, null, '₹25k+']]
+          .map(([lo, hi, label]) => ({ label, lo, hi, on: f.min === lo && f.max === hi })),
+        sizes: [[1, 'Private'], [2, 'Twin'], [3, '3+ sharing']]
+          .map(([n, label]) => ({ n, label, on: f.rooms === n })),
+        furnishings: ['Unfurnished', 'Semi-furnished', 'Fully furnished']
+          .map((v) => ({ value: v, label: v, on: f.furnishing === v })),
+        distances: [[2, 'Within 2 km'], [5, 'Within 5 km'], [10, 'Within 10 km']]
+          .map(([n, label]) => ({ n, label, on: f.within === n })),
+
+        hasLocation: !!d.near,
+        locating: !!d.locating,
+        useLocation: (within) => api.useNearbyLocation(within || 5),
+
+        // The sheet for one listing.
+        sheet: (() => {
+          const o = d.open;
+          if (!o) return { open: false };
+          const rent = o.rent || 0;
+          // Requests this tenant already has outstanding, from the portal payload
+          // that is loaded anyway. Matching on property rather than room: the
+          // server refuses a second request per PROPERTY, so matching per room
+          // would still let the tenant walk into the same 409 from the room next
+          // door.
+          const myJoins = (s.tdata && s.tdata.joins) || [];
+          const alreadyAsked = myJoins.some((j) =>
+            String(j.property_id) === String(o.property_id) &&
+            String(j.status || '').toLowerCase() === 'pending');
+          return {
+            open: true,
+            loading: !!d.openLoading,
+            error: d.openError || '',
+            hasError: !!d.openError,
+            property: o.property || '',
+            room: `Room ${o.room || ''}`.trim(),
+            loc: [o.locality, o.city].filter(Boolean).join(', '),
+            type: String(o.type || '').toUpperCase(),
+            img: mediaUrl(o.image),
+            rent: money(rent),
+            rentNote: o.shared ? 'per person, per month' : 'per month',
+            deposit: money(o.deposit || 0),
+            depositNote: `${o.deposit_months || 1} month${(o.deposit_months || 1) === 1 ? '' : 's'} of rent`,
+            size: o.capacity === 1 ? 'Private room' : `${o.capacity} sharing`,
+            spots: o.spots_left === 1 ? 'Last spot' : `${o.spots_left} spots left`,
+            furnishing: o.furnishing || '',
+            preferred: o.preferred || 'Anyone',
+            headline: o.headline || '',
+            description: o.description || '',
+            amenities: (o.amenities || []).map((a) => a.label),
+            available: o.available_from ? `Free from ${dmy(o.available_from)}` : 'Available now',
+            landlord: o.owner_name || '',
+            near: o.distance_km == null ? '' : `${o.distance_km} km away`,
+            also: (d.also || []).map((a) => ({
+              id: a.listing_id,
+              line: `Room ${a.room} · ${money(a.rent)}`,
+              spots: a.spots_left === 1 ? '1 left' : `${a.spots_left} left`,
+              go: () => api.openListing(a.listing_id)
+            })),
+            // Asking to join a listing is the same request as asking by code; it
+            // just already knows which room. Reusing it rather than writing a
+            // second path is what keeps the landlord's inbox showing one kind of
+            // row instead of two.
+            // A request already waiting on this landlord is a state, not a button.
+            // Offering "Ask to join" again sends a second request the server
+            // refuses with a 409, so the tenant's reward for tapping the only
+            // obvious control was an error about something they had already done
+            // successfully.
+            pending: alreadyAsked,
+            canAsk: (TLIVE || !!(s.session && s.session.role === 'tenant')) && !alreadyAsked,
+            cta: alreadyAsked ? 'Request already sent' : 'Ask to join',
+            asking: !!s.joining,
+            ask: () => api.requestToJoin({
+              propertyId: o.property_id,
+              requestedUnitId: o.unit_id,
+              name: o.property
+            }).then((ok) => { if (ok) api.closeListing(); }),
+            close: () => api.closeListing()
+          };
+        })()
+      };
+    })(),
+
     lookup: (() => {
       const l = s.look || { code: '', loading: false, error: '', place: null };
       return {
@@ -5992,6 +6201,136 @@ export function AppProvider({ children }) {
         : 'Could not reject that payment.'
     }
   ), [ownerWrite]);
+
+  // ── Finding somewhere to live ──────────────────────────────────────────────
+  // One request per call, and the latest one wins. A filter sheet produces a burst
+  // of taps, each starting a request, and without a run id the slowest reply would
+  // land last and repaint the screen with results for filters nobody is looking at
+  // any more. Same shape as the Google polling loop above, for the same reason.
+  const discRun = useRef(0);
+
+  const loadDiscover = useCallback(async (overrides = null) => {
+    const base = stateRef.current.disc;
+    const filters = overrides ? { ...base.filters, ...overrides } : base.filters;
+    const run = discRun.current + 1;
+    discRun.current = run;
+
+    setState({ disc: { ...base, filters, loading: true, error: '' } });
+    try {
+      const sendable = { ...filters };
+      // The coordinate only travels with a radius. Sending a location for a search
+      // nobody asked to be local would quietly re-rank every result around where
+      // the phone happens to be.
+      if (filters.within && base.near) {
+        sendable.lat = base.near.lat;
+        sendable.lng = base.near.lng;
+      } else {
+        delete sendable.within;
+      }
+      const res = await apiPortal.discover(sendable);
+      if (discRun.current !== run) return;
+      const cur = stateRef.current.disc;
+      setState({
+        disc: {
+          ...cur, filters, loading: false, loaded: true, error: '',
+          results: Array.isArray(res.results) ? res.results : [],
+          total: Number(res.total) || 0,
+          facets: res.facets || cur.facets
+        }
+      });
+    } catch (e) {
+      if (discRun.current !== run) return;
+      setState({
+        disc: {
+          ...stateRef.current.disc, loading: false, loaded: true,
+          // Not deployed yet is its own sentence. "Could not load places" on a
+          // server that simply does not have the endpoint sends somebody to check
+          // their signal for a problem no amount of signal will fix.
+          error: notDeployed(e)
+            ? 'Finding places needs a newer version of the server than is running right now.'
+            : errText(e, 'Could not load places right now.')
+        }
+      });
+    }
+  }, [setState]);
+
+  const setDiscoverFilter = useCallback((patch) => {
+    const d = stateRef.current.disc;
+    setState({ disc: { ...d, filters: { ...d.filters, ...patch } } });
+  }, [setState]);
+
+  // Applying is separate from setting so the sheet can be changed freely and
+  // searched once, rather than firing a request per chip.
+  const applyDiscoverFilters = useCallback(() => {
+    setState({ overlay: null });
+    loadDiscover();
+  }, [setState, loadDiscover]);
+
+  const clearDiscoverFilters = useCallback(() => {
+    const d = stateRef.current.disc;
+    const blank = { q: '', type: '', area: '', min: null, max: null, rooms: null, within: null, furnishing: '', sort: 'suggested' };
+    setState({ disc: { ...d, filters: blank } });
+    loadDiscover(blank);
+  }, [setState, loadDiscover]);
+
+  // "Near me" asks for a coordinate, then searches with it.
+  //
+  // expo-location is a native module, so it is required lazily and its absence is
+  // reported rather than thrown — the same treatment the QR decoder gets, and for
+  // the same reason: an over-the-air update cannot add one to an installed build.
+  const useNearbyLocation = useCallback(async (within = 5) => {
+    const d = stateRef.current.disc;
+    if (d.near) { loadDiscover({ within }); return; }
+    setState({ disc: { ...d, locating: true, error: '' } });
+    try {
+      // eslint-disable-next-line global-require
+      const Loc = require('expo-location');
+      const perm = await Loc.requestForegroundPermissionsAsync();
+      if (!perm || perm.status !== 'granted') {
+        setState({ disc: { ...stateRef.current.disc, locating: false } });
+        flash('Allow location to see places near you');
+        return;
+      }
+      const pos = await Loc.getCurrentPositionAsync({ accuracy: Loc.Accuracy.Balanced });
+      const near = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+      setState({ disc: { ...stateRef.current.disc, near, locating: false } });
+      loadDiscover({ within });
+    } catch (e) {
+      setState({ disc: { ...stateRef.current.disc, locating: false } });
+      flash('Could not get your location on this device');
+    }
+  }, [setState, flash, loadDiscover]);
+
+  // Open one listing in full. Fetched rather than read out of the list because the
+  // detail carries things the list deliberately leaves out, and because a landlord
+  // may have taken it down in the meantime — which is an answer the tenant needs
+  // before they ask to join it, not after.
+  const openListing = useCallback(async (listingId) => {
+    const d = stateRef.current.disc;
+    const stub = d.results.find((r) => r.listing_id === listingId) || null;
+    setState({ disc: { ...d, open: stub, openLoading: true, openError: '', also: [] }, overlay: 'listing' });
+    try {
+      const res = await apiPortal.discoverOne(listingId);
+      setState({
+        disc: {
+          ...stateRef.current.disc, openLoading: false,
+          open: res.listing || stub, also: Array.isArray(res.also) ? res.also : []
+        }
+      });
+    } catch (e) {
+      const gone = e && e.response && e.response.status === 404;
+      setState({
+        disc: {
+          ...stateRef.current.disc, openLoading: false,
+          openError: gone ? 'This place is no longer listed.' : errText(e, 'Could not open that place.')
+        }
+      });
+    }
+  }, [setState]);
+
+  const closeListing = useCallback(() => {
+    setState({ overlay: null, disc: { ...stateRef.current.disc, open: null, also: [], openError: '' } });
+  }, [setState]);
 
   // Ask a landlord to be let into a property. The tenant side of the same table.
   const requestToJoin = useCallback(async ({ code, propertyId, name, requestedUnitId = null }) => {
@@ -7339,6 +7678,8 @@ export function AppProvider({ children }) {
   // The polling is what makes that work: whenever they return, the answer is already
   // waiting.
   const gpollRef = useRef(0);
+  // Set by the polling loop to a function that cuts its current sleep short.
+  const gwakeRef = useRef(null);
 
   // Both paths end the same way, so this is shared rather than written twice — a
   // sign-in that saved the session slightly differently from the password path would
@@ -7392,8 +7733,23 @@ export function AppProvider({ children }) {
 
     // Poll until the server has an answer. Bounded by the same ten minutes the
     // server gives the session, so this can never spin forever in the background.
+    //
+    // The wait is INTERRUPTIBLE. Coming back from the browser is the moment the
+    // answer is ready, and sleeping out the rest of a 2.5-second tick there is
+    // 2.5 seconds of staring at "Waiting for Google…" after the sign-in has
+    // already succeeded. `gwakeRef` is resolved by the deep-link and foreground
+    // listeners below, which turns the return into an immediate check.
+    //
+    // This half works on an installed build with no changes at all. The deep link
+    // that makes the browser hand back by itself needs the URL scheme, which is
+    // in the Android manifest and therefore only arrives with a new build.
     const deadline = Date.now() + 10 * 60 * 1000;
-    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    const wait = (ms) => new Promise((resolve) => {
+      let done = false;
+      const finish = () => { if (!done) { done = true; resolve(); } };
+      const timer = setTimeout(finish, ms);
+      gwakeRef.current = () => { clearTimeout(timer); finish(); };
+    });
     while (gpollRef.current === run && Date.now() < deadline) {
       await wait(2500);
       if (gpollRef.current !== run) return;   // cancelled, or another attempt started
@@ -7474,8 +7830,40 @@ export function AppProvider({ children }) {
   // Abandon the attempt. Stops the polling loop by moving the run id past it.
   const cancelGoogleSignIn = useCallback(() => {
     gpollRef.current += 1;
+    gwakeRef.current = null;
     setState({ gauth: { ...INITIAL_STATE.gauth } });
   }, [setState]);
+
+  // ── Getting handed back from the browser ───────────────────────────────────
+  // Two ways the app can learn it is in front again, and both only poke the
+  // existing poll rather than doing any work of their own. That matters: the
+  // session is still minted by the same single call, so neither of these can
+  // produce a second one however many times they fire.
+  //
+  //   1. The deep link. The server's callback page redirects to tenantpro://google
+  //      when Google is done, which brings the app forward without the person
+  //      switching apps by hand. Needs the URL scheme in the manifest, so it only
+  //      works from the next build onwards.
+  //   2. Coming back to the foreground, however that happened — the deep link, the
+  //      task switcher, or the back button. This works on every existing install,
+  //      and is what makes the wait end the instant somebody returns.
+  useEffect(() => {
+    const poke = () => {
+      if (!gpollRef.current) return;
+      const w = gwakeRef.current;
+      if (typeof w === 'function') w();
+    };
+    const linkSub = Linking.addEventListener('url', ({ url }) => {
+      if (/^[a-z0-9+.-]+:\/\/google\b/i.test(String(url || ''))) poke();
+    });
+    const appSub = AppState.addEventListener('change', (next) => {
+      if (next === 'active') poke();
+    });
+    return () => {
+      if (linkSub && linkSub.remove) linkSub.remove();
+      if (appSub && appSub.remove) appSub.remove();
+    };
+  }, []);
 
   const register = useCallback(async () => {
     const { authId, authPw, authName, authPhone, signupRole } = stateRef.current;
@@ -7662,6 +8050,17 @@ export function AppProvider({ children }) {
   // Resolve the stored session once, on mount.
   useEffect(() => { resolveSession(); }, [resolveSession]);
 
+  // Load the search the first time the Find screen is opened, and not before.
+  // Doing it at sign-in would mean every tenant who never looks for a place still
+  // pays for the request; doing it on every visit would throw away a result set
+  // the person may have scrolled halfway through and come back to.
+  useEffect(() => {
+    if (state.route !== 'tfind') return;
+    if (state.disc.loaded || state.disc.loading) return;
+    if (!(state.session && state.session.role === 'tenant')) return;
+    loadDiscover();
+  }, [state.route, state.disc.loaded, state.disc.loading, state.session, loadDiscover]);
+
   // Register this device whenever a session appears — whatever route created it:
   // password login, Google, a fresh registration, a guest claiming their account, or a
   // stored session restored on launch. ONE effect rather than a call at each of those
@@ -7718,7 +8117,8 @@ export function AppProvider({ children }) {
       decideJoin, decidePayment, requestToJoin, holdJoinCode, askPermission, finishPermits,
       loadDocs, decideDoc, loadMyDocs, pickDocPhoto, addMyDoc, removeMyDoc,
       requestId, cancelIdRequest,
-      lookupProperty, scanQrFromImage, resetDemo, sendTestPush, saveProfile, verifyContactCode, markAlertsSeen, openUpiPayment, declareMyPayment, startOnlinePayment, checkOnlinePayment,
+      lookupProperty, scanQrFromImage, resetDemo,
+      loadDiscover, setDiscoverFilter, applyDiscoverFilters, clearDiscoverFilters, useNearbyLocation, openListing, closeListing, sendTestPush, saveProfile, verifyContactCode, markAlertsSeen, openUpiPayment, declareMyPayment, startOnlinePayment, checkOnlinePayment,
       startGoogleSignIn, finishGoogleSignUp, cancelGoogleSignIn,
       openLeave, confirmLeave, withdrawLeave,
       submitClaim,
@@ -7733,7 +8133,8 @@ export function AppProvider({ children }) {
       decideJoin, decidePayment, requestToJoin, holdJoinCode, askPermission, finishPermits,
       loadDocs, decideDoc, loadMyDocs, pickDocPhoto, addMyDoc, removeMyDoc,
       requestId, cancelIdRequest,
-      lookupProperty, scanQrFromImage, resetDemo, sendTestPush, saveProfile, verifyContactCode, markAlertsSeen, openUpiPayment, declareMyPayment, startOnlinePayment, checkOnlinePayment,
+      lookupProperty, scanQrFromImage, resetDemo,
+      loadDiscover, setDiscoverFilter, applyDiscoverFilters, clearDiscoverFilters, useNearbyLocation, openListing, closeListing, sendTestPush, saveProfile, verifyContactCode, markAlertsSeen, openUpiPayment, declareMyPayment, startOnlinePayment, checkOnlinePayment,
       startGoogleSignIn, finishGoogleSignUp, cancelGoogleSignIn,
       openLeave, confirmLeave, withdrawLeave,
       submitClaim,

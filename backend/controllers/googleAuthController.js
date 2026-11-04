@@ -92,10 +92,22 @@ const startGoogle = async (req, res) => {
     }
 };
 
+// The app's own URL scheme, used to hand the browser back to it when Google is
+// done. Configurable because a build can change it; the default matches app.json.
+const appScheme = () => (process.env.APP_SCHEME || 'tenantpro').replace(/[^a-z0-9+.-]/gi, '');
+
 // A tiny page for the browser tab the person is looking at. Deliberately plain
 // text-ish HTML with no assets: it is on screen for a couple of seconds and any
 // external reference would just be a way for it to render broken.
-const closingPage = (title, detail, tone) => `<!doctype html>
+//
+// `back` asks Android to reopen the app. It is an ATTEMPT, not a guarantee: the
+// scheme only resolves on a build that registers it, and a browser may refuse to
+// follow a scheme redirect it did not get a gesture for. So the page still says
+// what to do in words, and the app still polls. The deep link removes a manual
+// app switch when it works and changes nothing when it does not — which is the
+// only safe way to add it, because an installed build cannot gain a URL scheme
+// over the air.
+const closingPage = (title, detail, tone, back) => `<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>TenantPro</title></head>
 <body style="margin:0;background:#0B0B0F;color:#F4F3F7;font-family:system-ui,-apple-system,sans-serif;
@@ -104,15 +116,30 @@ display:flex;align-items:center;justify-content:center;min-height:100vh;padding:
 <div style="font-size:44px;line-height:1;margin-bottom:18px">${tone}</div>
 <h1 style="font-size:21px;margin:0 0 10px;letter-spacing:-0.5px">${title}</h1>
 <p style="font-size:14px;line-height:1.55;color:#A5A3B0;margin:0">${detail}</p>
-</div></body></html>`;
+${back ? `<a id="back" href="${back}" style="display:inline-block;margin-top:22px;padding:13px 22px;border-radius:999px;
+background:#C8F751;color:#0B0B0F;font-weight:700;font-size:14px;text-decoration:none">Return to TenantPro</a>` : ''}
+</div>
+${back ? `<script>
+// Try to hand straight back to the app. Wrapped because a browser that cannot
+// resolve the scheme throws here, and an uncaught error would replace a working
+// page with a blank one. The button above stays either way.
+setTimeout(function(){ try { window.location.href = ${JSON.stringify(back)}; } catch (e) {} }, 400);
+</script>` : ''}
+</body></html>`;
 
 // GET /api/auth/google/callback?code=&state=
 //
 // Google sends a BROWSER here, not the app, so every outcome has to be a readable
 // page rather than JSON. The app learns what happened by polling.
 const googleCallback = async (req, res) => {
-    const send = (code, title, detail, tone) =>
-        res.status(code).type('html').send(closingPage(title, detail, tone));
+    // `state` is echoed back so the app can tell its own in-flight attempt from a
+    // stale link somebody tapped twice. It is not a secret and is useless on its
+    // own: the token is still only minted when the app polls with its `claim`.
+    const send = (code, title, detail, tone, status) =>
+        res.status(code).type('html').send(closingPage(
+            title, detail, tone,
+            status ? `${appScheme()}://google?status=${encodeURIComponent(status)}` : null
+        ));
 
     if (!googleConfigured()) {
         return send(403, 'Google sign-in is not set up', 'This server has no Google credentials configured.', '⚙️');
@@ -130,7 +157,7 @@ const googleCallback = async (req, res) => {
                 ['Sign-in was cancelled.', state]
             ).catch(() => {});
         }
-        return send(200, 'Sign-in cancelled', 'Nothing has changed. You can close this tab and return to TenantPro.', '👋');
+        return send(200, 'Sign-in cancelled', 'Nothing has changed — returning you to TenantPro.', '👋', 'cancelled');
     }
 
     if (!state || !code) {
@@ -170,9 +197,9 @@ const googleCallback = async (req, res) => {
 
         return send(200, resolved.needsProfile ? 'Almost there' : 'You are signed in',
             resolved.needsProfile
-                ? 'Return to TenantPro to finish setting up your account.'
-                : 'Return to TenantPro — you can close this tab.',
-            '✅');
+                ? 'Taking you back to TenantPro to finish setting up your account.'
+                : 'Taking you back to TenantPro.',
+            '✅', resolved.needsProfile ? 'profile' : 'ready');
     } catch (error) {
         console.error('Google callback failed:', error.message);
         return send(500, 'Something went wrong', 'Please try again from the app.', '⚠️');

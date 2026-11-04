@@ -492,7 +492,16 @@ export function initialsFrom(v) {
 // footprint as <Face>, so a card laid out for an avatar does not reflow when there
 // isn't one — which is the usual case, since the API carries a name and a number
 // but often no picture.
-export function Initials({ text, size = 40, radius, style }) {
+// `bg`/`fg` exist because this is drawn on top of other things.
+//
+// The default is a pale lime disc with deep-lime letters, which is right nearly
+// everywhere and invisible in one place: the dock's profile button, which turns
+// lime when it is the current tab. Pale lime on lime with lime letters is a blank
+// space, so the initials vanished at exactly the moment the tab was selected —
+// which read as the icon appearing and disappearing at random.
+//
+// So a caller that controls the surface underneath can say what to draw on it.
+export function Initials({ text, size = 40, radius, style, bg, fg }) {
     const t = useT();
     return (
         <View
@@ -501,14 +510,14 @@ export function Initials({ text, size = 40, radius, style }) {
                     width: size,
                     height: size,
                     borderRadius: radius != null ? radius : Math.round(size * 0.32),
-                    backgroundColor: t.lsoft,
+                    backgroundColor: bg || t.lsoft,
                     alignItems: 'center',
                     justifyContent: 'center'
                 },
                 style
             ]}
         >
-            <T w={700} s={Math.round(size * 0.38)} c={t.accent} style={{ letterSpacing: 0.2 }}>
+            <T w={700} s={Math.round(size * 0.38)} c={fg || t.accent} style={{ letterSpacing: 0.2 }}>
                 {initialsFrom(text) || '?'}
             </T>
         </View>
@@ -517,9 +526,9 @@ export function Initials({ text, size = 40, radius, style }) {
 
 // <Face> when there is a photo, <Initials> when there isn't. Use this anywhere a
 // person is shown, so the fallback is never forgotten at one of the call sites.
-export function Avatar({ uri, name, initials, size = 40, radius, style }) {
+export function Avatar({ uri, name, initials, size = 40, radius, style, bg, fg }) {
     if (uri) return <Face uri={uri} size={size} radius={radius} style={style} />;
-    return <Initials text={initials || name} size={size} radius={radius} style={style} />;
+    return <Initials text={initials || name} size={size} radius={radius} style={style} bg={bg} fg={fg} />;
 }
 
 // The TP monogram lockup used in the auth screens.

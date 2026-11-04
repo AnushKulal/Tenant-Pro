@@ -3,6 +3,7 @@ import { View, ScrollView } from 'react-native';
 import { useVm } from '../AppContext';
 import { useT } from '../ThemeContext';
 import { T, Eyebrow, Card, Row, Pill, Press, Glyph, IconChip, Face, Avatar } from '../ui';
+import { Pop } from '../motion';
 import AlertBell from '../AlertBell';
 
 export default function PortalHomeScreen() {
@@ -17,15 +18,28 @@ export default function PortalHomeScreen() {
         >
             {/* Welcome header */}
             <Row gap={12} style={{ marginBottom: 20 }}>
-                <Avatar uri={me.img} name={vm.meFullName} size={42} radius={14} />
-                <View style={{ flex: 1 }}>
-                    <Eyebrow s={9} ls={0.1} c={t.fg3}>WELCOME BACK</Eyebrow>
-                    {/* Fell back to 'Rahul' — the demo tenant — so a real tenant whose
-                        name had not arrived yet was greeted by somebody else's. */}
-                    <T w={700} s={20} lh={1.1} numberOfLines={1} style={{ letterSpacing: -0.8, marginTop: 5 }}>
-                        {me.name || 'Welcome'}
-                    </T>
-                </View>
+                {/* Your own picture and name open your profile. They did nothing at
+                    all until a tester tapped them expecting exactly that — which is
+                    the only thing a face in the corner of an app has ever meant.
+                    The whole block is the target, not just the circle: a 42px
+                    avatar is a small thing to hit with a thumb. */}
+                <Pop>
+                <Press
+                    onPress={vm.goTMe}
+                    style={{ flexDirection: 'row', alignItems: 'center', columnGap: 12, paddingVertical: 6, paddingHorizontal: 7, marginHorizontal: -7, borderRadius: 16 }}
+                >
+                    <Avatar uri={me.img} name={vm.meFullName} size={42} radius={14} />
+                    <View>
+                        <Eyebrow s={9} ls={0.1} c={t.fg3}>WELCOME BACK</Eyebrow>
+                        {/* Fell back to 'Rahul' — the demo tenant — so a real tenant whose
+                            name had not arrived yet was greeted by somebody else's. */}
+                        <T w={700} s={20} lh={1.1} numberOfLines={1} style={{ letterSpacing: -0.8, marginTop: 5 }}>
+                            {me.name || 'Welcome'}
+                        </T>
+                    </View>
+                </Press>
+                </Pop>
+                <View style={{ flex: 1 }} />
                 {/* Same bell the landlord has, same component. On the tenant's home
                     screen because this is where they land — an alert they have to go
                     hunting for is one they will not see. */}
