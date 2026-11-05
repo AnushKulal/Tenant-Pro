@@ -266,15 +266,18 @@ export function ScreenTitle({ children, sub, s = TITLE_S, style, subStyle }) {
     );
 }
 
-// ── The header's copy of it ──────────────────────────────────────────────────
+// ── One value, two things ────────────────────────────────────────────────────
 //
-// Fades and rises in as the real title leaves. Native-driven, so the animation
-// runs on the UI thread and does not compete with the scroll it is reacting to.
-export function StickyTitle({ style }) {
-    const { title, past } = useLayout();
-    const t = useT();
+// 0 while the screen's own title is on show, 1 once the header has taken over.
+// The header's title fades IN on it and whatever the bar shows instead at the
+// top fades OUT on the same value, so the two can never both be visible or both
+// be missing — which they could if each ran its own animation.
+//
+// Native-driven: the animation runs on the UI thread rather than competing with
+// the scroll that triggered it.
+export function usePastFade() {
+    const { past } = useLayout();
     const v = React.useRef(new Animated.Value(0)).current;
-
     React.useEffect(() => {
         Animated.timing(v, {
             toValue: past ? 1 : 0,
@@ -282,6 +285,24 @@ export function StickyTitle({ style }) {
             useNativeDriver: true
         }).start();
     }, [past, v]);
+    return v;
+}
+
+// ── The header's copy of the title ───────────────────────────────────────────
+//
+// CENTRED, and centred properly: laid out across the whole bar and centred in
+// it, rather than placed in a row and left to land wherever the things beside it
+// leave room. The first version did the latter and measured 22px off centre on a
+// 420px screen — close enough to look like a mistake, which it was.
+//
+// `inset` is the room kept clear at each end for whatever sits there. It is the
+// same on both sides on purpose: a title centred between a 36px button on one
+// side and nothing on the other is not centred on the screen, and the eye reads
+// the screen, not the row.
+export function StickyTitle({ inset = 60, style }) {
+    const { title, past } = useLayout();
+    const t = useT();
+    const v = usePastFade();
 
     if (!isLayoutRule() || !title) return null;
 
@@ -295,15 +316,27 @@ export function StickyTitle({ style }) {
             importantForAccessibility={past ? 'yes' : 'no-hide-descendants'}
             style={[
                 {
-                    flex: 1,
-                    minWidth: 0,
+                    position: 'absolute',
+                    left: inset,
+                    right: inset,
+                    top: 0,
+                    bottom: 0,
+                    alignItems: 'center',
+                    justifyContent: 'center',
                     opacity: v,
                     transform: [{ translateY: v.interpolate({ inputRange: [0, 1], outputRange: [6, 0] }) }]
                 },
                 style
             ]}
         >
-            <T w={600} s={STICKY_S} lh={1.1} c={t.fg} numberOfLines={1} style={{ letterSpacing: -0.4 }}>
+            <T
+                w={600}
+                s={STICKY_S}
+                lh={1.1}
+                c={t.fg}
+                numberOfLines={1}
+                style={{ letterSpacing: -0.4, textAlign: 'center' }}
+            >
                 {title}
             </T>
         </Animated.View>

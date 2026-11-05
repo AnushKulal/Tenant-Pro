@@ -23,15 +23,34 @@
 // That is a real exception, not an oversight — it is listed here so the next
 // person does not have to work out why those four look different.
 import React from 'react';
-import { View } from 'react-native';
+import { View, Animated } from 'react-native';
 import { useVm } from './AppContext';
 import { useT } from './ThemeContext';
-import { T, Row, Press, Glyph } from './ui';
+import { T, Row, Press, Glyph, Wordmark } from './ui';
 import AlertBell from './AlertBell';
-import { StickyTitle } from './layout';
+import { StickyTitle, usePastFade } from './layout';
 import { isLayoutRule } from '../appConfig';
 
 const BTN = { flexBasis: 36, flexGrow: 0, flexShrink: 0, width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center' };
+
+// What the left of the bar shows while the screen's own title is still on
+// screen: the app's mark, at the size a bar can carry. It fades out as the
+// title fades in, on the same value, so the two swap rather than overlap.
+//
+// Deliberately the shared Wordmark rather than a second drawing of the logo —
+// it is the one source of the mark, and a header is the last place it should
+// drift from the rest of the app.
+function Mark() {
+    const v = usePastFade();
+    return (
+        <Animated.View
+            pointerEvents="none"
+            style={{ opacity: v.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }) }}
+        >
+            <Wordmark mono={26} s={15} gap={7} />
+        </Animated.View>
+    );
+}
 
 export default function Header() {
     const vm = useVm();
@@ -58,30 +77,52 @@ export default function Header() {
         // the first.
         const inward = !vm.showTenantDock;
         return (
-            <Row gap={8} style={bar}>
-                {inward && vm.canGoBack ? (
-                    <Press
-                        onPress={vm.goBack}
-                        hitSlop={8}
-                        style={{ ...BTN, borderWidth: 1, borderColor: t.line }}
-                    >
-                        <Glyph name="chevron-back" size={17} color={t.fg} />
-                    </Press>
-                ) : null}
+            <View style={bar}>
+                <Row gap={8} style={{ minHeight: 36 }}>
+                    {inward && vm.canGoBack ? (
+                        <Press
+                            onPress={vm.goBack}
+                            hitSlop={8}
+                            style={{ ...BTN, borderWidth: 1, borderColor: t.line }}
+                        >
+                            <Glyph name="chevron-back" size={17} color={t.fg} />
+                        </Press>
+                    ) : (
+                        /* On a dock screen there is no back button, and without
+                           this the bar held one thing: the bell, hard against the
+                           right edge, with 360 of a 420px screen empty beside it.
+                           It did not read as a header, it read as a stray button
+                           floating above the page — which is exactly how it was
+                           reported.
 
-                <StickyTitle />
+                           The mark fills that side until the screen's own title
+                           scrolls away, then steps aside for it. Both run off the
+                           same animated value, so the bar is never empty and
+                           never says two things at once. */
+                        <Mark />
+                    )}
 
-                {/* The one action a tenant screen needs in the chrome. It used to
-                    live inside the portal home screen's body, which meant it was
-                    only reachable from that one screen and scrolled away even
-                    there. */}
-                <AlertBell
-                    onPress={vm.openTAlerts}
-                    has={vm.hasTAlerts}
-                    urgent={vm.tBellUrgent}
-                    count={vm.tBellCount}
-                />
-            </Row>
+                    <View style={{ flex: 1 }} />
+
+                    {/* The one action a tenant screen needs in the chrome. It used
+                        to live inside the portal home screen's body, which meant it
+                        was only reachable from that one screen and scrolled away
+                        even there. */}
+                    <AlertBell
+                        onPress={vm.openTAlerts}
+                        has={vm.hasTAlerts}
+                        urgent={vm.tBellUrgent}
+                        count={vm.tBellCount}
+                    />
+                </Row>
+
+                {/* Laid over the row rather than inside it, so it is centred on
+                    the SCREEN and not in whatever gap the row happens to leave.
+                    The insets match the bar's own padding, so it centres on the
+                    row rather than on the padding box — a pixel, but this whole
+                    change is about pixels. See StickyTitle. */}
+                <StickyTitle style={{ top: 12, bottom: 10 }} />
+            </View>
         );
     }
 

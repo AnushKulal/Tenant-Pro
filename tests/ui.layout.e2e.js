@@ -96,6 +96,39 @@ const headerText = async (page, h) =>
   }, h);
 
 // The tallest scrollable element on the page is the screen body.
+// Where visible header text actually SITS, so "looks off-centre" can be settled
+// with numbers. This suite was written after a report that the heading was not
+// centred; it was not, by 22px on a 420px screen, and nothing here could have
+// caught it because everything asserted on text and never on position.
+const headerBoxes = async (page, h) =>
+  page.evaluate((H) => {
+    const seen = (el) => {
+      let o = 1;
+      for (let n = el; n && n !== document.body; n = n.parentElement) {
+        const cs = getComputedStyle(n);
+        if (cs.visibility === 'hidden' || cs.display === 'none') return 0;
+        o *= parseFloat(cs.opacity === '' ? '1' : cs.opacity);
+        if (o < 0.05) return 0;
+      }
+      return o;
+    };
+    const items = [];
+    for (const el of document.querySelectorAll('div, span')) {
+      const r = el.getBoundingClientRect();
+      if (r.top >= 0 && r.bottom <= H + 2 && r.height > 8 && r.width > 10) {
+        const own = Array.from(el.childNodes)
+          .filter((n) => n.nodeType === 3)
+          .map((n) => n.textContent.trim())
+          .join(' ')
+          .trim();
+        if (own && seen(el) > 0.5) {
+          items.push({ text: own, left: Math.round(r.left), right: Math.round(r.right), cx: Math.round(r.left + r.width / 2) });
+        }
+      }
+    }
+    return { width: window.innerWidth, items };
+  }, h);
+
 const scrollTo = async (page, y) =>
   page.evaluate((to) => {
     let best = null;
@@ -139,6 +172,14 @@ const scrollTo = async (page, y) =>
   ok('the screen shows its full-size title',
     await page.locator('text=Find a place').first().isVisible().catch(() => false));
   ok('...and the header is NOT also showing it', !/Find a place/.test(top), 'header: ' + top);
+
+  // The bar used to hold one thing at the top: the bell, hard right, with 360 of
+  // a 420px screen empty beside it. It read as a stray button rather than a
+  // header, which is how it was reported.
+  const topBoxes = await headerBoxes(page, HEADER_H);
+  const leftOfBar = topBoxes.items.filter((i) => i.cx < topBoxes.width / 2);
+  ok('the bar is not empty on the left at the top of a screen',
+    leftOfBar.length > 0, JSON.stringify(topBoxes.items));
   await page.screenshot({ path: `${SHOT}/02-find-top.png`, fullPage: false });
 
   console.log('\nFIND — scrolled down, the header takes it over');
@@ -149,6 +190,16 @@ const scrollTo = async (page, y) =>
   const down = await headerText(page, HEADER_H);
   ok('the header is showing the screen name once the title has gone',
     /Find a place/.test(down), 'header: ' + down);
+
+  // Centred on the SCREEN, not in whatever gap the row leaves beside the bell.
+  // Four pixels of tolerance for text metrics and rounding; the bug this catches
+  // was twenty-two.
+  const downBoxes = await headerBoxes(page, HEADER_H);
+  const titleBox = downBoxes.items.find((i) => /Find a place/.test(i.text));
+  const middle = downBoxes.width / 2;
+  ok('...centred on the screen',
+    !!titleBox && Math.abs(titleBox.cx - middle) <= 4,
+    titleBox ? `centre ${titleBox.cx}, screen centre ${middle}` : 'title not found');
   await page.screenshot({ path: `${SHOT}/03-find-scrolled.png`, fullPage: false });
 
   console.log('\nFIND — scrolled back up, it hands it back');
