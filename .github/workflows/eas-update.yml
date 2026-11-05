@@ -4,42 +4,29 @@ name: Publish OTA Update
 # Installed apps pick it up via the in-app "Update available" popup — no rebuild,
 # no Play Store, no waiting. Needs one repo secret: EXPO_TOKEN.
 #
-# ── Why there is no `paths:` filter here ─────────────────────────────────────
+# ── A RUN CAN TAKE A FEW MINUTES TO APPEAR. WAIT FOR IT. ─────────────────────
 #
-# There used to be one: `paths: ['mobile/**']`, so that backend-only pushes did
-# not publish an app update. It worked for months and then quietly did not. A
-# push to main changing 13 files under mobile/ created no run at all — the Pages
-# workflow fired for the same commit, so the push was seen; this one simply was
-# not started. The release had to be published by hand, and nothing anywhere
-# said why. A path filter that mis-evaluates does not fail, it is SILENT, and a
-# release mechanism whose failure mode is silence is one you cannot trust.
+# On 2026-11-04 the run for a release showed up 2.5 minutes after the push. In
+# the meantime it looked exactly like a trigger that had not fired — there is no
+# "queued" row to see, just nothing — so the update was published by hand, and
+# then the real run arrived and published the same commit again. Two updates of
+# identical code, which is harmless but should not have happened.
 #
-# So the trigger is now every push to main, and the "did the app actually
-# change?" question is answered in the job below by git, where the answer is
-# printed in the log and can be read afterwards. A backend-only push costs about
-# twenty seconds of runner time to decide to do nothing, which is the price of
-# the decision being visible.
-#
-# The decision deliberately errs towards publishing: if the range cannot be
-# worked out (a new branch, a force push, a commit missing from the checkout) it
-# publishes. A redundant update is a no-op for the phone; a missed one is a
-# release that silently did not happen, which is the bug this replaced.
+# No run yet is NOT evidence that the trigger is broken, and it never will be,
+# because a `paths:` filter that correctly skips a push looks the same. Before
+# concluding anything: wait three minutes, then look at the Actions tab again,
+# and only then publish by hand.
 on:
   push:
     branches: [main]
+    paths:
+      - 'mobile/**'
   workflow_dispatch:
     inputs:
       message:
         description: 'Update message shown in the app'
         required: false
         default: 'Latest fixes and improvements'
-
-# Two pushes in quick succession must not publish at the same time: whichever
-# finished last would win, and that is not necessarily the newer one. Queue
-# rather than cancel — a half-finished publish is worse than a slow one.
-concurrency:
-  group: eas-update
-  cancel-in-progress: false
 
 jobs:
   update:
@@ -51,50 +38,15 @@ jobs:
           # Need history so the changelog script can read commit subjects.
           fetch-depth: 0
 
-      # What the `paths:` filter used to do, done where it can be seen. Prints
-      # its reasoning either way, so a run that published nothing says so in one
-      # line rather than looking like a run that went wrong.
-      - name: Decide whether the app changed
-        id: decide
-        env:
-          EVENT: ${{ github.event_name }}
-          BEFORE_SHA: ${{ github.event.before }}
-        run: |
-          decide() {
-            if [ "$EVENT" != "push" ]; then
-              echo "yes|run by hand"; return
-            fi
-            if [ -z "$BEFORE_SHA" ] || [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
-              echo "yes|no previous commit to compare against"; return
-            fi
-            if ! git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
-              echo "yes|previous commit $BEFORE_SHA is not in this checkout"; return
-            fi
-            if git diff --quiet "$BEFORE_SHA" HEAD -- mobile; then
-              echo "no|nothing under mobile/ changed"
-            else
-              echo "yes|$(git diff --name-only "$BEFORE_SHA" HEAD -- mobile | wc -l) file(s) under mobile/ changed"
-            fi
-          }
-          OUT=$(decide)
-          PUBLISH="${OUT%%|*}"
-          WHY="${OUT#*|}"
-          echo "publish=$PUBLISH" >> "$GITHUB_OUTPUT"
-          echo "Publishing: $PUBLISH  ($WHY)"
-          echo "### OTA: publish = \`$PUBLISH\` — $WHY" >> "$GITHUB_STEP_SUMMARY"
-
       - name: Set up Node
-        if: steps.decide.outputs.publish == 'yes'
         uses: actions/setup-node@v4
         with:
           node-version: 20
 
       - name: Install EAS CLI
-        if: steps.decide.outputs.publish == 'yes'
         run: npm install -g eas-cli
 
       - name: Install dependencies
-        if: steps.decide.outputs.publish == 'yes'
         working-directory: mobile
         run: npm install
 
@@ -102,7 +54,6 @@ jobs:
       # the in-app update sheet displays. Writes app.json → extra.releaseNotes,
       # which travels inside the update manifest.
       - name: Generate changelog from this patch
-        if: steps.decide.outputs.publish == 'yes'
         working-directory: mobile
         env:
           # Via env, not inline ${{ }} — see the note on the publish step below.
@@ -118,7 +69,6 @@ jobs:
           node -e "console.log(JSON.stringify(require('./app.json').expo.extra, null, 2))"
 
       - name: Publish OTA update
-        if: steps.decide.outputs.publish == 'yes'
         working-directory: mobile
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
