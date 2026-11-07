@@ -173,18 +173,34 @@ const signIn = async (page, who, id) => {
     console.log('\nAND THE LANDLORD SEES IT — WITH THE CLOCK RUNNING');
     const started = Date.now();
     let seen = false;
-    // Poll rather than sleep: the question is HOW LONG, and a fixed wait answers
-    // "within that wait" for any wait you choose.
-    for (let i = 0; i < 14 && !seen; i += 1) {
-      await tab(owner, 'HOME', 900);
-      await tab(owner, 'SUPPORT', 900);
-      const o = await body(owner);
-      if (o.includes(mark.slice(0, 12))) seen = true;
-      else await owner.waitForTimeout(1500);
+    // How the landlord actually finds out, and why the budget is what it is.
+    //
+    // The landlord's app does not sit on a socket. It polls /pulse every 25
+    // seconds — about 94 bytes of counts carrying a stamp — and refetches the
+    // real data only when that stamp changes. So the arrival is not instant by
+    // design, and anything under ~25s is luck about where in the cycle we
+    // landed. The first version of this gave up at 21s and reported the feature
+    // broken when it was about to work.
+    //
+    // There is no SUPPORT tab on the landlord's dock either: tickets reach them
+    // through the bell's alerts sheet or the Overview screen. This now opens the
+    // real route rather than clicking a tab that does not exist.
+    for (let i = 0; i < 30 && !seen; i += 1) {
+      await tab(owner, 'HOME', 700);
+      const o1 = await body(owner);
+      if (o1.includes(mark.slice(0, 12))) { seen = true; break; }
+      // The bell → "N open tickets" → the tickets sheet.
+      if (await clickLoose(owner, 'open ticket', 1200)) {
+        const o2 = await body(owner);
+        if (o2.includes(mark.slice(0, 12))) { seen = true; break; }
+      }
+      await owner.waitForTimeout(2000);
     }
     const took = Math.round((Date.now() - started) / 100) / 10;
     ok(`the landlord sees it (took ${took}s)`, seen, 'never appeared on the landlord side');
-    if (seen) ok('...and quickly', took < 25, `${took}s`);
+    // 40s allows one full 25s pulse cycle plus the fetch and a render. Tighter
+    // than that is testing our luck rather than the app.
+    if (seen) ok('...within one poll cycle', took < 40, `${took}s`);
     await owner.screenshot({ path: `${SHOT}/05-landlord-sees-it.png`, fullPage: false });
   }
 
