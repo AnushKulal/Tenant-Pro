@@ -36,6 +36,31 @@ const note = (n, why) => { skip += 1; console.log(`  SKIP  ${n}  (${why})`); };
 
 const body = (page) => page.locator('body').innerText();
 
+// Raise one support request from the tenant's side and return whether it was
+// actually sent. Pulled out of the first test so the second one — the passive
+// timing — can raise its own without copying twelve lines of form-filling that
+// would then drift apart from the real screen.
+const raiseTicket = async (page, title, shot = null) => {
+  let opened = false;
+  // The button says "Raise a ticket". Taken from the screen rather than guessed:
+  // the first version of this listed five plausible labels, none of which was the
+  // real one, and reported the whole cross-portal check as unreachable.
+  for (const t of ['Raise a ticket', 'New request', 'Raise a request', '+ NEW']) {
+    if (await clickLoose(page, t, 1600)) { opened = true; break; }
+  }
+  if (!opened) return false;
+  const ins = page.locator('input, textarea');
+  const n = await ins.count();
+  if (n) await ins.nth(0).fill(title).catch(() => {});
+  if (n > 1) await ins.nth(1).fill('The kitchen tap drips all night.').catch(() => {});
+  if (shot) await page.screenshot({ path: shot, fullPage: false });
+  for (const t of ['Send', 'Submit', 'Raise request', 'Send request', 'Save']) {
+    if (await clickExact(page, t, 2500)) return true;
+  }
+  for (const t of ['Send', 'Submit']) { if (await clickLoose(page, t, 2500)) return true; }
+  return false;
+};
+
 const clickExact = async (page, label, wait = 900) => {
   const el = page.getByText(label, { exact: true }).first();
   if (await el.count() && await el.isVisible().catch(() => false)) {
@@ -70,6 +95,21 @@ const tab = async (page, label, wait = 2400) => {
     return true;
   }
   return false;
+};
+
+// Go to a tab, and FAIL if the tab is not there.
+//
+// This is the lesson of the run that produced a green "landlord HOME has
+// content". There is no HOME tab on the landlord's dock — it reads OVERVIEW,
+// UNITS, PEOPLE, LEDGER — so the click matched nothing, the app stayed on
+// whatever screen was already showing, and the assertions that followed tested
+// that screen while naming a different one. Three of the four passed. A
+// navigation that quietly does nothing turns every assertion after it into a
+// statement about the wrong screen.
+const mustTab = async (page, label, wait = 2400) => {
+  const went = await tab(page, label, wait);
+  if (!went) ok(`the ${label} tab exists`, false, 'no such tab on this dock');
+  return went;
 };
 
 const signIn = async (page, who, id) => {
@@ -121,8 +161,8 @@ const signIn = async (page, who, id) => {
 
   console.log('\nEVERY PAGE POPULATES — TENANT');
   // The three ways a screen lies: nothing on it, "undefined" on it, "NaN" on it.
-  for (const [tabName, expect] of [['HOME', /RENT|DEPOSIT/i], ['FIND', /Find a place/i], ['HELP', /Help|REQUEST/i], ['ME', /profile|DOCUMENT|My profile/i]]) {
-    await tab(tenant, tabName);
+  for (const [tabName, expect] of [['HOME', /RENT|DEPOSIT/i], ['FIND', /Find a place/i], ['HELP', /Help|Raise a ticket/i], ['ME', /profile|DOCUMENT|My profile/i]]) {
+    if (!await mustTab(tenant, tabName)) continue;
     const txt = await body(tenant);
     ok(`tenant ${tabName} has content`, txt.trim().length > 80, `${txt.trim().length} chars`);
     ok(`tenant ${tabName} shows what it should`, expect.test(txt), txt.slice(0, 120));
@@ -132,8 +172,10 @@ const signIn = async (page, who, id) => {
   await tenant.screenshot({ path: `${SHOT}/01-tenant-pages.png`, fullPage: false });
 
   console.log('\nEVERY PAGE POPULATES — LANDLORD');
-  for (const [tabName, expect] of [['HOME', /COLLECTED|OVERVIEW|DUE/i], ['UNITS', /PROPERT|ROOM|UNIT/i], ['PEOPLE', /TENANT|PEOPLE|Everyone/i], ['LEDGER', /LEDGER|PAYMENT|EXPENSE/i]]) {
-    await tab(owner, tabName);
+  // OVERVIEW, not HOME. Taken from the dock definition in AppContext rather than
+  // from what the landlord's first screen "ought" to be called.
+  for (const [tabName, expect] of [['OVERVIEW', /COLLECTED|DUE|VACANT|RENT/i], ['UNITS', /PROPERT|ROOM|UNIT/i], ['PEOPLE', /TENANT|PEOPLE|Everyone/i], ['LEDGER', /Every rupee|LEDGER|UPI|CASH/i]]) {
+    if (!await mustTab(owner, tabName)) continue;
     const txt = await body(owner);
     ok(`landlord ${tabName} has content`, txt.trim().length > 80, `${txt.trim().length} chars`);
     ok(`landlord ${tabName} shows what it should`, expect.test(txt), txt.slice(0, 120));
@@ -145,26 +187,10 @@ const signIn = async (page, who, id) => {
   console.log('\nA TENANT RAISES A PROBLEM');
   const mark = `Leaking tap ${Date.now().toString().slice(-6)}`;
   await tab(tenant, 'HELP');
-  let opened = false;
-  // The button says "Raise a ticket". Taken from the screen rather than guessed:
-  // the first version of this listed five plausible labels, none of which was the
-  // real one, and reported the whole cross-portal check as unreachable.
-  for (const t of ['Raise a ticket', 'New request', 'Raise a request', '+ NEW']) {
-    if (await clickLoose(tenant, t, 1600)) { opened = true; break; }
-  }
-  if (!opened) {
-    note('the landlord sees it', 'could not find the button that raises a request');
+  const sent = await raiseTicket(tenant, mark, `${SHOT}/03-raising.png`);
+  if (!sent) {
+    note('the landlord sees it', 'could not raise a request from the tenant side');
   } else {
-    const ins = tenant.locator('input, textarea');
-    const n = await ins.count();
-    if (n) await ins.nth(0).fill(mark).catch(() => {});
-    if (n > 1) await ins.nth(1).fill('The kitchen tap drips all night.').catch(() => {});
-    await tenant.screenshot({ path: `${SHOT}/03-raising.png`, fullPage: false });
-    let sent = false;
-    for (const t of ['Send', 'Submit', 'Raise request', 'Send request', 'Save']) {
-      if (await clickExact(tenant, t, 2500)) { sent = true; break; }
-    }
-    if (!sent) for (const t of ['Send', 'Submit']) { if (await clickLoose(tenant, t, 2500)) { sent = true; break; } }
     await tenant.waitForTimeout(2500);
     const after = await body(tenant);
     ok('the tenant sees their request on their own list', sent && after.includes(mark.slice(0, 12)), after.slice(0, 180));
@@ -186,7 +212,7 @@ const signIn = async (page, who, id) => {
     // through the bell's alerts sheet or the Overview screen. This now opens the
     // real route rather than clicking a tab that does not exist.
     for (let i = 0; i < 30 && !seen; i += 1) {
-      await tab(owner, 'HOME', 700);
+      await tab(owner, 'OVERVIEW', 700);
       const o1 = await body(owner);
       if (o1.includes(mark.slice(0, 12))) { seen = true; break; }
       // The real control, taken from the screen: Overview carries a
@@ -209,6 +235,39 @@ const signIn = async (page, who, id) => {
     // than that is testing our luck rather than the app.
     if (seen) ok('...within one poll cycle', took < 40, `${took}s`);
     await owner.screenshot({ path: `${SHOT}/05-landlord-sees-it.png`, fullPage: false });
+
+    // ── The honest number ───────────────────────────────────────────────────
+    //
+    // The run above clicks the landlord's tabs while it waits, and every one of
+    // those clicks refetches. So it measures "the landlord sees it the moment
+    // they touch the app", which is a real and useful number but not the one
+    // somebody means by "do both portals update at the same time".
+    //
+    // This one answers that: the landlord's page is not touched at all. The only
+    // thing that can change it is the app's own 25-second /pulse, so whatever
+    // this measures is the latency of a landlord who is sitting still.
+    console.log('\nAND WITHOUT THE LANDLORD TOUCHING ANYTHING');
+    const mark2 = `Dripping shower ${Date.now().toString().slice(-6)}`;
+    await tab(owner, 'OVERVIEW');
+    await tab(tenant, 'HELP');
+    const sent2 = await raiseTicket(tenant, mark2);
+    ok('the tenant raises a second request', sent2);
+    if (sent2) {
+      const t0 = Date.now();
+      let idle = false;
+      // Reading innerText is passive — it clicks nothing and triggers no fetch.
+      // 60s is two and a bit pulse cycles: enough that a miss means the data
+      // never arrives rather than that we stopped watching too early.
+      for (let i = 0; i < 60 && !idle; i += 1) {
+        if ((await body(owner)).includes(mark2.slice(0, 12))) { idle = true; break; }
+        await owner.waitForTimeout(1000);
+      }
+      const took2 = Math.round((Date.now() - t0) / 100) / 10;
+      ok(`it reaches an untouched landlord screen (took ${took2}s)`, idle,
+        'never arrived without the landlord interacting');
+      if (idle) ok('...inside two poll cycles', took2 < 55, `${took2}s`);
+      await owner.screenshot({ path: `${SHOT}/06-landlord-idle.png`, fullPage: false });
+    }
   }
 
   console.log('\nNOTHING THREW ON EITHER SIDE');

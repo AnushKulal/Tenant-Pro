@@ -169,11 +169,25 @@ const signInTenant = async (page) => {
     // step, so that guess landed inside the band, where nothing is listening.
     // The test reported the close button as broken when it had never been hit.
     const closer = page.getByLabel('Close tour').first();
-    if (await closer.count()) await closer.click({ timeout: 4000 }).catch(() => {});
-    await page.waitForTimeout(1600);
-    const after = await stepOf(page);
+    // A missing button used to make this assertion skip its own click and then
+    // report the tour as "still open" — a failure that blamed the app for a
+    // control the test never pressed. Say which of the two happened.
+    const found = await closer.count();
+    ok('the × is reachable by its name', found > 0, 'no element labelled "Close tour"');
+    let clickErr = '';
+    if (found) {
+      await closer.click({ timeout: 4000 }).catch((e) => { clickErr = String(e.message).split('\n')[0]; });
+    }
+    // Poll rather than read once: closing is a state change plus a render, and a
+    // single read at a fixed delay turns a slow frame into a bug report.
+    let after = await stepOf(page);
+    for (let i = 0; i < 16 && after !== null; i += 1) {
+      await page.waitForTimeout(250);
+      after = await stepOf(page);
+    }
     ok('the × closes the tour', after === null,
-      `before ${JSON.stringify(before)} after ${JSON.stringify(after)}`);
+      `before ${JSON.stringify(before)} after ${JSON.stringify(after)}`
+      + (clickErr ? ` (click failed: ${clickErr})` : found ? '' : ' (never clicked)'));
     await page.screenshot({ path: `${SHOT}/10-closed-with-x.png`, fullPage: false });
   }
 
