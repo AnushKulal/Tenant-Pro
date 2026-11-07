@@ -28,7 +28,8 @@ import { readBuild } from './buildinfo';
 import { resolvePushToken, onNotificationTap, setForegroundBehaviour } from './push';
 import {
   loadSession, saveOwnerSession, saveTenantSession, clearSession, saveRenewedToken,
-  saveRefreshedPair, hasOnboarded, setOnboarded, hasSeenPermits, setPermitsSeen
+  saveRefreshedPair, hasOnboarded, setOnboarded, hasSeenPermits, setPermitsSeen,
+  hasTakenTour, setTourTaken
 } from './session';
 
 // Indian-grouped rupee magnitude (e.g. 1234567 -> "12,34,567") WITHOUT
@@ -358,6 +359,87 @@ const signupFieldErrors = ({ name, email, phone, password }) => {
   return e;
 };
 
+// ── The guided tour ─────────────────────────────────────────────────────────
+//
+// Two tours, because a landlord and a tenant are looking at different apps. Each
+// step names the route it wants behind it and the band of the screen to light,
+// so the tour explains what is actually on screen rather than describing it from
+// memory. See Tour.js for why the spotlight is a band and not a component.
+//
+// Kept short on purpose. The dots at the foot of the card show how many steps
+// remain, and the single most effective way to stop somebody skipping a tour is
+// for it to visibly not be long.
+const OWNER_TOUR = [
+  {
+    key: 'welcome', route: 'home', spot: 'none',
+    title: 'Welcome to TenantPro',
+    body: 'A quick look around — about thirty seconds. You can leave at any point and pick it up again from Settings.'
+  },
+  {
+    key: 'overview', route: 'home', spot: 'top',
+    title: 'Your money, at a glance',
+    body: 'Rent collected, what is still owed and what is empty. This is the first thing you see because it is the first thing you want to know.'
+  },
+  {
+    key: 'dock', route: 'home', spot: 'dock',
+    title: 'Everything is down here',
+    body: 'Properties and rooms, the people in them, and the ledger. Four taps, no menus to hunt through.'
+  },
+  {
+    key: 'units', route: 'units', spot: 'top',
+    title: 'Properties and rooms',
+    body: 'Add a building, then the rooms inside it. A room can be listed for tenants to find, or kept private — that is your choice, per room.'
+  },
+  {
+    key: 'people', route: 'people', spot: 'top',
+    title: 'The people renting from you',
+    body: 'Who is in which room, what they owe and when they are due. Requests to join land here too.'
+  },
+  {
+    key: 'ledger', route: 'ledger', spot: 'top',
+    title: 'Every rupee, recorded',
+    body: 'Payments, expenses and what each property actually earned. A tenant can say they have paid; it counts once you confirm it, or once a payment gateway does.'
+  },
+  {
+    key: 'settings', route: 'settings', spot: 'middle',
+    title: 'Getting paid',
+    body: 'UPI is free and already works. Online payments add cards and netbanking through YOUR OWN gateway account — the money goes to you, never through this app.'
+  }
+];
+
+const TENANT_TOUR = [
+  {
+    key: 'welcome', route: 'portal', spot: 'none',
+    title: 'Welcome to TenantPro',
+    body: 'A quick look around — about thirty seconds. You can leave at any point and pick it up again from Settings.'
+  },
+  {
+    key: 'rent', route: 'portal', spot: 'top',
+    title: 'What you owe, and when',
+    body: 'Your rent, the date it is due and a Pay button. No chasing, no wondering whether it was recorded.'
+  },
+  {
+    key: 'dock', route: 'portal', spot: 'dock',
+    title: 'Where everything lives',
+    body: 'Home for your dues, Find for a new place, Help to raise a problem, and your own profile and documents.'
+  },
+  {
+    key: 'find', route: 'tfind', spot: 'top',
+    title: 'Looking for somewhere?',
+    body: 'Search rooms by budget, area, type and distance. Ask to join one and the landlord gets your request — your contact details stay private until they accept.'
+  },
+  {
+    key: 'help', route: 'thelp', spot: 'top',
+    title: 'Something broken?',
+    body: 'Raise it here and your landlord sees it immediately, with a thread you can both reply in. No phone calls that nobody remembers.'
+  },
+  {
+    key: 'docs', route: 'tme', spot: 'middle',
+    title: 'Your profile and documents',
+    body: 'Your ID lives here. A landlord can ask to see it and you decide — and you can see exactly what you have shared, and with whom.'
+  }
+];
+
 const INITIAL_STATE = {
   route: 'boot', overlay: null, filter: 'all', who: 'amit', method: 'UPI', toast: '',
   // Signing out is not instant, and it used to look like nothing had happened.
@@ -522,6 +604,10 @@ const INITIAL_STATE = {
   // audit your own form to find the empty one. Keyed by field, so each row says
   // its own piece under itself and lights up to be found.
   authFieldErrors: {},
+  // The guided tour. `open` while it is running, `index` is the step. Steps are
+  // not stored — they are chosen from the portal when the tour starts, so a tour
+  // in flight cannot be left holding a stale copy.
+  tour: { open: false, index: 0, role: 'owner' },
   // The server's own error code alongside the message. A hint should key off a
   // fact ('NOT_REGISTERED'), never off matching the wording of a sentence that
   // someone will reword one day.
@@ -4080,6 +4166,22 @@ function deriveVm(s, api) {
       };
     })(),
 
+    // ── The guided tour ──
+    // `steps` is resolved here rather than stored, so a tour in flight can never
+    // be holding a stale copy of its own content. Skip and the × do the same
+    // thing deliberately: both mean "not now", and both mark it taken so it does
+    // not ambush the user again. Settings is how you come back to it.
+    tour: {
+      open: !!(s.tour && s.tour.open),
+      index: (s.tour && s.tour.index) || 0,
+      role: (s.tour && s.tour.role) || 'owner',
+      steps: (s.tour && s.tour.role) === 'tenant' ? TENANT_TOUR : OWNER_TOUR,
+      next: () => api.moveTour(1),
+      back: () => api.moveTour(-1),
+      skip: () => api.endTour(),
+      close: () => api.endTour()
+    },
+    startTour: () => api.startTour(),
     isSignOut: s.overlay === 'signout',
     askSignOut: () => set('overlay', 'signout'),
     // Read by the sheet to show the button as working. It clears itself: signing
@@ -4163,6 +4265,15 @@ function deriveVm(s, api) {
       // the UPI row above because they are different things with different costs:
       // UPI is free and already works, this adds cards and netbanking and charges
       // the landlord's own gateway fee to the landlord. Nobody is opted in.
+      // Coming back to the tour. The tour marks itself taken however it is left,
+      // so without this row it would be a one-shot that most people close while
+      // distracted and never see again.
+      {
+        label: 'Take the tour again',
+        icon: 'compass-outline',
+        meta: '',
+        go: () => api.startTour('owner')
+      },
       {
         label: 'Online payments',
         icon: 'card-outline',
@@ -5059,6 +5170,15 @@ function deriveVm(s, api) {
     // than only in this comment.
     payCardsNote: 'TenantPro never stores your card or UPI details. You pay from your own app, to your landlord directly.',
     tenantSettingsRows: [
+      // The way back into the tour, same as the landlord's. Both portals get one:
+      // a tenant who closed it on day one has no other way to find out what the
+      // Find tab is for.
+      {
+        label: 'Take the tour again',
+        icon: 'compass-outline',
+        meta: '',
+        go: () => api.startTour('tenant')
+      },
       // Both halves of this used to be false, the same way the landlord's were: a
       // hardcoded "3 DAYS" over a schedule that is really two, and "not built yet" for
       // reminders that go out every morning. The 'Notifications' stub is gone entirely —
@@ -5756,6 +5876,46 @@ export function AppProvider({ children }) {
 
   const set = useCallback((k, v) => { setState({ [k]: v }); }, [setState]);
   const go = useCallback((route) => { setState({ route, overlay: null }); }, [setState]);
+
+  // ── The guided tour ────────────────────────────────────────────────────────
+  //
+  // Each step carries the route it wants behind it, so moving between steps also
+  // moves the app. The overlay is closed on every move: a tour card and a bottom
+  // sheet fighting over the same screen is nobody's idea of an introduction.
+  const tourSteps = useCallback(
+    (role) => (role === 'tenant' ? TENANT_TOUR : OWNER_TOUR),
+    []
+  );
+
+  const startTour = useCallback((roleArg) => {
+    const role = roleArg
+      || (stateRef.current.session && stateRef.current.session.role === 'tenant' ? 'tenant' : 'owner');
+    const steps = tourSteps(role);
+    setState({
+      tour: { open: true, index: 0, role },
+      route: steps[0].route,
+      overlay: null
+    });
+  }, [setState, tourSteps]);
+
+  // Leaving is leaving, however you do it — Skip, the ×, or finishing the last
+  // step all mark it taken. A tour that reappears because somebody closed it
+  // "the wrong way" is a tour people learn to dread.
+  const endTour = useCallback(() => {
+    const role = (stateRef.current.tour && stateRef.current.tour.role) || 'owner';
+    setTourTaken(role);
+    setState({ tour: { open: false, index: 0, role } });
+  }, [setState]);
+
+  const moveTour = useCallback((delta) => {
+    const cur = stateRef.current.tour || {};
+    if (!cur.open) return;
+    const steps = tourSteps(cur.role);
+    const next = cur.index + delta;
+    if (next < 0) return;
+    if (next >= steps.length) { endTour(); return; }
+    setState({ tour: { ...cur, index: next }, route: steps[next].route, overlay: null });
+  }, [setState, tourSteps, endTour]);
 
   // One step back. Returns true if it handled the press, false to let the OS have
   // it (which on Android means leaving the app — correct only at the very top).
@@ -7735,6 +7895,16 @@ export function AppProvider({ children }) {
         setState({ session: sess, route: sess.role === 'owner' ? 'home' : 'portal' });
         if (sess.role === 'owner') loadOwnerData();
         else loadTenantData();
+        // First time in this portal: show the tour. Checked per role, because
+        // somebody who has used the landlord side has not been shown the tenant
+        // one — they are different apps wearing the same paint.
+        //
+        // Deferred a beat so the screen behind it has rendered: a spotlight over
+        // a blank screen highlights nothing and reads as a bug.
+        const role = sess.role === 'tenant' ? 'tenant' : 'owner';
+        if (!(await hasTakenTour(role))) {
+          setTimeout(() => startTour(role), 900);
+        }
       } else {
         setToken(null);
         setRefresh(null);
@@ -7751,7 +7921,7 @@ export function AppProvider({ children }) {
       setRefresh(null);
       setState({ session: null, route: 'role' });
     }
-  }, [setState, loadOwnerData, loadTenantData]);
+  }, [setState, loadOwnerData, loadTenantData, startTour]);
 
   const signIn = useCallback(async (role) => {
     const { authId, authPw, idmode } = stateRef.current;
@@ -8391,7 +8561,8 @@ export function AppProvider({ children }) {
       startGoogleSignIn, finishGoogleSignUp, cancelGoogleSignIn,
       openLeave, confirmLeave, withdrawLeave,
       submitClaim,
-      searchPlaces, describePin, useMyLocation
+      searchPlaces, describePin, useMyLocation,
+      startTour, endTour, moveTour
     }),
     [
       setState, set, go, flash, signIn, register, signOut, resolveSession,
@@ -8407,7 +8578,8 @@ export function AppProvider({ children }) {
       startGoogleSignIn, finishGoogleSignUp, cancelGoogleSignIn,
       openLeave, confirmLeave, withdrawLeave,
       submitClaim,
-      searchPlaces, describePin, useMyLocation
+      searchPlaces, describePin, useMyLocation,
+      startTour, endTour, moveTour
     ]
   );
 

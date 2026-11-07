@@ -23,7 +23,16 @@ const K = {
     // v2-only: whether the one-time "what TenantPro uses" primer has been shown.
     // Separate from `onboarded` so it can be added to installs that already
     // finished the intro, and so it survives sign-out for the same reason.
-    permits: 'v2_permits'
+    permits: 'v2_permits',
+    // v2-only: whether the guided tour has been taken, PER PORTAL. A landlord and
+    // a tenant see different screens and therefore different tours, and somebody
+    // who has used one side has not been shown the other.
+    //
+    // Deliberately NOT cleared on sign-out, for the same reason as the two above:
+    // the tour explains the product, and a returning user should not sit through
+    // it again. It can always be replayed on purpose from Settings.
+    tourOwner: 'v2_tour_owner',
+    tourTenant: 'v2_tour_tenant'
 };
 
 export async function saveOwnerSession(token, owner, refresh) {
@@ -139,6 +148,17 @@ export async function hasSeenPermits() {
 
 export async function setPermitsSeen() {
     try { await AsyncStorage.setItem(K.permits, '1'); } catch (e) { /* best effort */ }
+}
+
+// The guided tour, remembered per portal. `role` is 'owner' or 'tenant'.
+const tourKey = (role) => (role === 'tenant' ? K.tourTenant : K.tourOwner);
+
+export async function hasTakenTour(role) {
+    try { return (await AsyncStorage.getItem(tourKey(role))) === '1'; } catch (e) { return false; }
+}
+
+export async function setTourTaken(role) {
+    try { await AsyncStorage.setItem(tourKey(role), '1'); } catch (e) { /* best effort */ }
 }
 
 function safeParse(s) {

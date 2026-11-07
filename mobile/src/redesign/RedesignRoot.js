@@ -22,6 +22,7 @@ import Header from './Header';
 import { LayoutProvider } from './layout';
 import DeckDock from './DeckDock';
 import Sheets from './Sheets';
+import Tour from './Tour';
 import Toast from './Toast';
 import DocViewer from './docview';
 import UpdateSheet from './UpdateSheet';
@@ -267,6 +268,11 @@ function Shell() {
             {/* overlays + toast paint above everything. Keyed by overlay so each
                 sheet replays the `tpsheet` slide-up when it opens. */}
             <Sheets key={state.overlay || 'none'} />
+
+            {/* The guided tour, above the screen and the dock but below the toast,
+                because a toast is how the app answers a tap and must stay visible
+                even mid-tour. It renders nothing unless a tour is running. */}
+            <Tour />
             <Toast />
 
             {/* An ID, full screen, in the app. Mounted here rather than inside Sheets
