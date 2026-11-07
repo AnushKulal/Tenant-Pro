@@ -189,10 +189,17 @@ const signIn = async (page, who, id) => {
       await tab(owner, 'HOME', 700);
       const o1 = await body(owner);
       if (o1.includes(mark.slice(0, 12))) { seen = true; break; }
-      // The bell → "N open tickets" → the tickets sheet.
-      if (await clickLoose(owner, 'open ticket', 1200)) {
+      // The real control, taken from the screen: Overview carries a
+      // "View all N tickets" press that opens the tickets sheet. The previous
+      // guess ("open ticket") was the wording of a row inside the BELL's alerts
+      // sheet, which this never opened — so the list was never on screen and the
+      // run reported the landlord as never seeing a request the server had
+      // already handed them.
+      if (await clickLoose(owner, 'View all', 1500)) {
         const o2 = await body(owner);
         if (o2.includes(mark.slice(0, 12))) { seen = true; break; }
+        await owner.keyboard.press('Escape').catch(() => {});
+        await owner.waitForTimeout(400);
       }
       await owner.waitForTimeout(2000);
     }
