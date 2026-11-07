@@ -57,6 +57,21 @@ const clickLoose = async (page, label, wait = 900) => {
 };
 
 // Sign in, and close the tour if it greets us — this suite is about other things.
+// Dock tabs are clicked by EXACT label, never loosely. `text=ME` is a
+// case-insensitive SUBSTRING match, so it matches the "me" inside "frame" — a
+// click meant for the ME tab landed on a ticket called "Bed frame creaking
+// badly" and the suite then reported the ME screen as showing the wrong thing.
+// Short labels make this trap much worse, and this dock has one two letters long.
+const tab = async (page, label, wait = 2400) => {
+  const el = page.getByText(label, { exact: true }).last();
+  if (await el.count() && await el.isVisible().catch(() => false)) {
+    await el.click({ timeout: 5000 }).catch(async () => { await el.click({ force: true }).catch(() => {}); });
+    await page.waitForTimeout(wait);
+    return true;
+  }
+  return false;
+};
+
 const signIn = async (page, who, id) => {
   await page.goto(UI_URL, { waitUntil: 'networkidle' });
   await page.waitForTimeout(2200);
@@ -106,32 +121,35 @@ const signIn = async (page, who, id) => {
 
   console.log('\nEVERY PAGE POPULATES — TENANT');
   // The three ways a screen lies: nothing on it, "undefined" on it, "NaN" on it.
-  for (const [tab, expect] of [['HOME', /RENT|DEPOSIT/i], ['FIND', /Find a place/i], ['HELP', /Help|REQUEST/i], ['ME', /profile|DOCUMENT|My profile/i]]) {
-    await clickLoose(tenant, tab, 2400);
+  for (const [tabName, expect] of [['HOME', /RENT|DEPOSIT/i], ['FIND', /Find a place/i], ['HELP', /Help|REQUEST/i], ['ME', /profile|DOCUMENT|My profile/i]]) {
+    await tab(tenant, tabName);
     const txt = await body(tenant);
-    ok(`tenant ${tab} has content`, txt.trim().length > 80, `${txt.trim().length} chars`);
-    ok(`tenant ${tab} shows what it should`, expect.test(txt), txt.slice(0, 120));
-    ok(`tenant ${tab} has no "undefined"`, !/\bundefined\b/i.test(txt), txt.slice(0, 160));
-    ok(`tenant ${tab} has no "NaN"`, !/\bNaN\b/.test(txt), txt.slice(0, 160));
+    ok(`tenant ${tabName} has content`, txt.trim().length > 80, `${txt.trim().length} chars`);
+    ok(`tenant ${tabName} shows what it should`, expect.test(txt), txt.slice(0, 120));
+    ok(`tenant ${tabName} has no "undefined"`, !/\bundefined\b/i.test(txt), txt.slice(0, 160));
+    ok(`tenant ${tabName} has no "NaN"`, !/\bNaN\b/.test(txt), txt.slice(0, 160));
   }
   await tenant.screenshot({ path: `${SHOT}/01-tenant-pages.png`, fullPage: false });
 
   console.log('\nEVERY PAGE POPULATES — LANDLORD');
-  for (const [tab, expect] of [['HOME', /COLLECTED|OVERVIEW|DUE/i], ['UNITS', /PROPERT|ROOM|UNIT/i], ['PEOPLE', /TENANT|PEOPLE|Everyone/i], ['LEDGER', /LEDGER|PAYMENT|EXPENSE/i]]) {
-    await clickLoose(owner, tab, 2400);
+  for (const [tabName, expect] of [['HOME', /COLLECTED|OVERVIEW|DUE/i], ['UNITS', /PROPERT|ROOM|UNIT/i], ['PEOPLE', /TENANT|PEOPLE|Everyone/i], ['LEDGER', /LEDGER|PAYMENT|EXPENSE/i]]) {
+    await tab(owner, tabName);
     const txt = await body(owner);
-    ok(`landlord ${tab} has content`, txt.trim().length > 80, `${txt.trim().length} chars`);
-    ok(`landlord ${tab} shows what it should`, expect.test(txt), txt.slice(0, 120));
-    ok(`landlord ${tab} has no "undefined"`, !/\bundefined\b/i.test(txt), txt.slice(0, 160));
-    ok(`landlord ${tab} has no "NaN"`, !/\bNaN\b/.test(txt), txt.slice(0, 160));
+    ok(`landlord ${tabName} has content`, txt.trim().length > 80, `${txt.trim().length} chars`);
+    ok(`landlord ${tabName} shows what it should`, expect.test(txt), txt.slice(0, 120));
+    ok(`landlord ${tabName} has no "undefined"`, !/\bundefined\b/i.test(txt), txt.slice(0, 160));
+    ok(`landlord ${tabName} has no "NaN"`, !/\bNaN\b/.test(txt), txt.slice(0, 160));
   }
   await owner.screenshot({ path: `${SHOT}/02-landlord-pages.png`, fullPage: false });
 
   console.log('\nA TENANT RAISES A PROBLEM');
   const mark = `Leaking tap ${Date.now().toString().slice(-6)}`;
-  await clickLoose(tenant, 'HELP', 2400);
+  await tab(tenant, 'HELP');
   let opened = false;
-  for (const t of ['NEW', 'New request', 'Raise a request', 'Report a problem', '+ NEW']) {
+  // The button says "Raise a ticket". Taken from the screen rather than guessed:
+  // the first version of this listed five plausible labels, none of which was the
+  // real one, and reported the whole cross-portal check as unreachable.
+  for (const t of ['Raise a ticket', 'New request', 'Raise a request', '+ NEW']) {
     if (await clickLoose(tenant, t, 1600)) { opened = true; break; }
   }
   if (!opened) {
@@ -158,8 +176,8 @@ const signIn = async (page, who, id) => {
     // Poll rather than sleep: the question is HOW LONG, and a fixed wait answers
     // "within that wait" for any wait you choose.
     for (let i = 0; i < 14 && !seen; i += 1) {
-      await clickLoose(owner, 'HOME', 900);
-      await clickLoose(owner, 'SUPPORT', 900);
+      await tab(owner, 'HOME', 900);
+      await tab(owner, 'SUPPORT', 900);
       const o = await body(owner);
       if (o.includes(mark.slice(0, 12))) seen = true;
       else await owner.waitForTimeout(1500);
