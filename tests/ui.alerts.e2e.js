@@ -30,6 +30,7 @@
 //   UI_URL=http://127.0.0.1:8080 node tests/ui.alerts.e2e.js
 const { chromium } = require('playwright');
 const fs = require('fs');
+const { dismissTour } = require('./lib/tour');
 
 const UI_URL = process.env.UI_URL || 'http://127.0.0.1:8080';
 const TENANT = process.env.E2E_TENANT || 'sandeep.naik1000@example.com';
@@ -125,9 +126,8 @@ const signIn = async (page, who, id) => {
   await ins.nth(1).fill(PASSWORD);
   if (!await clickExact(page, 'Sign in', 1000)) await clickLoose(page, 'SIGN IN', 1000);
   await page.waitForTimeout(7000);
-  // The tour would sit on top of the bell. Close it by its own name.
-  const closer = page.getByLabel('Close tour').first();
-  if (await closer.count()) { await closer.click().catch(() => {}); await page.waitForTimeout(900); }
+  // The tour would sit on top of the bell. See tests/lib/tour.js.
+  await dismissTour(page);
   return body(page);
 };
 

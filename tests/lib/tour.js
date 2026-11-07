@@ -16,9 +16,29 @@
 // So: every suite closes the tour straight after signing in. By the close
 // button's accessible name, not by coordinates — the card sits above or below
 // the lit band depending on the step, so there is no fixed place to aim at.
-const dismissTour = async (page, wait = 900) => {
-    const closer = page.getByLabel('Close tour').first();
-    if (!await closer.count()) return false;
+// It has to WAIT for the tour, not look once.
+//
+// The tour does not arrive with the screen. The app resolves the session, asks
+// storage whether this portal's tour has been taken, and only then starts it,
+// about a second later. A suite that checks for the close button the instant
+// sign-in returns finds nothing, carries on, and meets the tour a second later
+// with every click it makes from then on.
+//
+// That is exactly what happened: the dismissal was in place, it reported
+// nothing to close, and the run still spent its whole landlord section clicking
+// at a dim panel over the dock. The screenshot it took shows "STEP 1 OF 7" over
+// the Overview screen while the log says no tab was reachable.
+//
+// So: poll for up to `appearsWithin`, and return false only after that whole
+// window has passed with no tour in sight.
+const dismissTour = async (page, { appearsWithin = 7000, wait = 900 } = {}) => {
+    const deadline = Date.now() + appearsWithin;
+    let closer = page.getByLabel('Close tour').first();
+    while (!await closer.count()) {
+        if (Date.now() > deadline) return false;
+        await page.waitForTimeout(300);
+        closer = page.getByLabel('Close tour').first();
+    }
     await closer.click({ timeout: 4000 }).catch(async () => {
         await closer.click({ force: true }).catch(() => {});
     });
