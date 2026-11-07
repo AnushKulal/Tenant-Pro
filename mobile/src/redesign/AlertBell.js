@@ -20,9 +20,20 @@ import { T, Press, Glyph } from './ui';
 export default function AlertBell({ onPress, has, urgent, count, size = 36 }) {
     const t = useT();
 
+    // What a screen reader says when it lands here. Without this the whole control
+    // is "button" — the same announcement as every other icon in the header — and
+    // the one thing it exists to communicate, that something is waiting, is the
+    // part that never gets said out loud. The count goes in the name rather than
+    // only in the badge for exactly that reason.
+    const name = urgent && count
+        ? `Notifications, ${count} waiting on you`
+        : has ? 'Notifications, something new' : 'Notifications';
+
     return (
         <Press
             onPress={onPress}
+            accessibilityRole="button"
+            accessibilityLabel={name}
             style={{
                 flexBasis: size, flexGrow: 0, flexShrink: 0,
                 width: size, height: size, borderRadius: 12,
