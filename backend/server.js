@@ -32,10 +32,34 @@ app.use('/api/webhooks', express.json({
 app.use(express.json());
 
 // --- Rate limiting ---
+//
+// The numbers below are the production numbers and stay exactly as they were.
+// What changed is that they can be raised by environment variable, for one
+// reason: an end-to-end run signs in far more often than a person ever does.
+//
+// A full suite run does something like fifty sign-ins across eight files. The
+// auth limiter allows thirty in fifteen minutes, so from the sixth suite onward
+// every login came back 429 and every request after it came back 401 "no token"
+// — which reads, in a test log, exactly like a broken endpoint. A run spent
+// several hours reporting failures in discover, layout, sign-out, payments and
+// the gateway that were all this one limiter doing its job.
+//
+// Raising the limit in production would be the wrong fix: brute-forcing a
+// password is precisely what this is for. So the defaults are unchanged and a
+// local test server opts out explicitly, e.g.
+//
+//   AUTH_RATE_MAX=100000 API_RATE_MAX=100000 node server.js
+//
+// Anything deployed sets neither and gets 200/min and 30/15min as before.
+const num = (v, fallback) => {
+    const n = Number(v);
+    return Number.isFinite(n) && n > 0 ? n : fallback;
+};
+
 // General API limit: guards against abuse/floods.
 const apiLimiter = rateLimit({
-    windowMs: 60 * 1000,       // 1 minute
-    max: 200,                  // 200 requests/min per IP
+    windowMs: num(process.env.API_RATE_WINDOW_MS, 60 * 1000),   // 1 minute
+    max: num(process.env.API_RATE_MAX, 200),                    // 200 requests/min per IP
     standardHeaders: true,
     legacyHeaders: false
 });
@@ -43,8 +67,8 @@ app.use('/api', apiLimiter);
 
 // Stricter limit on auth: blunts brute-force login/registration attempts.
 const authLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,  // 15 minutes
-    max: 30,                   // 30 attempts/15 min per IP
+    windowMs: num(process.env.AUTH_RATE_WINDOW_MS, 15 * 60 * 1000),  // 15 minutes
+    max: num(process.env.AUTH_RATE_MAX, 30),                         // 30 attempts/15 min per IP
     message: { message: 'Too many attempts. Please try again in a few minutes.' },
     standardHeaders: true,
     legacyHeaders: false
