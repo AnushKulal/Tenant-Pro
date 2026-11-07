@@ -15,41 +15,54 @@ import { grotesk } from '../theme';
 //
 // The state lives here rather than in the screen because a `focused` field in the
 // screen's own state would remount every row on each keystroke.
-function FieldRow({ t, icon, label, children, tint, trailing }) {
+// `error` is this field's own complaint, and it takes over the row's colour.
+//
+// The rail, the icon and the label already change together to say "you are typing
+// here"; the same three saying it in coral is the cheapest way to say "this is
+// the one that is wrong", with the sentence underneath it rather than in a banner
+// four rows away. The rail shows for an error even when the field is NOT focused,
+// which is the whole point — you need to find it before you can focus it.
+function FieldRow({ t, icon, label, children, tint, trailing, error }) {
   const [focused, setFocused] = React.useState(false);
-  const lit = tint || t.accent;
+  const bad = !!error;
+  const lit = bad ? t.coral : (tint || t.accent);
+  const show = focused || bad;
 
   return (
     <View
       style={{
-        flexDirection: 'row',
-        alignItems: 'center',
-        columnGap: 12,
-        paddingVertical: 13,
         paddingHorizontal: 18,
         borderTopWidth: 1,
-        borderTopColor: t.line,
-        backgroundColor: focused ? t.ink3 : 'transparent'
+        borderTopColor: bad ? t.coral : t.line,
+        backgroundColor: show ? (bad ? t.csoft : t.ink3) : 'transparent'
       }}
     >
-      {focused ? (
-        <View style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, backgroundColor: lit }} />
-      ) : null}
-      <Glyph name={icon} size={16} color={focused ? lit : t.fg3} />
-      <View style={{ flex: 1, minWidth: 0 }}>
-        <T mono w={600} s={9} ls={0.1} c={focused ? lit : t.fg3}>{label}</T>
-        {/* Children are TextInputs; the focus handlers are injected so no call
-            site has to remember to wire them. */}
-        {React.Children.map(children, (child) => (
-          React.isValidElement(child)
-            ? React.cloneElement(child, {
-              onFocus: () => setFocused(true),
-              onBlur: () => setFocused(false)
-            })
-            : child
-        ))}
+      <View style={{ flexDirection: 'row', alignItems: 'center', columnGap: 12, paddingTop: 13, paddingBottom: bad ? 4 : 13 }}>
+        {show ? (
+          <View style={{ position: 'absolute', left: -18, top: 0, bottom: 0, width: 3, backgroundColor: lit }} />
+        ) : null}
+        <Glyph name={icon} size={16} color={show ? lit : t.fg3} />
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <T mono w={600} s={9} ls={0.1} c={show ? lit : t.fg3}>{label}</T>
+          {/* Children are TextInputs; the focus handlers are injected so no call
+              site has to remember to wire them. */}
+          {React.Children.map(children, (child) => (
+            React.isValidElement(child)
+              ? React.cloneElement(child, {
+                onFocus: () => setFocused(true),
+                onBlur: () => setFocused(false)
+              })
+              : child
+          ))}
+        </View>
+        {trailing || null}
       </View>
-      {trailing || null}
+      {bad ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', columnGap: 6, paddingBottom: 11 }}>
+          <Glyph name="alert-circle" size={13} color={t.coral} />
+          <T w={500} s={11.5} lh={1.3} c={t.coral} style={{ flex: 1 }}>{error}</T>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -159,7 +172,7 @@ export default function CreateAccountScreen() {
             YOUR DETAILS
           </T>
 
-          <FieldRow t={t} icon="person-outline" label="FULL NAME">
+          <FieldRow t={t} icon="person-outline" label="FULL NAME" error={vm.fieldErr('name')}>
             <TextInput
               value={vm.authName}
               onChangeText={vm.setAuthName}
@@ -171,7 +184,7 @@ export default function CreateAccountScreen() {
             />
           </FieldRow>
 
-          <FieldRow t={t} icon="mail-outline" label="EMAIL">
+          <FieldRow t={t} icon="mail-outline" label="EMAIL" error={vm.fieldErr('id')}>
             <TextInput
               value={vm.authId}
               onChangeText={vm.setAuthId}
@@ -184,7 +197,7 @@ export default function CreateAccountScreen() {
             />
           </FieldRow>
 
-          <FieldRow t={t} icon="call-outline" label="MOBILE">
+          <FieldRow t={t} icon="call-outline" label="MOBILE" error={vm.fieldErr('phone')}>
             <TextInput
               value={vm.authPhone}
               onChangeText={vm.setAuthPhone}
@@ -200,6 +213,7 @@ export default function CreateAccountScreen() {
             t={t}
             icon="lock-closed-outline"
             label="PASSWORD"
+            error={vm.fieldErr('pw')}
             trailing={(
               <Press onPress={() => setShow((v) => !v)} hitSlop={10}>
                 <Glyph name={show ? 'eye-off-outline' : 'eye-outline'} size={18} color={t.fg3} />

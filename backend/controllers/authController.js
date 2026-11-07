@@ -22,6 +22,13 @@ const registerOwner = async (req, res) => {
         if (!name || !email || !phone || !password) {
             return res.status(400).json({ message: 'All fields are required' });
         }
+        // The tenant half has always enforced this; the owner half never did, so the
+        // only thing standing between a landlord and a one-character password was the
+        // app's own check — which protects the app's users and nobody else's client.
+        // A rule that lives only in the client is not a rule.
+        if (String(password).length < 6) {
+            return res.status(400).json({ message: 'Password must be at least 6 characters.' });
+        }
 
         // Compared as a NUMBER, not as a string. See utils/signupPhone — a raw
         // comparison let "+91 9876543210" register alongside "9876543210" as a
@@ -72,9 +79,35 @@ const registerOwner = async (req, res) => {
         // key on this column starts meaning "one account per number" again.
         const [result] = await db.execute(sql, [name, email, phoneToStore, hashedPassword]);
 
-        res.status(201).json({ 
-            message: 'Owner registered successfully!', 
-            ownerId: result.insertId 
+        // Signed in, not merely created.
+        //
+        // This used to return the id and nothing else, so the app had no token to put
+        // anybody behind and sent a brand-new landlord to the SIGN-IN screen to type
+        // the email and password they had typed thirty seconds earlier. The tenant
+        // half of this app has always issued a session here; the owner half never
+        // did, and the difference was invisible from either file on its own.
+        const session = await issueSession({
+            claims: { id: result.insertId, email },
+            kind: 'owner',
+            accountId: result.insertId,
+            req
+        });
+
+        // Shaped exactly like loginOwner's reply, because the client cannot tell the
+        // two apart and should not have to: whatever it does with a sign-in, it now
+        // does with a sign-up.
+        res.status(201).json({
+            message: 'Owner registered successfully!',
+            ownerId: result.insertId,
+            token: session.token,
+            refresh: session.refresh,
+            owner: {
+                id: result.insertId,
+                name,
+                email,
+                phone: phoneToStore || null,
+                profile_pic: null
+            }
         });
 
     } catch (error) {

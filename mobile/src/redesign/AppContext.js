@@ -324,6 +324,40 @@ const BLANK_GATEWAY = {
 // that no longer exists.
 const REMINDER_LEAD = 2;
 
+// Drop one key from the per-field error map, without mutating the old one.
+// Returns the SAME object when there was nothing to drop, so typing in a clean
+// form does not hand setState a new object on every keystroke.
+const withoutField = (map, key) => {
+  if (!map || !map[key]) return map || {};
+  const next = { ...map };
+  delete next[key];
+  return next;
+};
+
+// What each field must be before the form is worth sending.
+//
+// Deliberately NOT stricter than the server, which is the trap these checks
+// usually fall into. The server stores any phone number it cannot recognise as
+// Indian rather than refusing it (see backend/utils/signupPhone.js), so this only
+// catches a number too short to be one at all; rejecting "not Indian" here would
+// lock out exactly the people that file went out of its way to keep.
+const signupFieldErrors = ({ name, email, phone, password }) => {
+  const e = {};
+  if (!String(name || '').trim()) e.name = 'Enter your name.';
+  const id = String(email || '').trim();
+  if (!id) e.id = 'Enter your email address.';
+  // One @, something either side, and a dot in the domain. Enough to catch a typo
+  // and a phone number typed into the wrong row; not a parser, because the only
+  // real test of an address is sending to it.
+  else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(id)) e.id = 'That does not look like an email address.';
+  const digits = String(phone || '').replace(/[^0-9]/g, '');
+  if (!String(phone || '').trim()) e.phone = 'Enter your mobile number.';
+  else if (digits.length < 10) e.phone = 'A mobile number needs at least 10 digits.';
+  if (!password) e.pw = 'Choose a password.';
+  else if (String(password).length < 6) e.pw = 'At least 6 characters.';
+  return e;
+};
+
 const INITIAL_STATE = {
   route: 'boot', overlay: null, filter: 'all', who: 'amit', method: 'UPI', toast: '',
   // Signing out is not instant, and it used to look like nothing had happened.
@@ -481,6 +515,13 @@ const INITIAL_STATE = {
   authPhone: '',          // register only
   authBusy: false,
   authError: '',
+  // Which FIELD is wrong, not just that something is.
+  //
+  // One banner saying "name, email, mobile and password are all required" states
+  // the rule and not the breach: with four fields on screen you still have to
+  // audit your own form to find the empty one. Keyed by field, so each row says
+  // its own piece under itself and lights up to be found.
+  authFieldErrors: {},
   // The server's own error code alongside the message. A hint should key off a
   // fact ('NOT_REGISTERED'), never off matching the wording of a sentence that
   // someone will reword one day.
@@ -2155,12 +2196,18 @@ function deriveVm(s, api) {
       // explaining why it was wrong.
       authId: s.idmode === 'mobile' ? evStr(e).replace(/[^0-9]/g, '').slice(0, 10) : evStr(e),
       authError: '',
+      authFieldErrors: withoutField(s.authFieldErrors, 'id'),
       authCode: '',
       authFails: 0
     }),
-    setAuthPw: (e) => set('authPw', evStr(e)),
-    setAuthName: (e) => set('authName', evStr(e)),
-    setAuthPhone: (e) => set('authPhone', evStr(e)),
+    // Per-field messages. `fieldErr` is what a row reads to decide whether to show
+    // one; clearing happens as soon as the field is touched, because an error that
+    // outlives the typing which fixes it teaches people to ignore errors.
+    authFieldErrors: s.authFieldErrors || {},
+    fieldErr: (k) => (s.authFieldErrors || {})[k] || '',
+    setAuthPw: (e) => setState({ authPw: evStr(e), authFieldErrors: withoutField(s.authFieldErrors, 'pw') }),
+    setAuthName: (e) => setState({ authName: evStr(e), authFieldErrors: withoutField(s.authFieldErrors, 'name') }),
+    setAuthPhone: (e) => setState({ authPhone: evStr(e), authFieldErrors: withoutField(s.authFieldErrors, 'phone') }),
     // Signs in against the real backend; picks the owner or tenant endpoint from
     // the current route so one action serves both login screens.
     // The identifier has to match the EMAIL/MOBILE switch. Checked here so the
@@ -8044,15 +8091,24 @@ export function AppProvider({ children }) {
     // The backend requires all four for both owner and tenant registration, and
     // enforces a 6-char minimum password — check here so the user gets a clear
     // message instead of a 400.
-    if (!authName.trim() || !authId.trim() || !authPhone.trim() || !authPw) {
-      setState({ authError: 'Name, email, mobile and password are all required.' });
+    // Each field answers for itself. The banner stays, because somebody who has
+    // scrolled past a short field still needs telling that the form did not go —
+    // but it now counts the problems instead of listing the rule, and the rows say
+    // which ones they are.
+    const fieldErrors = signupFieldErrors({
+      name: authName, email: authId, phone: authPhone, password: authPw
+    });
+    const bad = Object.keys(fieldErrors);
+    if (bad.length) {
+      setState({
+        authFieldErrors: fieldErrors,
+        authError: bad.length === 1
+          ? 'One field needs fixing.'
+          : `${bad.length} fields need fixing.`
+      });
       return;
     }
-    if (authPw.length < 6) {
-      setState({ authError: 'Password must be at least 6 characters.' });
-      return;
-    }
-    setState({ authBusy: true, authError: '' });
+    setState({ authBusy: true, authError: '', authFieldErrors: {} });
     try {
       const payload = { name: authName.trim(), email: authId.trim(), phone: authPhone.trim(), password: authPw };
       const res = asTenant ? await apiAuth.registerTenant(payload) : await apiAuth.registerOwner(payload);
@@ -8090,7 +8146,11 @@ export function AppProvider({ children }) {
         flash('Account created — please sign in');
       }
     } catch (e) {
-      setState({ authBusy: false, authError: errText(e, 'Could not create the account.') });
+      // A server-side refusal is about the submission as a whole ("that email is
+      // already registered"), so it belongs in the banner. The field map is cleared
+      // rather than left: it described the PREVIOUS attempt, and a stale red rail
+      // under a field the user has since fixed is worse than no rail at all.
+      setState({ authBusy: false, authFieldErrors: {}, authError: errText(e, 'Could not create the account.') });
     }
   }, [setState, flash, requestToJoin]);
 
