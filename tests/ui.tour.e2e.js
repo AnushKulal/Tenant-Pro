@@ -161,10 +161,15 @@ const signInTenant = async (page) => {
 
     console.log('\nTHE CLOSE BUTTON ALSO LEAVES');
     // The × is a separate control from Skip and has to work on its own.
-    const x = page.locator('svg').first();
     await clickExact(page, 'Next', 1200);
     const before = await stepOf(page);
-    await page.mouse.click(390, 0 + 120); // the × sits top-right of the card
+    // By its accessible name, not by coordinates. The first version of this
+    // clicked (390, 120) on the reasoning that the × "sits top-right of the
+    // card" — but the card moves above or below the lit band depending on the
+    // step, so that guess landed inside the band, where nothing is listening.
+    // The test reported the close button as broken when it had never been hit.
+    const closer = page.getByLabel('Close tour').first();
+    if (await closer.count()) await closer.click({ timeout: 4000 }).catch(() => {});
     await page.waitForTimeout(1600);
     const after = await stepOf(page);
     ok('the × closes the tour', after === null,

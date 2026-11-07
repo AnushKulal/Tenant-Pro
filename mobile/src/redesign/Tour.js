@@ -142,6 +142,12 @@ export default function Tour() {
                     <Press
                         onPress={vm.tour.close}
                         hitSlop={10}
+                        // A button whose whole content is an icon has no name: a
+                        // screen reader announces "button" and nothing else, and a
+                        // test can only reach it by guessing coordinates. Both are
+                        // the same problem — the control is not addressable.
+                        accessibilityRole="button"
+                        accessibilityLabel="Close tour"
                         style={{ width: 32, height: 32, borderRadius: 11, borderWidth: 1, borderColor: t.line, alignItems: 'center', justifyContent: 'center' }}
                     >
                         <Glyph name="close" size={16} color={t.fg2} />
