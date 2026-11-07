@@ -44,3 +44,30 @@ export const isRedesign = () => UI_VERSION === 'v2';
 export const HEADER_LAYOUT = 'v2';
 
 export const isLayoutRule = () => HEADER_LAYOUT === 'v2';
+
+// GUIDED_TOUR — the off switch for the first-run tour.
+//
+//   'on'   → somebody signing in to a portal for the first time gets the guided
+//            tour, and both Settings screens offer "Take the tour again".
+//   'off'  → no tour starts by itself and the Settings rows are not drawn. The
+//            tour's own code stays in the build and is simply never entered.
+//
+// This one earns a flag more than the other two do, because of what the tour IS:
+// a modal that dims the screen and swallows every press until it is dismissed.
+// If it starts at the wrong moment, or greets somebody who has used the app for
+// months because a storage key changed name, it does not merely look wrong — it
+// stands between that person and their rent. The cost of being wrong is high and
+// the cost of the switch is nothing, so the switch exists.
+//
+// It is also the sharpest edge found while testing it: four existing test suites
+// broke the day the tour landed, every one of them because a click meant for the
+// app went to the tour instead. That is a harness problem when it happens to a
+// test and a support ticket when it happens to a person.
+//
+// Pure JavaScript, no native side: flipping it to 'off' and running
+// Actions → Publish OTA Update is the whole revert. About two minutes, no
+// rebuild, no store review, nothing on the server, no data touched. Nobody who
+// has already been shown the tour is shown it again either way.
+export const GUIDED_TOUR = 'on';
+
+export const isTourEnabled = () => GUIDED_TOUR === 'on';

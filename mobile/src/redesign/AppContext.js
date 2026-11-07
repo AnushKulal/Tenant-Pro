@@ -31,6 +31,10 @@ import {
   saveRefreshedPair, hasOnboarded, setOnboarded, hasSeenPermits, setPermitsSeen,
   hasTakenTour, setTourTaken
 } from './session';
+// The tour's off switch. See mobile/src/appConfig.js — a modal that swallows
+// every press until it is dismissed is a thing worth being able to turn off
+// over the air.
+import { isTourEnabled } from '../appConfig';
 
 // Indian-grouped rupee magnitude (e.g. 1234567 -> "12,34,567") WITHOUT
 // Number.prototype.toLocaleString('en-IN'): that relies on Intl, which the
@@ -4268,12 +4272,14 @@ function deriveVm(s, api) {
       // Coming back to the tour. The tour marks itself taken however it is left,
       // so without this row it would be a one-shot that most people close while
       // distracted and never see again.
-      {
+      // Spread-in rather than drawn unconditionally: with the tour switched off
+      // this row would open something that is never going to start.
+      ...(isTourEnabled() ? [{
         label: 'Take the tour again',
         icon: 'compass-outline',
         meta: '',
         go: () => api.startTour('owner')
-      },
+      }] : []),
       {
         label: 'Online payments',
         icon: 'card-outline',
@@ -5173,12 +5179,12 @@ function deriveVm(s, api) {
       // The way back into the tour, same as the landlord's. Both portals get one:
       // a tenant who closed it on day one has no other way to find out what the
       // Find tab is for.
-      {
+      ...(isTourEnabled() ? [{
         label: 'Take the tour again',
         icon: 'compass-outline',
         meta: '',
         go: () => api.startTour('tenant')
-      },
+      }] : []),
       // Both halves of this used to be false, the same way the landlord's were: a
       // hardcoded "3 DAYS" over a schedule that is really two, and "not built yet" for
       // reminders that go out every morning. The 'Notifications' stub is gone entirely —
@@ -5896,6 +5902,9 @@ export function AppProvider({ children }) {
   // Deferred a beat so the screen behind it has rendered. A spotlight over a
   // blank screen highlights nothing and reads as a bug.
   const maybeStartTour = useCallback(async (role) => {
+    // Switched off: no tour starts by itself. Nothing else about the app
+    // changes, and nobody who has already been shown it is shown it again.
+    if (!isTourEnabled()) return;
     const r = role === 'tenant' ? 'tenant' : 'owner';
     try {
       if (await hasTakenTour(r)) return;

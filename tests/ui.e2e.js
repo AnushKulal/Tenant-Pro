@@ -437,12 +437,33 @@ await tSettle(2200);
 if (wentToPay) {
     const pay = await tpage.locator('body').innerText();
     chk('the pay screen renders', /Pay|UPI|₹/i.test(pay), pay.slice(0, 220));
-    chk('...offering UPI, which is always free', /UPI/i.test(pay), pay.slice(0, 300));
-    // The landlord in this seed has NOT connected a gateway, so the online option must
-    // not be drawn. Drawing it would send a tenant to a page that cannot be made.
-    chk('...and NOT offering online payment, since no gateway is connected',
-        !/by card, UPI or netbanking/i.test(pay), 'online option shown with no gateway');
-    chk('...with no platform fee', /₹0|NO PLATFORM FEE/i.test(pay), pay.slice(0, 500));
+
+    // This screen has two legitimate states and the seed decides which one you
+    // get. If the tenant has already declared a payment that the landlord has
+    // not confirmed, the right thing to show is that it is waiting — NOT another
+    // way to pay the same rent twice. The seed deliberately leaves one such
+    // payment in the confirm queue (api.e2e checks for it from the other side),
+    // so this tenant lands in that state.
+    //
+    // The earlier version of this only knew about the paying state, so it read
+    // "₹13,500 is already waiting for Rohit Menon to confirm" and reported that
+    // the app was not offering UPI. It was, correctly, offering nothing.
+    const awaiting = /AWAITING CONFIRMATION|already waiting for/i.test(pay);
+    if (awaiting) {
+        chk('...showing the declared payment is waiting, rather than asking again',
+            /already waiting for/i.test(pay), pay.slice(0, 300));
+        chk('...and naming who has to confirm it',
+            /waiting for\s+\S+/i.test(pay), pay.slice(0, 300));
+        chk('...and offering no second way to pay the same rent',
+            !/by card, UPI or netbanking/i.test(pay), 'an online option on top of a pending claim');
+    } else {
+        chk('...offering UPI, which is always free', /UPI/i.test(pay), pay.slice(0, 300));
+        // The landlord in this seed has NOT connected a gateway, so the online option must
+        // not be drawn. Drawing it would send a tenant to a page that cannot be made.
+        chk('...and NOT offering online payment, since no gateway is connected',
+            !/by card, UPI or netbanking/i.test(pay), 'online option shown with no gateway');
+        chk('...with no platform fee', /₹0|NO PLATFORM FEE/i.test(pay), pay.slice(0, 500));
+    }
     await tShot('17-pay');
 } else {
     chk('the pay screen is reachable', false, 'no Pay button found');
