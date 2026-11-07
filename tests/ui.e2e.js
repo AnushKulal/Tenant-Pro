@@ -17,6 +17,7 @@ const path = require('path');
 // trace before running a single assertion.
 const { chromium } = require('playwright');
 const fs = require('fs');
+const { dismissTour } = require('./lib/tour');
 
 const SHOTS = path.join(__dirname, 'uishots');
 fs.mkdirSync(SHOTS, { recursive: true });
@@ -187,6 +188,9 @@ await shot('05-wrong-password');
 await fillNth(0, OWNER);
 await fillNth(1, PASS);
 await tap('Sign in', 4000);
+// The tour greets a first-time sign-in and its dim layer eats every click
+// until it is closed. See tests/lib/tour.js.
+await dismissTour(page);
 await settle(4000);
 const afterLogin = await page.locator('body').innerText();
 // POSITIVE: the dashboard shows seeded money. Asserting "not the login screen" is how
@@ -400,6 +404,7 @@ await tType(0, TENANT);
 await tType(1, PASS);
 await tTap('Sign in', 4000);
 await tSettle(4500);
+await dismissTour(tpage);
 const portal = await tpage.locator('body').innerText();
 chk('a tenant can sign in', /₹/.test(portal) && !/SIGN IN/i.test(portal), portal.slice(0, 240));
 chk('...and sees their rent', /₹/.test(portal), portal.slice(0, 220));

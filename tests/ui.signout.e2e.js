@@ -22,6 +22,7 @@
 // sign-out completes and the second assertion is reached by the screen changing.
 const { chromium } = require('playwright');
 const fs = require('fs');
+const { dismissTour } = require('./lib/tour');
 
 const UI_URL = process.env.UI_URL || 'http://127.0.0.1:8080';
 const SHOT = __dirname + '/signoutshots';
@@ -69,6 +70,9 @@ const body = (page) => page.locator('body').innerText();
   await ins.nth(1).fill('Test@1234');
   await click(page, 'Sign in');
   await page.waitForTimeout(6500);
+  // The tour greets a first-time sign-in and its dim layer eats every click
+  // until it is closed. See tests/lib/tour.js.
+  await dismissTour(page);
 
   const signedIn = /WELCOME BACK|RENT DUE/i.test(await body(page));
   ok('the tenant is signed in to begin with', signedIn);

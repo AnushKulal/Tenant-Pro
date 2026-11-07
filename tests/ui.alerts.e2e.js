@@ -164,7 +164,10 @@ const openTickets = (txt) => {
   console.log(`        it currently says: ${JSON.stringify(tName)}`);
   await tenant.screenshot({ path: `${SHOT}/01-tenant-bell.png`, fullPage: false });
 
-  const claimedNew = /something new|waiting on you/i.test(tName || '');
+  // "N waiting on you" is the only state that means something is UNREAD. The
+  // other two — "nothing new" and "all clear" — are what the bell says once it
+  // has been read, so they are what this is waiting to see.
+  const claimedNew = /waiting on you/i.test(tName || '');
 
   console.log('\nAND IT OPENS SOMETHING THAT SAYS SOMETHING TRUE');
   const tOpened = await openBell(tenant);
@@ -190,7 +193,7 @@ const openTickets = (txt) => {
     await tenant.reload({ waitUntil: 'networkidle' });
     await tenant.waitForTimeout(7000);
     const after = await bellSays(tenant);
-    ok('the unread marker clears', !/something new|waiting on you/i.test(after || ''),
+    ok('the unread marker clears', !/waiting on you/i.test(after || ''),
       `still says ${JSON.stringify(after)}`);
     console.log(`        after reload it says: ${JSON.stringify(after)}`);
     await tenant.screenshot({ path: `${SHOT}/03-tenant-bell-cleared.png`, fullPage: false });

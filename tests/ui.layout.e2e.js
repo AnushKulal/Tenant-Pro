@@ -33,6 +33,7 @@
 // is positive and every measurement is checked against what it is measuring.
 const { chromium } = require('playwright');
 const fs = require('fs');
+const { dismissTour } = require('./lib/tour');
 
 const UI_URL = process.env.UI_URL || 'http://127.0.0.1:8080';
 const SHOT = __dirname + '/layoutshots';
@@ -164,6 +165,9 @@ const scrollTo = async (page, y) =>
   await ins.nth(1).fill('Test@1234');
   await click(page, 'Sign in');
   await page.waitForTimeout(6500);
+  // The tour greets a first-time sign-in and its dim layer eats every click
+  // until it is closed. See tests/lib/tour.js.
+  await dismissTour(page);
 
   console.log('\nFIND — the title starts in the body, not the header');
   await click(page, 'FIND');

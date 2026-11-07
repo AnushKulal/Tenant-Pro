@@ -25,9 +25,23 @@ export default function AlertBell({ onPress, has, urgent, count, size = 36 }) {
     // the one thing it exists to communicate, that something is waiting, is the
     // part that never gets said out loud. The count goes in the name rather than
     // only in the badge for exactly that reason.
+    //
+    // The three states are the sheet's own three states, in the sheet's own
+    // words, so what the bell says and what opening it says cannot disagree:
+    //
+    //   urgent  — something is unread or waiting on a decision   "3 waiting on you"
+    //   has     — there are rows, but none of them are news      "nothing new"
+    //   neither — the list is empty                              "all clear"
+    //
+    // The middle one matters. `has` means the LIST IS NOT EMPTY, which is not the
+    // same as something having happened: rent falling due on Friday is a row
+    // every day of the week. An earlier version of this name called that state
+    // "something new" and would have told a screen-reader user there was news
+    // every time they passed the header, for a week, about a date that had not
+    // moved.
     const name = urgent && count
         ? `Notifications, ${count} waiting on you`
-        : has ? 'Notifications, something new' : 'Notifications';
+        : has ? 'Notifications, nothing new' : 'Notifications, all clear';
 
     return (
         <Press

@@ -22,6 +22,7 @@
 // Chromium comes from playwright; nothing here needs a device.
 const { chromium } = require('playwright');
 const fs = require('fs');
+const { dismissTour } = require('./lib/tour');
 
 // Where the compiled web build is being served. Overridable, because the port a
 // static server picks is not always the one you asked for.
@@ -67,6 +68,9 @@ async function signIn(page, who, id, pw) {
   await page.waitForTimeout(250);
   for (const t of ['Sign in', 'SIGN IN', 'Continue']) if (await click(page, t)) break;
   await page.waitForTimeout(6000);
+  // The tour greets a first-time sign-in and swallows every click until it is
+  // closed. This suite is older than the tour; see tests/lib/tour.js.
+  await dismissTour(page);
   return true;
 }
 
