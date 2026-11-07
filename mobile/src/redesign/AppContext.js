@@ -5887,6 +5887,28 @@ export function AppProvider({ children }) {
     []
   );
 
+  // Every way of arriving in a portal ends here. There are four — restoring a
+  // stored session, signing in, signing in with Google, and registering — and
+  // wiring the tour into only one of them is exactly the bug this replaced: a
+  // brand-new user signed in, saw nothing, and would only have met the tour on
+  // the NEXT launch, by which point they had worked the app out or given up.
+  //
+  // Deferred a beat so the screen behind it has rendered. A spotlight over a
+  // blank screen highlights nothing and reads as a bug.
+  const maybeStartTour = useCallback(async (role) => {
+    const r = role === 'tenant' ? 'tenant' : 'owner';
+    try {
+      if (await hasTakenTour(r)) return;
+    } catch (e) {
+      return;   // cannot tell: say nothing rather than ambush somebody twice
+    }
+    setTimeout(() => startTourRef.current(r), 900);
+  }, []);
+
+  // A ref, because maybeStartTour is handed to callbacks that must not be rebuilt
+  // every time the tour's own identity changes.
+  const startTourRef = useRef(() => {});
+
   const startTour = useCallback((roleArg) => {
     const role = roleArg
       || (stateRef.current.session && stateRef.current.session.role === 'tenant' ? 'tenant' : 'owner');
@@ -5901,6 +5923,8 @@ export function AppProvider({ children }) {
   // Leaving is leaving, however you do it — Skip, the ×, or finishing the last
   // step all mark it taken. A tour that reappears because somebody closed it
   // "the wrong way" is a tour people learn to dread.
+  startTourRef.current = startTour;
+
   const endTour = useCallback(() => {
     const role = (stateRef.current.tour && stateRef.current.tour.role) || 'owner';
     setTourTaken(role);
@@ -7895,16 +7919,7 @@ export function AppProvider({ children }) {
         setState({ session: sess, route: sess.role === 'owner' ? 'home' : 'portal' });
         if (sess.role === 'owner') loadOwnerData();
         else loadTenantData();
-        // First time in this portal: show the tour. Checked per role, because
-        // somebody who has used the landlord side has not been shown the tenant
-        // one — they are different apps wearing the same paint.
-        //
-        // Deferred a beat so the screen behind it has rendered: a spotlight over
-        // a blank screen highlights nothing and reads as a bug.
-        const role = sess.role === 'tenant' ? 'tenant' : 'owner';
-        if (!(await hasTakenTour(role))) {
-          setTimeout(() => startTour(role), 900);
-        }
+        maybeStartTour(sess.role);
       } else {
         setToken(null);
         setRefresh(null);
@@ -7921,7 +7936,7 @@ export function AppProvider({ children }) {
       setRefresh(null);
       setState({ session: null, route: 'role' });
     }
-  }, [setState, loadOwnerData, loadTenantData, startTour]);
+  }, [setState, loadOwnerData, loadTenantData, maybeStartTour]);
 
   const signIn = useCallback(async (role) => {
     const { authId, authPw, idmode } = stateRef.current;
@@ -7970,6 +7985,7 @@ export function AppProvider({ children }) {
       flash(`Welcome back${user && user.name ? `, ${String(user.name).split(' ')[0]}` : ''}`);
       if (role === 'owner') loadOwnerData();
       else loadTenantData();
+      maybeStartTour(role);
     } catch (e) {
       const code = (e && e.response && e.response.data && e.response.data.code) || '';
       setState({
@@ -7984,7 +8000,7 @@ export function AppProvider({ children }) {
         authFails: (code === 'NOT_REGISTERED' || code === 'USE_GOOGLE') ? 0 : stateRef.current.authFails + 1
       });
     }
-  }, [setState, flash, loadOwnerData, loadTenantData]);
+  }, [setState, flash, loadOwnerData, loadTenantData, maybeStartTour]);
 
   // ── Leaving a property ──────────────────────────────────────────────────────
   // The old `leaveProperty` called no endpoint. It set `roster.rahul` — a key on the
@@ -8088,7 +8104,8 @@ export function AppProvider({ children }) {
     flash(`Welcome${user && user.name ? `, ${String(user.name).split(' ')[0]}` : ''}`);
     if (role === 'tenant') loadTenantData();
     else loadOwnerData();
-  }, [setState, flash, loadOwnerData, loadTenantData]);
+    maybeStartTour(role);
+  }, [setState, flash, loadOwnerData, loadTenantData, maybeStartTour]);
 
   const startGoogleSignIn = useCallback(async (role) => {
     const want = role === 'tenant' ? 'tenant' : 'owner';
