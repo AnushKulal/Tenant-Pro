@@ -162,7 +162,16 @@ async function signIn(page, who, id, pw) {
     else await card.click({ force: true });
     await page.waitForTimeout(2600);
     t = await txt(page);
-    ok('listing sheet opens', /Ask to join/.test(t));
+    // The sheet has two states and which one you get depends on whether this
+    // tenant has asked about this room before — step 8 below does exactly that,
+    // so the SECOND run against the same database opens straight into "Request
+    // already sent". The assertion used to demand "Ask to join" and failed on a
+    // sheet that had opened perfectly, while the three checks underneath it —
+    // deposit, move-in, furnishing, and the line about nothing being booked —
+    // all passed on the very same text.
+    const asked = /Request already sent/.test(t);
+    ok(`listing sheet opens (${asked ? 'already asked' : 'fresh'})`,
+      /Ask to join/.test(t) || asked, t.split('\n').slice(0, 3).join('|'));
     ok('sheet states deposit, move-in and furnishing', /DEPOSIT/.test(t) && /MOVE IN/.test(t) && /FURNISHING/.test(t));
     ok('sheet says what asking to join does', /Nothing is booked/.test(t));
     await page.screenshot({ path: `${SHOT}/t5-listing.png`, fullPage: true });

@@ -250,11 +250,36 @@ const signIn = async (page, who, id) => {
     // this measures is the latency of a landlord who is sitting still.
     console.log('\nAND WITHOUT THE LANDLORD TOUCHING ANYTHING');
     const mark2 = `Dripping shower ${Date.now().toString().slice(-6)}`;
+
+    // Put the landlord somewhere KNOWN before starting the clock.
+    //
+    // The block above ends the moment it finds the ticket, which may be with the
+    // "View all tickets" sheet still open over the dock. tab() falls back to a
+    // forced click when the normal one is refused, and a forced click goes to
+    // whatever is on top — so the press meant for OVERVIEW landed inside the
+    // open sheet and opened a ticket instead. The run then spent sixty seconds
+    // watching a ticket detail screen for a row that only ever appears on
+    // Overview, and reported that the data never arrived.
+    //
+    // So: close whatever is open, go to Overview, and CHECK we got there. A
+    // timing measurement that starts on an unknown screen measures nothing.
+    await owner.keyboard.press('Escape').catch(() => {});
+    await owner.waitForTimeout(600);
     await tab(owner, 'OVERVIEW');
+    let onOverview = /COLLECTED|OCCUPANCY|Open tickets/i.test(await body(owner));
+    if (!onOverview) {
+      await owner.keyboard.press('Escape').catch(() => {});
+      await owner.waitForTimeout(600);
+      await tab(owner, 'OVERVIEW');
+      onOverview = /COLLECTED|OCCUPANCY|Open tickets/i.test(await body(owner));
+    }
+    ok('the landlord is parked on Overview before the clock starts', onOverview,
+      (await body(owner)).slice(0, 140));
+
     await tab(tenant, 'HELP');
     const sent2 = await raiseTicket(tenant, mark2);
     ok('the tenant raises a second request', sent2);
-    if (sent2) {
+    if (sent2 && onOverview) {
       const t0 = Date.now();
       let idle = false;
       // Reading innerText is passive — it clicks nothing and triggers no fetch.

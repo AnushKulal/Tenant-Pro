@@ -173,9 +173,26 @@ chk('...while saying whether a gateway can be connected', !!(r.json && r.json.ga
 
 section('PAYMENTS');
 r = await GET('/api/payments/declared', { token: OT });
-const declared = (r.json && r.json.payments) || [];
+let declared = (r.json && r.json.payments) || [];
 chk('the confirm queue loads', r.status === 200, { s: r.status, j: r.json });
-chk('...and the seed left one in it', declared.length >= 1, declared.length);
+
+// The queue starts with one in it, because the seed puts one there. But a
+// declared payment is a thing other runs CONSUME: anything that confirms it
+// empties the queue, and this assertion then failed on a database that was
+// working perfectly — it was simply no longer the database the seed made.
+//
+// So rather than depend on being the first to look, declare one and check it
+// lands. That tests more than the original did: it is the whole round trip
+// from a tenant saying "I have paid" to the landlord seeing it to confirm,
+// which is the single most costly thing in this app to get wrong.
+if (declared.length === 0) {
+    const put = await POST('/api/tenant-portal/payments', { amount: 1500 }, { token: TT });
+    chk('a tenant can declare a payment when the queue is empty',
+        put.status === 200 || put.status === 201, { s: put.status, j: put.json });
+    r = await GET('/api/payments/declared', { token: OT });
+    declared = (r.json && r.json.payments) || [];
+}
+chk('...and the landlord has one waiting to confirm', declared.length >= 1, declared.length);
 
 // ══ TENANT PORTAL ═══════════════════════════════════════════════════════════
 section('TENANT PORTAL');
