@@ -140,7 +140,7 @@ export default function CheckoutScreen() {
                             <Eyebrow s={10} ls={0.12} c={t.fg3} style={{ marginTop: 18, marginBottom: 10 }}>DID IT GO THROUGH?</Eyebrow>
                             <Card radius={20} pad={16}>
                                 <T w={400} s={13} lh={1.5} c={t.fg2}>
-                                    We cannot see inside your UPI app, so only you know how that ended. Tell us and your landlord gets the claim to confirm.
+                                    We cannot see inside your UPI app, so tell us. Your landlord then gets the claim to confirm.
                                 </T>
                             </Card>
                             <PrimaryButton

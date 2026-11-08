@@ -391,7 +391,7 @@ const OWNER_TOUR = [
   {
     key: 'overview', route: 'home', spot: 'top',
     title: 'Your money, at a glance',
-    body: 'Rent collected, what is still owed and what is empty. This is the first thing you see because it is the first thing you want to know.'
+    body: 'Rent collected, what is still owed and what is empty.'
   },
   {
     key: 'dock', route: 'home', spot: 'dock', target: 'dock',
@@ -429,7 +429,7 @@ const TENANT_TOUR = [
   {
     key: 'rent', route: 'portal', spot: 'top', target: 'rent-card',
     title: 'What you owe, and when',
-    body: 'Your rent, the date it is due and a Pay button. No chasing, no wondering whether it was recorded.'
+    body: 'Your rent, when it is due and a Pay button.'
   },
   {
     key: 'dock', route: 'portal', spot: 'dock', target: 'dock',
@@ -1954,7 +1954,7 @@ function deriveVm(s, api) {
         // request, and the count tells them what to do about it.
         blocked: living > 0,
         blockedLine: living
-          ? `${living} ${living === 1 ? 'tenant is' : 'tenants are'} still living here. Move them out first — TenantPro will not delete a property with people in it.`
+          ? `${living} ${living === 1 ? 'tenant is' : 'tenants are'} still living here. Move them out first.`
           : '',
         line: rooms.length
           ? `This also deletes ${rooms.length} ${rooms.length === 1 ? 'room' : 'rooms'}. Payment history stays in your ledger.`
@@ -2124,7 +2124,7 @@ function deriveVm(s, api) {
           key: 'camera',
           icon: 'qr-code-outline',
           title: 'Camera',
-          why: 'To scan a property’s invite QR when you join one. Typing the code by hand works too, so this is optional.'
+          why: 'To scan a property’s invite QR when you join one. Typing the code by hand works too.'
         },
         {
           key: 'photos',
@@ -2138,7 +2138,7 @@ function deriveVm(s, api) {
           title: 'Notifications',
           // Named by what arrives, not by the feature. "Allow notifications" is a
           // request; "we will tell you when rent is due" is a reason.
-          why: 'To tell you when rent is due, when a payment needs confirming, and when a tenant raises a repair — without you having to open the app and look. Nothing else is ever sent.'
+          why: 'To tell you when rent is due, when a payment needs confirming, and when a tenant raises a repair. Nothing else is ever sent.'
         },
         {
           key: 'location',
@@ -2169,7 +2169,7 @@ function deriveVm(s, api) {
           key: 'calls',
           icon: 'call-outline',
           title: 'Calls & messages',
-          why: 'Tapping a number opens your dialer or messages app with it filled in, and you send it. TenantPro never places the call or sends the message itself, and never reads your contacts — so there is no permission to give, and none is asked for.'
+          why: 'Tapping a number opens your dialer or messages app with it filled in, and you send it. TenantPro never places the call or sends the message itself, and never reads your contacts — so there is no permission to ask for.'
         }],
         granted,
         allSettled: rows.every((r) => r.settled),
@@ -2257,7 +2257,7 @@ function deriveVm(s, api) {
         // Whose account is about to be created, said plainly. Somebody with two
         // Google accounts on one phone needs to see which one came back.
         line: g.email
-          ? `Google confirmed ${g.email}. One more thing before your account is ready.`
+          ? `Google confirmed ${g.email}.`
           : '',
         // A tenant needs the number so their landlord can reach them; a landlord
         // needs it so their tenants can. Same field, different reason, so the reason
@@ -2290,7 +2290,7 @@ function deriveVm(s, api) {
     authOfferSignup: s.authCode === 'NOT_REGISTERED',
     // Three wrong passwords in a row: stop letting them guess a fourth time.
     authOfferReset: s.authFails >= 3 && s.authCode !== 'NOT_REGISTERED',
-    authResetLine: 'That is three attempts. Reset your password instead of guessing.',
+    authResetLine: 'Three wrong passwords.',
     authFailCount: s.authFails,
     // Changing the identifier invalidates a verdict about the previous one — the
     // "no account with these details" hint must not outlive the details it judged.
@@ -3049,7 +3049,7 @@ function deriveVm(s, api) {
         // behind a separate Save is how a room ends up never actually listed.
         toggle: () => api.saveUnitListing({ published: !l.published }),
         statusLine: l.published
-          ? 'People looking for a place can find this room.'
+          ? 'Anyone searching can find this room.'
           : 'Only people with your invite code can see this room.',
         headline: l.headline,
         setHeadline: (e) => set({ headline: evStr(e) }),
@@ -3217,7 +3217,7 @@ function deriveVm(s, api) {
     // make sure it is not missed.
     bellCount: (PENDING_JOINS.length + DECLARED.length) ? String(PENDING_JOINS.length + DECLARED.length) : '',
     bellUrgent: (PENDING_JOINS.length + DECLARED.length) > 0,
-    alertsEmptyLine: 'Nothing needs you right now. Rent is on track and no tickets are open.',
+    alertsEmptyLine: 'Rent is on track and no tickets are open.',
 
     // ── Help & support (owner) ────────────────────────────────────────────────
     // Where a ticket is actually worked: the whole timeline — every reply and every
@@ -3240,7 +3240,7 @@ function deriveVm(s, api) {
       const person = sel ? (TENANTS.find((x) => x.id === sel.who) || { name: sel.name, img: sel.img, phone: sel.phone }) : {};
       return {
         empty: all.length === 0,
-        emptyLine: 'No tickets have been raised yet. When a tenant reports something, it lands here.',
+        emptyLine: 'No tickets have been raised yet.',
         list: all.map((x) => {
           const st = statusOf(x);
           const who = TENANTS.find((y) => y.id === x.who) || { name: x.name, img: x.img };
@@ -3901,7 +3901,7 @@ function deriveVm(s, api) {
       unitLine: `Unit ${who.unit}`,
       sub: (s.roster[who.id] !== undefined ? s.roster[who.id] : who.unit)
         ? `${propName(unitProp[s.roster[who.id] !== undefined ? s.roster[who.id] : who.unit]).toUpperCase()} · UNIT ${s.roster[who.id] !== undefined ? s.roster[who.id] : who.unit}`
-        : 'UNASSIGNED · NO ROOM',
+        : 'NO ROOM ASSIGNED',
       halo: who.state === 'overdue' ? 'csoft' : 'lsoft',
       tenure: `${parseInt(who.since, 10)} months with you`,
       assigned: !!(s.roster[who.id] !== undefined ? s.roster[who.id] : who.unit),
@@ -4774,7 +4774,7 @@ function deriveVm(s, api) {
         title: gate ? 'One last thing.' : 'My documents',
         blurb: gate
           ? 'Add a government ID so a landlord can confirm who you are before giving you a room. Aadhaar, PAN, voter ID, licence or passport — any one is enough.'
-          : 'Your landlord can see these and mark them verified. Add another whenever you need to.',
+          : 'Your landlord can see these and mark them verified.',
         summaryLine: sum.total
           ? `${sum.total} ${sum.total === 1 ? 'document' : 'documents'} · ${sum.verified} verified`
           : 'Nothing added yet',
@@ -4886,7 +4886,7 @@ function deriveVm(s, api) {
     tBellCount: TENANT_ALERTS.filter((a) => a.new).length
       ? String(TENANT_ALERTS.filter((a) => a.new).length)
       : '',
-    tAlertsEmptyLine: 'Nothing needs you right now. Your rent is on track and nobody is waiting on you.',
+    tAlertsEmptyLine: 'Your rent is on track and nobody is waiting on you.',
 
     isTMe: s.route === 'tme',
     tenantSide: ['portal', 'tfind', 'thelp', 'tstay', 'tme', 'tcheckout', 'tsettings', 'tdocs', 'tagreement'].includes(s.route),
@@ -4998,7 +4998,7 @@ function deriveVm(s, api) {
         title: 'Rental agreement',
         subtitle: myProp ? `${myProp.name}${myUnit ? ` · Room ${myUnit.no}` : ''}` : '',
         // Said plainly: this is a summary of the tenancy, not a stamped legal deed.
-        note: 'This is a summary of the terms recorded in TenantPro, generated from your tenancy. It is not a stamped or registered deed.',
+        note: 'This is a summary of the terms recorded in TenantPro. It is not a stamped or registered deed.',
         parties: [
           { k: 'LANDLORD', v: landlord ? landlord.name : '', sub: landlord && landlord.phone ? fmtPhone(landlord.phone) : '' },
           { k: 'TENANT', v: me.name || '', sub: me.phone ? fmtPhone(me.phone) : '' }
@@ -6655,7 +6655,7 @@ export function AppProvider({ children }) {
           // server that simply does not have the endpoint sends somebody to check
           // their signal for a problem no amount of signal will fix.
           error: notDeployed(e)
-            ? 'Finding places needs a newer version of the server than is running right now.'
+            ? 'Finding places needs a newer version of the server.'
             : errText(e, 'Could not load places right now.')
         }
       });
@@ -7485,7 +7485,7 @@ export function AppProvider({ children }) {
           pin: {
             ...stateRef.current.pin,
             searching: false,
-            error: 'Location is off for TenantPro. You can turn it on in your phone settings, or just drag the map.'
+            error: 'Location is off for TenantPro. Turn it on in your phone settings, or drag the map.'
           },
           perms: { ...stateRef.current.perms, location: 'denied' }
         });
@@ -7923,7 +7923,7 @@ export function AppProvider({ children }) {
   const createRequest = useCallback(async () => {
     const nr = stateRef.current.nr || BLANK_REQUEST;
     const title = String(nr.title || '').trim();
-    if (!title) { setState({ nr: { ...nr, error: 'Add a short title so your landlord knows what this is.' } }); return; }
+    if (!title) { setState({ nr: { ...nr, error: 'Add a short title.' } }); return; }
     if (nr.busy) return;
     setState({ nr: { ...nr, busy: true, error: '' } });
     try {

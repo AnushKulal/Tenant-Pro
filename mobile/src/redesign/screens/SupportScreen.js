@@ -40,7 +40,7 @@ export default function SupportScreen() {
                     <T w={400} s={13} lh={1.4} c={t.fg2} style={{ marginTop: 5 }}>
                         {sp.empty
                             ? 'Every ticket your tenants raise lands here.'
-                            : `Tap a ticket to read it, reply and move it along.${sp.openCount ? ` ${sp.openCount} still open.` : ''}`}
+                            : `${sp.openCount ? `${sp.openCount} still open.` : 'No open tickets. Nothing to chase.'}`}
                     </T>
                 </View>
             </Row>

@@ -45,7 +45,7 @@ export function Thread({ thread, composer, canReply, t, placeholder }) {
 
             {!th.loading && !th.error && rows.length === 0 ? (
                 <T w={400} s={12.5} lh={1.5} c={t.fg3} style={{ paddingBottom: 4 }}>
-                    No messages yet. {canReply ? 'Add one below.' : ''}
+                    No messages yet.
                 </T>
             ) : null}
 
@@ -671,7 +671,7 @@ export default function Sheets() {
                             </Press>
                             <T w={700} s={20} lh={1} style={{ flex: 1, letterSpacing: -0.8 }}>{`Add to Unit ${vm.unitSheet ? vm.unitSheet.no : ''}`}</T>
                         </Row>
-                        <Eyebrow s={10} ls={0.08} style={{ marginTop: 7, marginBottom: 16 }}>PICK SOMEONE UNASSIGNED, OR ADD A NEW TENANT</Eyebrow>
+                        <Eyebrow s={10} ls={0.08} style={{ marginTop: 7, marginBottom: 16 }}>UNASSIGNED TENANTS</Eyebrow>
                         {vm.assignEmpty && (
                             <View style={{ paddingVertical: 30, alignItems: 'center' }}>
                                 <T w={500} s={13} lh={1.5} c={t.fg2}>Nobody is unassigned right now.</T>
@@ -2236,7 +2236,7 @@ export default function Sheets() {
                                 <Row gap={9} align="flex-start" style={{ paddingVertical: 12, paddingHorizontal: 13, borderRadius: 14, backgroundColor: t.asoft, marginBottom: 14 }}>
                                     <Glyph name="information-circle-outline" size={15} color={t.amber} />
                                     <T w={500} s={12} lh={1.45} c={t.amber} style={{ flex: 1 }}>
-                                        A room has to belong to a property. Add one first, then come back.
+                                        A room has to belong to a property. Add one, then come back.
                                     </T>
                                 </Row>
                                 <Press onPress={vm.addProperty} style={{ paddingVertical: 15, borderRadius: 999, backgroundColor: t.lime, alignItems: 'center' }}>
@@ -2770,7 +2770,7 @@ export default function Sheets() {
                     <View>
                         <T w={700} s={21} lh={1.1} style={{ letterSpacing: -0.7 }}>Raise a request</T>
                         <Eyebrow s={10} ls={0.08} style={{ marginTop: 7, marginBottom: 16 }}>
-                            REPORT AN ISSUE TO YOUR LANDLORD
+                            THIS GOES TO YOUR LANDLORD
                         </Eyebrow>
 
                         {vm.newRequest.error ? (

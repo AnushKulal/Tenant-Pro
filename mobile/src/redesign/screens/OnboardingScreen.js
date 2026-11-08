@@ -263,7 +263,7 @@ const PAGES = [
         step: '03 — MONEY, HANDLED',
         headline: 'Invoice the rent,',
         accent: 'chase nothing.',
-        body: 'Record cash, UPI or bank payments and watch dues update instantly. Every payment keeps a receipt, so the history is ready the moment anyone asks.',
+        body: 'Record cash, UPI or bank payments and watch dues update instantly. Every payment keeps a receipt.',
         Vignette: MoneyVignette,
         chips: [
             { icon: 'receipt-outline', label: 'Receipts' },

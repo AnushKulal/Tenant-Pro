@@ -159,7 +159,7 @@ export async function check({ manual = false } = {}) {
             checkedAt: Date.now(),
             error: e && e.message
                 ? `Could not check for updates: ${e.message}`
-                : 'Could not reach the update server. Check your connection and try again.'
+                : 'Could not reach the update server. Check your connection.'
         });
     }
 }
@@ -192,7 +192,7 @@ export async function install() {
             progress: 0,
             error: e && e.message
                 ? `Could not install the update: ${e.message}`
-                : 'Could not install the update. Please try again.'
+                : 'Could not install the update.'
         });
     }
 }

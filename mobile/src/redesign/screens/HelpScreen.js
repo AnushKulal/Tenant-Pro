@@ -122,7 +122,7 @@ export default function HelpScreen() {
                     <View style={{ flex: 1, minWidth: 0 }}>
                         <T w={600} s={14} lh={1.2}>Join a property first</T>
                         <T w={400} s={12} lh={1.45} c={t.fg3} style={{ marginTop: 4 }}>
-                            Your landlord appears here once you are in one. Tap to find yours.
+                            Your landlord appears here once you are in one.
                         </T>
                     </View>
                     <Glyph name="chevron-forward" size={16} color={t.fg3} />
