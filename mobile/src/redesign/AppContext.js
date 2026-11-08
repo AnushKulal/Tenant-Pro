@@ -394,7 +394,7 @@ const OWNER_TOUR = [
     body: 'Rent collected, what is still owed and what is empty. This is the first thing you see because it is the first thing you want to know.'
   },
   {
-    key: 'dock', route: 'home', spot: 'dock',
+    key: 'dock', route: 'home', spot: 'dock', target: 'dock',
     title: 'Everything is down here',
     body: 'Properties and rooms, the people in them, and the ledger. Four taps, no menus to hunt through.'
   },
@@ -427,12 +427,12 @@ const TENANT_TOUR = [
     body: 'A quick look around — about thirty seconds. You can leave at any point and pick it up again from Settings.'
   },
   {
-    key: 'rent', route: 'portal', spot: 'top',
+    key: 'rent', route: 'portal', spot: 'top', target: 'rent-card',
     title: 'What you owe, and when',
     body: 'Your rent, the date it is due and a Pay button. No chasing, no wondering whether it was recorded.'
   },
   {
-    key: 'dock', route: 'portal', spot: 'dock',
+    key: 'dock', route: 'portal', spot: 'dock', target: 'dock',
     title: 'Where everything lives',
     body: 'Home for your dues, Find for a new place, Help to raise a problem, and your own profile and documents.'
   },

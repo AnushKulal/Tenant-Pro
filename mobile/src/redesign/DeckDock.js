@@ -6,6 +6,7 @@ import { View } from 'react-native';
 import { useVm } from './AppContext';
 import { useT } from './ThemeContext';
 import { T, Press, Glyph, Face, Avatar } from './ui';
+import { TourTarget } from './tourTargets';
 
 const DOCK_RADIUS = { borderTopLeftRadius: 16, borderTopRightRadius: 16, borderBottomLeftRadius: 6, borderBottomRightRadius: 6 };
 
@@ -23,7 +24,11 @@ export default function DeckDock() {
     const ls = tenant ? 0.06 : 0.08;
 
     return (
-        <View style={{ paddingHorizontal: 10, backgroundColor: t.ink }}>
+        // Registered so the tour's "everything is down here" step lights the
+        // real dock rather than a band guessed from its height. See
+        // tourTargets.js — if this wrapper ever goes, the step falls back to
+        // that band rather than breaking.
+        <TourTarget name="dock" style={{ paddingHorizontal: 10, backgroundColor: t.ink }}>
             <View style={{ flexDirection: 'row', alignItems: 'flex-end', columnGap: 5, height: 74 }}>
                 {items.map((d, i) => (
                     <View key={i} style={{ flex: 1, position: 'relative', flexDirection: 'column', justifyContent: 'flex-end', height: 74 }}>
@@ -120,6 +125,6 @@ export default function DeckDock() {
                     </Press>
                 )}
             </View>
-        </View>
+        </TourTarget>
     );
 }

@@ -2,6 +2,7 @@ import React from 'react';
 import { View } from 'react-native';
 import { useVm } from '../AppContext';
 import { useT } from '../ThemeContext';
+import { TourTarget } from '../tourTargets';
 import { T, Eyebrow, Card, Row, Pill, Press, Glyph, IconChip, Face, Avatar } from '../ui';
 import AlertBell from '../AlertBell';
 import { Body, useTitleAnchor } from '../layout';
@@ -195,7 +196,9 @@ export default function PortalHomeScreen() {
             {/* Linked: rent card + stats + requests */}
             {vm.portalLinked && (
                 <>
-                    <View style={{ borderRadius: 28, backgroundColor: t.lime, padding: 22, overflow: 'hidden', marginBottom: 8 }}>
+                    {/* The tour's "what you owe, and when" step lights this card
+                        itself rather than the top 210px of the body. */}
+                    <TourTarget name="rent-card" style={{ borderRadius: 28, backgroundColor: t.lime, padding: 22, overflow: 'hidden', marginBottom: 8 }}>
                         <View style={{ position: 'absolute', right: -30, top: -30, width: 130, height: 130, borderRadius: 65, backgroundColor: 'rgba(0,0,0,.06)' }} />
                         <Row justify="space-between">
                             <Eyebrow s={9} ls={0.12} c={t.on} style={{ opacity: 0.6 }}>RENT DUE</Eyebrow>
@@ -212,7 +215,7 @@ export default function PortalHomeScreen() {
                             <T w={700} s={14} c={t.lime}>Pay</T>
                             <Glyph name="arrow-forward" size={16} color={t.lime} />
                         </Press>
-                    </View>
+                    </TourTarget>
 
                     {/* Stats grid */}
                     <Row gap={8} align="stretch" style={{ marginBottom: 8 }}>
