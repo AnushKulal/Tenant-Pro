@@ -2536,6 +2536,22 @@ function deriveVm(s, api) {
         backToLogin: () => setState({ route: isTenant ? 'tlogin' : 'login', fp: { ...BLANK_FP }, authPw: '' })
       };
     })(),
+    // ── Which account is being created ───────────────────────────────────────
+    //
+    // This was the whole bug behind "the same create account in landlord portal
+    // and the tenant portal". `signupRole` has been in state all along —
+    // goSignup records which login screen you tapped Create account from, and
+    // register() reads it to choose registerTenant or registerOwner — but it was
+    // never put on the view-model, so the screen had no way to ask and rendered
+    // one form for both. One missing line, and a landlord was asked whether they
+    // are over eighteen and told they could pay rent directly.
+    signupRole: s.signupRole === 'tenant' ? 'tenant' : 'owner',
+    isTenantSignup: s.signupRole === 'tenant',
+    isOwnerSignup: s.signupRole !== 'tenant',
+    // The age question belongs to the tenant form only. It asks whether somebody
+    // can hold a tenancy in their own name, which is not a question about owning
+    // property.
+    signupAsksAge: s.signupRole === 'tenant',
     adult: s.adult,
     minor: !s.adult,
     ageOptions: [['18 OR OVER', true], ['UNDER 18', false]].map(([label, v]) => {
@@ -2559,7 +2575,21 @@ function deriveVm(s, api) {
       { label: 'GUARDIAN MOBILE', value: 'Required', icon: 'call-outline' },
       { label: 'CONSENT LETTER', value: 'Upload a signed copy', icon: 'document-attach-outline' }
     ],
-    signupCta: s.adult ? 'Create my account' : 'Send for guardian consent',
+    // Role-specific wording. A form that does not say what it is making is how
+    // people end up in the wrong portal — and the two are mutually exclusive by
+    // email AND by mobile number (see the cross-checks in registerTenant and
+    // registerOwner), so getting it wrong means finding another address, not
+    // changing a setting.
+    signupEyebrow: s.signupRole === 'tenant' ? 'TENANT ACCOUNT' : 'LANDLORD ACCOUNT',
+    signupTitle: s.signupRole === 'tenant'
+      ? 'A few details\nto get you in.'
+      : 'A few details\nto get you set up.',
+    signupBlurb: s.signupRole === 'tenant'
+      ? 'This is where you pay rent, raise issues with your landlord and keep your documents.'
+      : 'This is where you add your properties, your tenants and the rent they owe.',
+    // No guardian path on the landlord form: the age question is not asked
+    // there, so `adult` must not be allowed to change its button.
+    signupCta: (s.signupRole === 'tenant' && !s.adult) ? 'Send for guardian consent' : 'Create my account',
     signupNote: s.adult
       ? 'You can sign your own agreement and pay rent directly.'
       : 'A guardian or warden must confirm before the tenancy can start. We will text them a consent link.',

@@ -116,12 +116,19 @@ export default function CreateAccountScreen() {
       </Press>
 
       <View style={{ marginTop: 22 }}>
-        <T mono w={600} s={10} ls={0.14} c={t.accent}>CREATE ACCOUNT</T>
+        {/* Which account this is. The screen used to say CREATE ACCOUNT to both
+            roles and leave them to work out which one they were making. */}
+        <T mono w={600} s={10} ls={0.14} c={t.accent}>{vm.signupEyebrow}</T>
         <T w={700} s={32} lh={1.04} c={t.fg} style={{ marginTop: 12, letterSpacing: -1.5 }}>
-          A few details{'\n'}to get you in.
+          {vm.signupTitle}
         </T>
+        <T w={400} s={13.5} lh={1.5} c={t.fg2} style={{ marginTop: 10 }}>{vm.signupBlurb}</T>
 
-        {/* Age card */}
+        {/* Age card — the TENANT form only. "Can you hold a tenancy in your own
+            name" is not a question about owning property, and asking a landlord
+            whether they are under eighteen (then telling them they may pay rent
+            directly) was the most visible half of the shared-screen bug. */}
+        {vm.signupAsksAge ? (
         <View
           style={{
             borderRadius: 22,
@@ -156,6 +163,7 @@ export default function CreateAccountScreen() {
           </View>
           <T w={400} s={12} lh={1.5} c={t.fg2} style={{ marginTop: 12 }}>{vm.signupNote}</T>
         </View>
+        ) : null}
 
         {/* Details card */}
         <View
@@ -235,8 +243,12 @@ export default function CreateAccountScreen() {
           </FieldRow>
         </View>
 
-        {/* Guardian card */}
-        {vm.minor && (
+        {/* Guardian card — tenant form only, and only once the age question has
+            been answered "under 18". Gated on BOTH, not just on `minor`: the age
+            card is the only way to set that flag, so a landlord could never tap
+            it, but a guardian-consent card on a landlord's form is wrong enough
+            that it should not depend on a default staying true somewhere else. */}
+        {vm.signupAsksAge && vm.minor && (
           <View
             style={{
               borderRadius: 22,

@@ -117,13 +117,30 @@ const signupFormFor = async (b, role) => {
   const same = lt.trim() === tt.trim();
   ok('the two forms are not identical', !same, 'character-for-character the same screen');
 
-  const lFields = (lt.match(/FULL NAME|EMAIL|MOBILE|PASSWORD|PAN|UPI|ADDRESS|CITY|PIN|WORK|EMPLOYER|OCCUPATION/gi) || []).map(s => s.toUpperCase());
-  const tFields = (tt.match(/FULL NAME|EMAIL|MOBILE|PASSWORD|PAN|UPI|ADDRESS|CITY|PIN|WORK|EMPLOYER|OCCUPATION/gi) || []).map(s => s.toUpperCase());
-  console.log(`        landlord asks: ${[...new Set(lFields)].join(', ') || '(none found)'}`);
-  console.log(`        tenant   asks: ${[...new Set(tFields)].join(', ') || '(none found)'}`);
-  ok('the two forms ask different things',
-    JSON.stringify([...new Set(lFields)].sort()) !== JSON.stringify([...new Set(tFields)].sort()),
-    'same field set on both');
+  const fieldsOn = (txt) => [...new Set((txt.match(/FULL NAME|EMAIL|MOBILE|PASSWORD|PAN|AADHAAR|UPI|ADDRESS|CITY|PIN CODE|EMPLOYER|OCCUPATION|INCOME|SALARY/gi) || []).map(x => x.toUpperCase()))];
+  const lFields = fieldsOn(lt), tFields = fieldsOn(tt);
+  console.log(`        landlord asks: ${lFields.join(', ') || '(none found)'}`);
+  console.log(`        tenant   asks: ${tFields.join(', ') || '(none found)'}`);
+
+  // NOT "the two forms must ask different fields". That was my own guess at the
+  // requirement and the research does not support it: nothing found shows any
+  // Indian rental platform asking for an address, an employer, an occupation or
+  // an income at ACCOUNT CREATION. Housing.com's whole signup is a mobile number
+  // and an OTP, then "which kind of account". The roles diverge in what happens
+  // AFTER — a tenant meets the ID gate, a landlord needs a way to be paid — not
+  // in how many boxes the first screen has.
+  //
+  // So what is worth pinning is the opposite: that neither form grows fields it
+  // has no business holding yet. Income and payslips have no Indian precedent
+  // and are a data-minimisation failure under the DPDP Act; a full Aadhaar
+  // number must never be typed into a form at all, which is why the app takes
+  // IDs as uploads through tenant_documents, blurred, with the landlord's read
+  // revoked when the tenancy ends.
+  const tooMuch = /INCOME|SALARY|AADHAAR/;
+  ok('the landlord form asks for nothing it should not hold yet',
+    !lFields.some((x) => tooMuch.test(x)), lFields.join(', '));
+  ok('the tenant form asks for nothing it should not hold yet',
+    !tFields.some((x) => tooMuch.test(x)), tFields.join(', '));
 
   console.log('\nTHE UNDER-18 PATH MUST NOT PROMISE WHAT IT DOES NOT DO');
   // Picking UNDER 18 raises a "GUARDIAN REQUIRED" card, changes the button to
