@@ -104,7 +104,16 @@ const fill = async (page, vals) => {
   ok('the password row says what it needs', /Choose a password/i.test(txt));
   ok('...and the banner counts them rather than reciting the rule',
     /4 fields need fixing/i.test(txt), txt.slice(0, 200));
-  ok('it did not navigate away', /HOW OLD ARE YOU/i.test(txt));
+  // "Still on the form" used to be checked by looking for "HOW OLD ARE YOU".
+  // That question is a TENANT question — whether somebody can hold a tenancy in
+  // their own name — and this suite signs up as a LANDLORD, so it is correctly
+  // gone from this screen now. It was never a good proxy anyway: it asserted
+  // that one particular card was present, not that the form was.
+  //
+  // The form's own heading is the honest check, and it names the role, which is
+  // the other half of what was wrong with this screen.
+  ok('it did not navigate away',
+    /LANDLORD ACCOUNT/i.test(txt) && /Create my account/i.test(txt), txt.slice(0, 200));
 
   console.log('\nTHE ERROR CLEARS AS SOON AS YOU FIX THAT FIELD');
   await fill(page, [[0, 'Asha Menon']]);
