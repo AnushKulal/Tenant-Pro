@@ -125,6 +125,37 @@ const signupFormFor = async (b, role) => {
     JSON.stringify([...new Set(lFields)].sort()) !== JSON.stringify([...new Set(tFields)].sort()),
     'same field set on both');
 
+  console.log('\nTHE UNDER-18 PATH MUST NOT PROMISE WHAT IT DOES NOT DO');
+  // Picking UNDER 18 raises a "GUARDIAN REQUIRED" card, changes the button to
+  // "Send for guardian consent", and says a guardian will be texted a link.
+  //
+  // Nothing is collected and nothing is sent. The guardian rows are static text
+  // (`value: 'Required'`, `'Parent · Guardian · Warden'`, `'Upload a signed
+  // copy'`), the button calls the same api.register() as the adult path, and the
+  // backend has no notion of a guardian or a consent at all. A minor who picks it
+  // gets an ordinary account and a sentence that is not true.
+  //
+  // That matters beyond tidiness: a minor cannot hold a tenancy in their own
+  // right, so this is the one place on the form where the wrong answer has a
+  // legal consequence.
+  const before = await T.page.locator('input').count();
+  const picked = await clickExact(T.page, 'UNDER 18', 1400);
+  ok('UNDER 18 can be selected', picked);
+  const mt = await body(T.page);
+  const after = await T.page.locator('input').count();
+  await T.page.screenshot({ path: `${SHOT}/03-tenant-under-18.png`, fullPage: true });
+  const claimsGuardian = /guardian|warden/i.test(mt);
+  const promisesToSend = /consent link|we will text|send for guardian/i.test(mt);
+  console.log(`        inputs before ${before}, after ${after}; promises to send: ${promisesToSend}`);
+  if (claimsGuardian) {
+    ok('...and asking for a guardian actually asks for one',
+      after > before,
+      `the guardian card appeared but added no fields (${before} inputs before, ${after} after)`);
+  }
+  ok('...and nothing promises a message the app cannot send',
+    !promisesToSend || after > before,
+    'the screen says a guardian will be texted a consent link; nothing collects their number');
+
   console.log('\nNOTHING THREW');
   const errs = [...L.errs, ...T.errs];
   ok('no runtime errors on either form', errs.length === 0, errs.slice(0, 3).join(' | '));
