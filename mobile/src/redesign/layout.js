@@ -365,11 +365,37 @@ export function StickyTitle({ inset = 60, style }) {
 // field near the bottom of the page — the room above is far larger than `want`
 // and this returns it untouched. A field already tucked under the header returns
 // 0, because scrolling would only push it further under.
+// ── Anything the shell puts ABOVE the header ─────────────────────────────────
+//
+// The header is not always the first thing below the system bars. The
+// new-version banner sits above it, and when it is showing, the header starts
+// that much further down.
+//
+// That matters here and nowhere else: clampFocusScroll works out how far a
+// field can be scrolled before it disappears under the header, and it did that
+// from safeTop + HEADER_H — which, with a banner on screen, is a band ending
+// well above where the header actually begins. The clamp allowed too much
+// scroll and a field being typed into could end up underneath the header. That
+// is exactly the thing the rule exists to prevent (WCAG 2.2: a sticky header
+// must not cover the focused element), so the rule has to know.
+//
+// A module-level number rather than context: the banner renders outside
+// LayoutProvider (it has to, so it is above the header on every screen), so it
+// cannot publish into it. It reports its measured height and clears it on
+// unmount; with nothing above the header this is 0 and every calculation below
+// is what it was.
+let chromeAbove = 0;
+export const setChromeAbove = (px) => {
+    const n = Number(px);
+    chromeAbove = Number.isFinite(n) && n > 0 ? n : 0;
+};
+export const getChromeAbove = () => chromeAbove;
+
 export function clampFocusScroll(want, fieldTop, safeTop = 0) {
     if (!isLayoutRule()) return want;
     const top = Number(fieldTop);
     if (!Number.isFinite(top)) return want;
-    const room = top - (Number(safeTop) || 0) - HEADER_H - 12;
+    const room = top - (Number(safeTop) || 0) - chromeAbove - HEADER_H - 12;
     if (!(room > 0)) return 0;
     return Math.min(want, room);
 }

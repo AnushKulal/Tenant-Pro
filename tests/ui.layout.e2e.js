@@ -69,8 +69,30 @@ const click = async (page, text) => {
 // the header as showing a title that nobody can read. Opacity is inherited down
 // the tree by multiplication, so the effective value is the product of every
 // ancestor's — which is what has to be checked, not the element's own.
-const headerText = async (page, h) =>
-  page.evaluate((H) => {
+// Where the header actually starts.
+//
+// Not always 0. The new-version banner sits ABOVE the header — it has to, so it
+// is on every screen — and while it is showing the header begins below it. This
+// suite measured the header as "the top HEADER_H pixels" and so, the first time
+// a banner appeared, reported the header as showing "Version 1.5.0 is
+// available" instead of the screen's name.
+//
+// That failure was worth having: it was the same wrong assumption the app's own
+// clamp was making, which let a focused field scroll under the header. The app
+// is fixed; this measures from the right place rather than being told the
+// banner must not exist.
+const headerTop = async (page) =>
+  page.evaluate(() => {
+    const el = [...document.querySelectorAll('div')].find((n) =>
+      /Version\s+[\d.]+\s+is available|Update required — version/i.test(n.textContent || '')
+      && n.getBoundingClientRect().top < 120
+      && n.getBoundingClientRect().height > 20
+      && n.getBoundingClientRect().height < 140);
+    return el ? Math.round(el.getBoundingClientRect().bottom) : 0;
+  });
+
+const headerText = async (page, h, from = 0) =>
+  page.evaluate(([H, FROM]) => {
     const seen = (el) => {
       let o = 1;
       for (let n = el; n && n !== document.body; n = n.parentElement) {
@@ -84,7 +106,7 @@ const headerText = async (page, h) =>
     const hits = [];
     for (const el of document.querySelectorAll('div, span')) {
       const r = el.getBoundingClientRect();
-      if (r.top >= 0 && r.bottom <= H && r.height > 8 && r.width > 20) {
+      if (r.top >= FROM - 1 && r.bottom <= FROM + H && r.height > 8 && r.width > 20) {
         const own = Array.from(el.childNodes)
           .filter((n) => n.nodeType === 3)
           .map((n) => n.textContent.trim())
@@ -94,15 +116,15 @@ const headerText = async (page, h) =>
       }
     }
     return hits.join(' | ');
-  }, h);
+  }, [h, from]);
 
 // The tallest scrollable element on the page is the screen body.
 // Where visible header text actually SITS, so "looks off-centre" can be settled
 // with numbers. This suite was written after a report that the heading was not
 // centred; it was not, by 22px on a 420px screen, and nothing here could have
 // caught it because everything asserted on text and never on position.
-const headerBoxes = async (page, h) =>
-  page.evaluate((H) => {
+const headerBoxes = async (page, h, from = 0) =>
+  page.evaluate(([H, FROM]) => {
     const seen = (el) => {
       let o = 1;
       for (let n = el; n && n !== document.body; n = n.parentElement) {
@@ -116,7 +138,7 @@ const headerBoxes = async (page, h) =>
     const items = [];
     for (const el of document.querySelectorAll('div, span')) {
       const r = el.getBoundingClientRect();
-      if (r.top >= 0 && r.bottom <= H + 2 && r.height > 8 && r.width > 10) {
+      if (r.top >= FROM - 1 && r.bottom <= FROM + H + 2 && r.height > 8 && r.width > 10) {
         const own = Array.from(el.childNodes)
           .filter((n) => n.nodeType === 3)
           .map((n) => n.textContent.trim())
@@ -128,7 +150,7 @@ const headerBoxes = async (page, h) =>
       }
     }
     return { width: window.innerWidth, items };
-  }, h);
+  }, [h, from]);
 
 const scrollTo = async (page, y) =>
   page.evaluate((to) => {
@@ -172,7 +194,7 @@ const scrollTo = async (page, y) =>
   console.log('\nFIND — the title starts in the body, not the header');
   await click(page, 'FIND');
   await page.waitForTimeout(3500);
-  const top = await headerText(page, HEADER_H);
+  const top = await headerText(page, HEADER_H, await headerTop(page));
   ok('the screen shows its full-size title',
     await page.locator('text=Find a place').first().isVisible().catch(() => false));
   ok('...and the header is NOT also showing it', !/Find a place/.test(top), 'header: ' + top);
@@ -180,7 +202,7 @@ const scrollTo = async (page, y) =>
   // The bar used to hold one thing at the top: the bell, hard right, with 360 of
   // a 420px screen empty beside it. It read as a stray button rather than a
   // header, which is how it was reported.
-  const topBoxes = await headerBoxes(page, HEADER_H);
+  const topBoxes = await headerBoxes(page, HEADER_H, await headerTop(page));
   const leftOfBar = topBoxes.items.filter((i) => i.cx < topBoxes.width / 2);
   ok('the bar is not empty on the left at the top of a screen',
     leftOfBar.length > 0, JSON.stringify(topBoxes.items));
@@ -191,14 +213,14 @@ const scrollTo = async (page, y) =>
   await page.waitForTimeout(900);
   ok('the body actually scrolled', moved.found && moved.top > 300, JSON.stringify(moved));
   const gone = !(await page.locator('text=Find a place').first().isVisible().catch(() => false));
-  const down = await headerText(page, HEADER_H);
+  const down = await headerText(page, HEADER_H, await headerTop(page));
   ok('the header is showing the screen name once the title has gone',
     /Find a place/.test(down), 'header: ' + down);
 
   // Centred on the SCREEN, not in whatever gap the row leaves beside the bell.
   // Four pixels of tolerance for text metrics and rounding; the bug this catches
   // was twenty-two.
-  const downBoxes = await headerBoxes(page, HEADER_H);
+  const downBoxes = await headerBoxes(page, HEADER_H, await headerTop(page));
   const titleBox = downBoxes.items.find((i) => /Find a place/.test(i.text));
   const middle = downBoxes.width / 2;
   ok('...centred on the screen',
@@ -209,7 +231,7 @@ const scrollTo = async (page, y) =>
   console.log('\nFIND — scrolled back up, it hands it back');
   await scrollTo(page, 0);
   await page.waitForTimeout(900);
-  const back = await headerText(page, HEADER_H);
+  const back = await headerText(page, HEADER_H, await headerTop(page));
   ok('the header gives the title back at the top', !/Find a place/.test(back), 'header: ' + back);
   ok('...and the real title is on screen again',
     await page.locator('text=Find a place').first().isVisible().catch(() => false));
@@ -221,7 +243,7 @@ const scrollTo = async (page, y) =>
   await page.screenshot({ path: `${SHOT}/05-home-top.png`, fullPage: false });
   const homeMoved = await scrollTo(page, 420);
   await page.waitForTimeout(900);
-  const homeHdr = await headerText(page, HEADER_H);
+  const homeHdr = await headerText(page, HEADER_H, await headerTop(page));
   if (!homeMoved.found || homeMoved.top < 100) {
     // This tenant's home fits on one screen, so there is no scroll and nothing
     // for the header to take over. That is the screen being short, not the rule

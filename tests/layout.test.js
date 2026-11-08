@@ -144,6 +144,36 @@ section('A FIELD YOU ARE TYPING IN NEVER ENDS UP UNDER THE HEADER');
         clamp(180, 150, 24) === room, { got: clamp(180, 150, 24), room });
     chk('...which is much less than the keyboard asked for', room > 0 && room < 180, room);
 
+    // ── With something above the header ──────────────────────────────────
+    //
+    // The header is not always the first thing below the system bars. The
+    // new-version banner sits above it, and while it is showing the header
+    // starts that much further down.
+    //
+    // This is where that was found: the clamp measured the forbidden band as
+    // safeTop + HEADER_H, which with a banner on screen ends well above where
+    // the header actually begins — so it allowed too much scroll and a field
+    // being typed into could finish underneath the header. Precisely the thing
+    // this whole function exists to prevent.
+    {
+        const BANNER = 46;
+        ON.setChromeAbove(BANNER);
+        const roomWith = 150 - 24 - BANNER - H - 12;
+        chk('a banner above the header shrinks the room by its own height',
+            clamp(180, 150, 24) === roomWith, { got: clamp(180, 150, 24), roomWith });
+        chk('...which is less than without it',
+            roomWith < (150 - 24 - H - 12), { roomWith, without: 150 - 24 - H - 12 });
+        // A field that was only just clear of the header is now behind it.
+        chk('a field that the banner has pushed under the header is not moved further',
+            clamp(180, 24 + H + 6, 24) === 0, clamp(180, 24 + H + 6, 24));
+        ON.setChromeAbove(0);
+        chk('and clearing it restores the original room',
+            clamp(180, 150, 24) === (150 - 24 - H - 12), clamp(180, 150, 24));
+        chk('nonsense heights are ignored rather than trusted',
+            (ON.setChromeAbove(-40), clamp(180, 150, 24) === (150 - 24 - H - 12)));
+        ON.setChromeAbove(0);
+    }
+
     // Already behind the header: scrolling at all makes it worse.
     chk('a field already under the header is not scrolled further under it',
         clamp(180, 30, 24) === 0, clamp(180, 30, 24));

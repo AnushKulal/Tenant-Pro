@@ -25,12 +25,24 @@ import { View, Linking, Platform } from 'react-native';
 import { useT } from './ThemeContext';
 import { T, Press, Glyph } from './ui';
 import { useStoreUpdate, dismissStoreUpdate, shouldShowStoreBanner } from './storeUpdate';
+import { setChromeAbove } from './layout';
 
 export default function StoreBanner() {
     const t = useT();
     const u = useStoreUpdate();
+    const showing = shouldShowStoreBanner();
 
-    if (!shouldShowStoreBanner()) return null;
+    // Tell the layout rule how much sits above the header. Without this the
+    // clamp that keeps a focused field out from under the header measures from
+    // the top of the screen, and with this bar on screen a field being typed
+    // into can end up behind the header — the exact thing the rule exists to
+    // prevent. Cleared when the bar goes, by either route.
+    React.useEffect(() => {
+        if (!showing) setChromeAbove(0);
+        return () => setChromeAbove(0);
+    }, [showing]);
+
+    if (!showing) return null;
 
     const open = () => {
         if (!u.url) return;
@@ -43,6 +55,7 @@ export default function StoreBanner() {
 
     return (
         <View
+            onLayout={(e) => setChromeAbove(e.nativeEvent.layout.height)}
             style={{
                 flexDirection: 'row',
                 alignItems: 'center',
