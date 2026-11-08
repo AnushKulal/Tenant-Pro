@@ -2,6 +2,7 @@ import React from 'react';
 import { View } from 'react-native';
 import { useVm } from '../AppContext';
 import { useT } from '../ThemeContext';
+import UpdateRow from '../UpdateRow';
 import { T, Eyebrow, Row, Press, Glyph, IconChip } from '../ui';
 import PushTestCard from '../PushTestCard';
 import { Body, useTitleAnchor } from '../layout';
@@ -111,6 +112,13 @@ export default function TenantSettingsScreen() {
             {/* The real version — see the note on the owner's Settings screen. This
                 was a hardcoded "v2.0 · BUILD 240" from the prototype, which is how an
                 install stuck on an old runtimeVersion stayed invisible. */}
+            {/* Same row as the landlord's Settings — see the note there. Both
+                portals get it: whoever dismissed the prompt needs the way back,
+                and which portal they are in has nothing to do with it. */}
+            <View style={{ marginTop: 18 }}>
+                <UpdateRow build={vm.build} />
+            </View>
+
             <View style={{ marginTop: 16, alignItems: 'center', rowGap: 4 }}>
                 <Eyebrow s={9} ls={0.08} c={t.fg3} style={{ textAlign: 'center', lineHeight: 14 }}>
                     TENANTPRO · {vm.build.versionLine.toUpperCase()}

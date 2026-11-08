@@ -2,6 +2,7 @@ import React from 'react';
 import { View, ScrollView } from 'react-native';
 import { useVm } from '../AppContext';
 import { useT } from '../ThemeContext';
+import UpdateRow from '../UpdateRow';
 import { T, Eyebrow, Row, Press, Glyph, Face, Avatar } from '../ui';
 import PushTestCard from '../PushTestCard';
 import { Stagger } from '../motion';
@@ -127,6 +128,13 @@ export default function SettingsScreen() {
           went undiagnosed for days while every update published successfully to
           "1.3.0" and silently reached nobody. The runtime version is the number that
           makes that visible in two seconds. */}
+      {/* Ask again. The update prompt has a Later button and, until this row
+          existed, Later was a one-way door — the check lived inside the prompt,
+          so nothing but a relaunch could start another. */}
+      <View style={{ marginTop: 18 }}>
+        <UpdateRow build={vm.build} />
+      </View>
+
       <View style={{ marginTop: 16, alignItems: 'center', rowGap: 4 }}>
         <T mono w={600} s={9} lh={1.5} ls={0.08} c={t.fg3} style={{ textAlign: 'center' }}>
           TENANTPRO · {vm.build.versionLine.toUpperCase()}

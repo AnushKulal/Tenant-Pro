@@ -12,55 +12,32 @@
 // asymptotically toward a ceiling while the real download runs and only snaps to
 // 100% once fetchUpdateAsync() actually resolves — it never claims to be done
 // before it is.
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { View, AppState, Animated } from 'react-native';
-import Constants from 'expo-constants';
-import * as Updates from 'expo-updates';
 import { useT } from './ThemeContext';
 import { T, Eyebrow, Row, Press, Glyph, Monogram } from './ui';
+// The check, the notes and the install all live in updates.js now, so that this
+// sheet and the "Check for updates" row in Settings are looking at the same
+// answer. A Settings row with its own copy would be a second opinion about
+// whether an update exists, and the two would drift the first time one failed.
+import { useUpdates, check, install, dismiss } from './updates';
 
 const PHASE_LABEL = {
     idle: '',
+    available: '',
+    checking: '',
+    uptodate: '',
     downloading: 'Downloading update…',
     installing: 'Installing…',
     restarting: 'Restarting TenantPro…',
     error: 'Update failed'
 };
 
-const DOWNLOAD_CEILING = 0.92;
-
-// Release notes travel inside the update manifest (expo.extra.releaseNotes).
-// EAS nests the app config under extra.expoClient on modern manifests and puts
-// it at the top level on older ones, so accept both, and an array or a
-// newline-joined string.
-function readNotes(manifest) {
-    const m = manifest || {};
-    const extra = (m.extra && m.extra.expoClient && m.extra.expoClient.extra) || m.extra || {};
-    const raw = extra.releaseNotes != null ? extra.releaseNotes : extra.whatsNew;
-    const list = Array.isArray(raw) ? raw : (typeof raw === 'string' ? raw.split('\n') : []);
-    return list.map((l) => String(l).trim().replace(/^[-•*]\s*/, '')).filter(Boolean);
-}
-
-// Fall back to the notes baked into this build so the sheet is never empty.
-function localNotes() {
-    const extra = (Constants.expoConfig && Constants.expoConfig.extra) || {};
-    const raw = extra.releaseNotes != null ? extra.releaseNotes : extra.whatsNew;
-    const list = Array.isArray(raw) ? raw : (typeof raw === 'string' ? raw.split('\n') : []);
-    return list.map((l) => String(l).trim().replace(/^[-•*]\s*/, '')).filter(Boolean);
-}
-
 export default function UpdateSheet() {
     const t = useT();
-    const [visible, setVisible] = useState(false);
-    const [notes, setNotes] = useState([]);
-    const [phase, setPhase] = useState('idle');
-    const [progress, setProgress] = useState(0);
-    const [errorText, setErrorText] = useState('');
-
-    const tickRef = useRef(null);
+    const u = useUpdates();
+    const { visible, notes, phase, progress, error: errorText } = u;
     const busy = phase === 'downloading' || phase === 'installing' || phase === 'restarting';
-    const busyRef = useRef(busy);
-    useEffect(() => { busyRef.current = busy; }, [busy]);
 
     const rise = useRef(new Animated.Value(0)).current;
     useEffect(() => {
@@ -69,63 +46,15 @@ export default function UpdateSheet() {
         }
     }, [visible, rise]);
 
-    const clearTick = useCallback(() => {
-        if (tickRef.current) { clearInterval(tickRef.current); tickRef.current = null; }
-    }, []);
-    useEffect(() => clearTick, [clearTick]);
-
-    const check = useCallback(async () => {
-        // Only meaningful in a real build with updates compiled in — never in dev.
-        if (__DEV__ || !Updates.isEnabled) return;
-        if (busyRef.current) return; // don't interrupt a running install
-        try {
-            const res = await Updates.checkForUpdateAsync();
-            if (res.isAvailable) {
-                const fromManifest = readNotes(res.manifest);
-                setNotes(fromManifest.length ? fromManifest : localNotes());
-                setErrorText('');
-                setPhase('idle');
-                setProgress(0);
-                setVisible(true);
-            }
-        } catch (e) {
-            // Offline or the update server is unreachable — stay silent.
-        }
-    }, []);
-
+    // Launch, and every time the app comes back to the foreground. Quiet when
+    // there is nothing to say — see the note on `manual` in updates.js.
     useEffect(() => {
         check();
-        const sub = AppState.addEventListener('change', (s) => { if (s === 'active') check(); });
+        const sub = AppState.addEventListener('change', (st) => { if (st === 'active') check(); });
         return () => sub.remove();
-    }, [check]);
+    }, []);
 
-    const updateNow = async () => {
-        setErrorText('');
-        setPhase('downloading');
-        setProgress(0.06);
-        clearTick();
-        tickRef.current = setInterval(() => {
-            setProgress((p) => (p >= DOWNLOAD_CEILING ? p : p + (DOWNLOAD_CEILING - p) * 0.08));
-        }, 220);
-        try {
-            await Updates.fetchUpdateAsync();
-            clearTick();
-            setProgress(1);
-            setPhase('installing');
-            await new Promise((r) => setTimeout(r, 450));
-            setPhase('restarting');
-            await Updates.reloadAsync();
-        } catch (e) {
-            clearTick();
-            setPhase('error');
-            setProgress(0);
-            setErrorText(
-                e && e.message
-                    ? `Could not install the update: ${e.message}`
-                    : 'Could not install the update. Please try again.'
-            );
-        }
-    };
+    const updateNow = install;
 
     if (!visible) return null;
 
@@ -137,7 +66,7 @@ export default function UpdateSheet() {
         >
             {/* scrim — not dismissible mid-install */}
             <Press
-                onPress={busy ? undefined : () => setVisible(false)}
+                onPress={busy ? undefined : dismiss}
                 disabled={busy}
                 style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(4,4,6,0.72)' }}
             />
@@ -199,9 +128,12 @@ export default function UpdateSheet() {
                 {!busy ? (
                     <Row gap={10}>
                         <Press
-                            onPress={() => setVisible(false)}
+                            onPress={dismiss}
                             style={{ flex: 1, paddingVertical: 15, borderRadius: 999, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line, alignItems: 'center' }}
                         >
+                            {/* "Later" is no longer a one-way door: Settings on
+                                both portals now has a Check for updates row
+                                that brings this back. */}
                             <T w={600} s={14} c={t.fg2}>Later</T>
                         </Press>
                         <Press
