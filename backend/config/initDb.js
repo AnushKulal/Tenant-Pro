@@ -174,6 +174,14 @@ const initDb = async () => {
         // Maintenance requests gained an optional photo of the problem. The table
         // already exists on every deployed database, so CREATE TABLE IF NOT EXISTS
         // will not add the column — this will.
+        // A tenant under 18 cannot contract in their own name, so the signup form
+        // asks and — since this release — records who can. Three columns, added
+        // here as well as in schema.sql so an existing database picks them up on
+        // the next boot rather than only a freshly created one.
+        await ensureColumn(conn, 'tenant_users', 'guardian_name', 'varchar(120) DEFAULT NULL');
+        await ensureColumn(conn, 'tenant_users', 'guardian_relation', 'varchar(40) DEFAULT NULL');
+        await ensureColumn(conn, 'tenant_users', 'guardian_phone', 'varchar(20) DEFAULT NULL');
+
         await ensureColumn(conn, 'maintenance_requests', 'image_url', 'varchar(500) DEFAULT NULL');
 
         // maintenance_messages became the request's whole timeline rather than just

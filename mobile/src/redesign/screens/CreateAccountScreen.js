@@ -263,9 +263,68 @@ export default function CreateAccountScreen() {
               <Glyph name="shield-checkmark" size={16} color={t.amber} />
               <T mono w={600} s={10} ls={0.12} c={t.amber}>GUARDIAN REQUIRED</T>
             </View>
-            {vm.guardianFields.map((gf, i) => (
-              <Field key={i} f={gf} iconColor={t.amber} />
-            ))}
+
+            {/* These used to be four rows of static text — the literal strings
+                "Required", "Parent · Guardian · Warden" and "Upload a signed
+                copy", rendered read-only — under a button that said "Send for
+                guardian consent" and called the same register() as everyone
+                else. Nothing was collected and nobody was ever sent anything.
+                They are real inputs now, and the server refuses the signup
+                without them. */}
+            <FieldRow t={t} icon="person-outline" label="GUARDIAN NAME" error={vm.fieldErr('gname')}>
+              <TextInput
+                value={vm.authGuardianName}
+                onChangeText={vm.setAuthGuardianName}
+                placeholder="Their full name"
+                placeholderTextColor={t.fg3}
+                autoCapitalize="words"
+                autoCorrect={false}
+                style={inputStyle}
+              />
+            </FieldRow>
+
+            <FieldRow t={t} icon="call-outline" label="GUARDIAN MOBILE" error={vm.fieldErr('gphone')}>
+              <TextInput
+                value={vm.authGuardianPhone}
+                onChangeText={vm.setAuthGuardianPhone}
+                placeholder="+91 00000 00000"
+                placeholderTextColor={t.fg3}
+                keyboardType="phone-pad"
+                autoCorrect={false}
+                style={inputStyle}
+              />
+            </FieldRow>
+
+            {/* Relationship is optional and offered as chips. Three words cover
+                almost every case, and a landlord reading "Mum", "mother" and
+                "M" down one column learns nothing from the difference. */}
+            <View style={{ paddingHorizontal: 18, paddingTop: 14, paddingBottom: 16 }}>
+              <T mono w={600} s={10} ls={0.12} c={t.fg3} style={{ marginBottom: 10 }}>
+                RELATIONSHIP (OPTIONAL)
+              </T>
+              <View style={{ flexDirection: 'row', columnGap: 7 }}>
+                {vm.guardianRelations.map((r) => (
+                  <Press
+                    key={r.label}
+                    onPress={r.go}
+                    style={{
+                      flex: 1,
+                      paddingVertical: 11,
+                      borderRadius: 12,
+                      borderWidth: 1,
+                      borderColor: r.on ? t.fg : t.line,
+                      backgroundColor: r.on ? t.fg : 'transparent',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}
+                  >
+                    <T mono w={600} s={10} ls={0.06} c={r.on ? t.ink : t.fg2}>
+                      {r.label.toUpperCase()}
+                    </T>
+                  </Press>
+                ))}
+              </View>
+            </View>
           </View>
         )}
 

@@ -263,6 +263,20 @@ CREATE TABLE IF NOT EXISTS `tenant_users` (
   -- whether the person has SEEN any of it. NULL = never opened, which correctly
   -- leaves everything unread on first run.
   `alerts_seen_at` datetime DEFAULT NULL,
+  -- Who signs for a tenant who cannot sign for themselves.
+  --
+  -- Under the Indian Contract Act a person under 18 is not competent to
+  -- contract, so a minor cannot hold a tenancy in their own name — which is the
+  -- entire reason the signup form asks. These three columns are what the app
+  -- collects when the answer is "under 18": enough for the landlord to reach the
+  -- person who CAN consent, and nothing more. No date of birth, no guardian
+  -- address, no document: none of that is needed to make the call.
+  --
+  -- NULL on an adult's account, and on every account created before this
+  -- existed.
+  `guardian_name` varchar(120) DEFAULT NULL,
+  `guardian_relation` varchar(40) DEFAULT NULL,
+  `guardian_phone` varchar(20) DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   PRIMARY KEY (`id`),
   UNIQUE KEY `email` (`email`),

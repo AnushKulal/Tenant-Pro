@@ -11,9 +11,42 @@ const { forSignup, phoneTaken } = require('../utils/signupPhone');
 // --- Tenant Registration ---
 const registerTenant = async (req, res) => {
     try {
-        const { name, email, phone, password } = req.body;
+        const { name, email, phone, password, adult, guardian } = req.body;
         if (!name || !email || !phone || !password) {
             return res.status(400).json({ message: 'All fields are required.' });
+        }
+
+        // ── A tenant under 18 ────────────────────────────────────────────────
+        //
+        // Under the Indian Contract Act a person under 18 is not competent to
+        // contract, so a minor cannot hold a tenancy in their own name. The app
+        // has always ASKED the question; until now it did nothing with the
+        // answer — the under-18 path showed a "GUARDIAN REQUIRED" card made of
+        // static text, promised to text a consent link, and then called this
+        // endpoint exactly as an adult would.
+        //
+        // `adult` is only ever false when the client says so, so an old build
+        // that sends nothing keeps working and is treated as an adult, which is
+        // what it was already doing.
+        //
+        // What is required is the minimum needed to reach the person who can
+        // consent: a name and a number. Not a date of birth, not an address, not
+        // a document — none of which help a landlord make the call.
+        const isMinor = adult === false;
+        const g = guardian && typeof guardian === 'object' ? guardian : {};
+        const gName = String(g.name || '').trim();
+        const gPhone = String(g.phone || '').trim();
+        const gRelation = String(g.relation || '').trim();
+        if (isMinor) {
+            if (!gName) {
+                return res.status(400).json({ message: "Enter your guardian's name." });
+            }
+            // Same rule as the tenant's own number, and for the same reason: it is
+            // checked here as well as in the app because the app is not the only
+            // thing that can reach this endpoint.
+            if (String(gPhone).replace(/[^0-9]/g, '').length < 10) {
+                return res.status(400).json({ message: "Enter your guardian's mobile number." });
+            }
         }
         if (password.length < 6) {
             return res.status(400).json({ message: 'Password must be at least 6 characters.' });
@@ -56,10 +89,20 @@ const registerTenant = async (req, res) => {
 
         const passwordHash = await bcrypt.hash(password, 10);
         const [result] = await db.query(
-            'INSERT INTO tenant_users (name, email, phone, password_hash) VALUES (?, ?, ?, ?)',
+            `INSERT INTO tenant_users
+                (name, email, phone, password_hash, guardian_name, guardian_relation, guardian_phone)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
             // Normalised, so the phone-match below and this row agree about what
             // number this account is on.
-            [name, email, phoneToStore, passwordHash]
+            // The guardian columns are NULL for an adult rather than empty
+            // strings: "no guardian" and "a guardian whose name we failed to
+            // capture" must not look the same in the table.
+            [
+                name, email, phoneToStore, passwordHash,
+                isMinor ? gName : null,
+                isMinor && gRelation ? gRelation : null,
+                isMinor ? gPhone : null
+            ]
         );
 
         const session = await issueSession({

@@ -346,8 +346,17 @@ const withoutField = (map, key) => {
 // Indian rather than refusing it (see backend/utils/signupPhone.js), so this only
 // catches a number too short to be one at all; rejecting "not Indian" here would
 // lock out exactly the people that file went out of its way to keep.
-const signupFieldErrors = ({ name, email, phone, password }) => {
+const signupFieldErrors = ({ name, email, phone, password, minor, guardianName, guardianPhone }) => {
   const e = {};
+  // A tenant under 18 cannot hold the tenancy themselves, so the person who can
+  // has to be reachable. Checked here AND on the server: this is the one answer
+  // on the form that changes who is party to the agreement.
+  if (minor) {
+    if (!String(guardianName || '').trim()) e.gname = "Enter your guardian's name.";
+    const gd = String(guardianPhone || '').replace(/[^0-9]/g, '');
+    if (!String(guardianPhone || '').trim()) e.gphone = "Enter your guardian's mobile number.";
+    else if (gd.length < 10) e.gphone = 'A mobile number needs at least 10 digits.';
+  }
   if (!String(name || '').trim()) e.name = 'Enter your name.';
   const id = String(email || '').trim();
   if (!id) e.id = 'Enter your email address.';
@@ -599,6 +608,11 @@ const INITIAL_STATE = {
   authPw: '',
   authName: '',           // register only
   authPhone: '',          // register only
+  // Who signs for a tenant who cannot sign for themselves. Only ever filled in
+  // on the tenant form, and only once "under 18" has been chosen.
+  authGuardianName: '',
+  authGuardianRelation: '',
+  authGuardianPhone: '',
   authBusy: false,
   authError: '',
   // Which FIELD is wrong, not just that something is.
@@ -2298,6 +2312,20 @@ function deriveVm(s, api) {
     setAuthPw: (e) => setState({ authPw: evStr(e), authFieldErrors: withoutField(s.authFieldErrors, 'pw') }),
     setAuthName: (e) => setState({ authName: evStr(e), authFieldErrors: withoutField(s.authFieldErrors, 'name') }),
     setAuthPhone: (e) => setState({ authPhone: evStr(e), authFieldErrors: withoutField(s.authFieldErrors, 'phone') }),
+    authGuardianName: s.authGuardianName,
+    authGuardianRelation: s.authGuardianRelation,
+    authGuardianPhone: s.authGuardianPhone,
+    setAuthGuardianName: (e) => setState({ authGuardianName: evStr(e), authFieldErrors: withoutField(s.authFieldErrors, 'gname') }),
+    setAuthGuardianRelation: (e) => setState({ authGuardianRelation: evStr(e) }),
+    setAuthGuardianPhone: (e) => setState({ authGuardianPhone: evStr(e), authFieldErrors: withoutField(s.authFieldErrors, 'gphone') }),
+    // Offered as chips rather than a free-text box: three words cover almost
+    // every case, and a landlord reading "Mum" and "mother" and "M" in the same
+    // column learns nothing from the difference.
+    guardianRelations: ['Parent', 'Guardian', 'Warden'].map((label) => ({
+      label,
+      on: s.authGuardianRelation === label,
+      go: () => setState({ authGuardianRelation: s.authGuardianRelation === label ? '' : label })
+    })),
     // Signs in against the real backend; picks the owner or tenant endpoint from
     // the current route so one action serves both login screens.
     // The identifier has to match the EMAIL/MOBILE switch. Checked here so the
@@ -2589,10 +2617,18 @@ function deriveVm(s, api) {
       : 'This is where you add your properties, your tenants and the rent they owe.',
     // No guardian path on the landlord form: the age question is not asked
     // there, so `adult` must not be allowed to change its button.
-    signupCta: (s.signupRole === 'tenant' && !s.adult) ? 'Send for guardian consent' : 'Create my account',
+    // It used to say "Send for guardian consent", which described a thing the app
+    // did not do: the button called the same register() the adult path did, and
+    // nothing was ever sent to anybody. It makes an account, so it says so.
+    signupCta: 'Create my account',
     signupNote: s.adult
       ? 'You can sign your own agreement and pay rent directly.'
-      : 'A guardian or warden must confirm before the tenancy can start. We will text them a consent link.',
+      // Also rewritten. The old line promised "We will text them a consent
+      // link" — there is no such message, in the app or on the server, and the
+      // server reports SMS as not configured at all. This says what actually
+      // happens: the details are recorded and the landlord has to get consent
+      // before a tenancy can start.
+      : 'Someone under 18 cannot sign a tenancy themselves. Your guardian\u2019s details go to your landlord, who must have their consent before your tenancy can start.',
     submitSignup: () => api.register(),
 
     jfilters: [['ALL', 'all'], ['KORAMANGALA', 'koramangala'], ['HSR LAYOUT', 'hsr layout'], ['SHARING', 'sharing'], ['PRIVATE', 'single']].map(([label, k]) => {
@@ -8321,8 +8357,16 @@ export function AppProvider({ children }) {
     // scrolled past a short field still needs telling that the form did not go —
     // but it now counts the problems instead of listing the rule, and the rows say
     // which ones they are.
+    // `minor` only applies on the tenant form. The landlord form does not ask
+    // the age question at all, so `adult` must not be allowed to put a guardian
+    // requirement on a landlord's signup through a stale flag.
+    const st = stateRef.current;
+    const isMinor = asTenant && st.adult === false;
     const fieldErrors = signupFieldErrors({
-      name: authName, email: authId, phone: authPhone, password: authPw
+      name: authName, email: authId, phone: authPhone, password: authPw,
+      minor: isMinor,
+      guardianName: st.authGuardianName,
+      guardianPhone: st.authGuardianPhone
     });
     const bad = Object.keys(fieldErrors);
     if (bad.length) {
@@ -8337,6 +8381,19 @@ export function AppProvider({ children }) {
     setState({ authBusy: true, authError: '', authFieldErrors: {} });
     try {
       const payload = { name: authName.trim(), email: authId.trim(), phone: authPhone.trim(), password: authPw };
+      // Sent only from the tenant form, and only when the answer was "under 18".
+      // The server defaults a missing `adult` to true, so an older build that
+      // knows nothing about this keeps working exactly as it did.
+      if (asTenant) {
+        payload.adult = st.adult !== false;
+        if (isMinor) {
+          payload.guardian = {
+            name: String(st.authGuardianName || '').trim(),
+            relation: String(st.authGuardianRelation || '').trim(),
+            phone: String(st.authGuardianPhone || '').trim()
+          };
+        }
+      }
       const res = asTenant ? await apiAuth.registerTenant(payload) : await apiAuth.registerOwner(payload);
       const user = res.owner || res.tenant || null;
       if (res.token) {
