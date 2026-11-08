@@ -16,3 +16,4 @@ tests/crossshots/
 tests/alertshots/
 tests/rolesignupshots/
 tests/updateshots/
+tests/bannershots/

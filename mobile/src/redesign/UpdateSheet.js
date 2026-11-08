@@ -21,6 +21,7 @@ import { T, Eyebrow, Row, Press, Glyph, Monogram } from './ui';
 // answer. A Settings row with its own copy would be a second opinion about
 // whether an update exists, and the two would drift the first time one failed.
 import { useUpdates, check, install, dismiss } from './updates';
+import { checkStoreVersion } from './storeUpdate';
 
 const PHASE_LABEL = {
     idle: '',
@@ -50,7 +51,13 @@ export default function UpdateSheet() {
     // there is nothing to say — see the note on `manual` in updates.js.
     useEffect(() => {
         check();
-        const sub = AppState.addEventListener('change', (st) => { if (st === 'active') check(); });
+        // The other kind of update, asked for at the same two moments. It cannot
+        // be installed from in here, so it never opens this sheet — it raises
+        // the banner at the top of every screen instead. See storeUpdate.js.
+        checkStoreVersion();
+        const sub = AppState.addEventListener('change', (st) => {
+            if (st === 'active') { check(); checkStoreVersion(); }
+        });
         return () => sub.remove();
     }, []);
 

@@ -97,6 +97,7 @@ const { ensureDemoAccount } = require('./config/seedDemo');
 // Sample listed rooms, so discovery is not an empty screen on the day it ships.
 const { ensureShowcaseListings } = require('./config/seedShowcase');
 const { discoverEnabled } = require('./controllers/discoverController');
+const { getAppVersion, storeRelease } = require('./controllers/appVersionController');
 
 // For /healthz. "off" when DISCOVER_ENABLED=false — the whole feature is hidden and
 // the room count would be misleading. Otherwise how many rooms a tenant can find:
@@ -178,6 +179,13 @@ app.use('/api/tenant-portal', tenantPortalRoutes);
 // why webhookController refuses anything it cannot verify.
 app.use('/api/webhooks', webhookRoutes);
 
+// "Is there a newer app than the one I am running?" Public and unauthenticated
+// on purpose: somebody on a build too old to sign in is exactly who most needs
+// telling. See controllers/appVersionController.js — the comparison lives on the
+// server so a mistake in it can be fixed with a deploy rather than through the
+// very update mechanism that is broken.
+app.get('/api/app/version', getAppVersion);
+
 // A blurred ID proof, streamed for a landlord whose tenant has moved out.
 //
 // Mounted OUTSIDE the owner guard on purpose: a React Native <Image> cannot send an
@@ -229,6 +237,14 @@ app.get('/healthz', async (req, res) => {
             // onto the running server from a machine that cannot reach it directly.
             // The count is of PUBLISHED rooms, which is exactly what a tenant sees.
             discover: await discoverStatus(),
+            // Visible here so a misconfigured store release is findable in one
+            // request, rather than inferred from a banner that never appears on
+            // anybody's phone.
+            storeBuild: (() => {
+                const r = storeRelease();
+                if (!r.latest) return 'not announced (no APP_LATEST_VERSION set)';
+                return `${r.latest}${r.minimum ? ` (minimum ${r.minimum})` : ''}${r.url ? '' : ' — NO APP_DOWNLOAD_URL SET'}`;
+            })(),
             time: new Date().toISOString()
         });
     } catch (e) {

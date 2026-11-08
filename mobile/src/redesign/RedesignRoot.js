@@ -26,6 +26,7 @@ import Tour from './Tour';
 import Toast from './Toast';
 import DocViewer from './docview';
 import UpdateSheet from './UpdateSheet';
+import StoreBanner from './StoreBanner';
 import Loading from './Loading';
 
 import OnboardingScreen from './screens/OnboardingScreen';
@@ -229,6 +230,17 @@ function Shell() {
         <View style={{ flex: 1, backgroundColor: t.ink }}>
             {/* status-bar spacer — the ink field runs under the OS status bar */}
             <View style={{ height: insets.top, backgroundColor: t.ink }} />
+
+            {/* "A new version is available" — the kind that changes the app
+                itself and so has to come from the store. Mounted HERE, above the
+                header and outside LayoutProvider, for two reasons: it is then on
+                every page and every module without a single screen knowing it
+                exists, and it PUSHES content down rather than floating over it.
+                A notice that covered the top of the screen would hide the title
+                of whatever you were reading, which is the thing the alignment
+                rule exists to stop. Renders nothing at all unless the server has
+                announced a newer build than this one. */}
+            <StoreBanner />
 
             {/* The header and the body it sits above, in that order, as the two
                 regions below the system bars. They are wrapped together because

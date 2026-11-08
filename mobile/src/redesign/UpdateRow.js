@@ -37,17 +37,20 @@ import { View, ActivityIndicator } from 'react-native';
 import { useT } from './ThemeContext';
 import { T, Press, Glyph } from './ui';
 import { useUpdates, check, install, describeUpdateState } from './updates';
+import { useStoreUpdate, checkStoreVersion } from './storeUpdate';
 
 export default function UpdateRow({ build }) {
     const t = useT();
     const u = useUpdates();
     const d = describeUpdateState(u, build || {});
 
+    const store = useStoreUpdate();
+
     const ready = u.phase === 'available';
     const onPress = () => {
         if (d.busy) return;
         if (ready) install();
-        else check({ manual: true });
+        else { check({ manual: true }); checkStoreVersion(); }
     };
 
     // When was it last looked at. Only shown once something has actually been
@@ -136,6 +139,25 @@ export default function UpdateRow({ build }) {
                 >
                     <T w={700} s={13.5} c={ready ? t.on : t.fg}>{d.cta}</T>
                 </Press>
+            ) : null}
+
+            {/* The other kind of update. The row above is about the OTA kind,
+                which this app can install; this line is about a new build, which
+                it cannot. Shown here as well as in the banner so that somebody
+                who came to Settings to ask gets the whole answer in one place —
+                "you are on the latest version" would otherwise be true of the
+                bundle and misleading about the app. */}
+            {store.available && store.latest ? (
+                <View style={{ borderTopWidth: 1, borderTopColor: t.line, paddingTop: 11, rowGap: 3 }}>
+                    <T w={600} s={12.5} lh={1.3} c={t.fg}>
+                        {`Version ${store.latest} is available in the store`}
+                    </T>
+                    <T w={400} s={11.5} lh={1.4} c={t.fg2}>
+                        {store.notes.length
+                            ? store.notes[0]
+                            : 'This one changes the app itself, so it installs from the store rather than from here.'}
+                    </T>
+                </View>
             ) : null}
 
             {ago && !d.busy ? (
