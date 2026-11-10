@@ -37,11 +37,15 @@ funds and bills nobody.
 That keeps the operator outside the Reserve Bank of India's payment-aggregator
 perimeter, which carries an authorisation requirement and a net-worth floor in
 the tens of crores. It has a cost, and the design pays it openly: an application
-that does not touch the money cannot see it. So every payment begins as a
-*claim* and stays one until a second party vouches for it — the landlord tapping
-Confirm, or the gateway answering a direct query from the server. Both routes
-end in the same settlement function, so they cannot disagree about when a month
-has cleared.
+that does not touch the money cannot see it. So a payment a **tenant** reports
+begins as a *claim* and stays one until a second party vouches for it — the
+landlord tapping Confirm, or the gateway answering a direct query from the
+server. Both of those end in the same settlement function, so they cannot
+disagree about when a month has cleared.
+
+A payment the **landlord** enters themselves is the exception: it is recorded as
+confirmed outright, because it is their own statement about their own money and
+there is nobody left to verify it against.
 
 ## Features
 
@@ -85,7 +89,7 @@ Tenant-Pro/
 ├── backend/              Node + Express API
 │   ├── config/           schema.sql, migrations, seed data
 │   ├── controllers/      request handlers
-│   ├── routes/           96 endpoints
+│   ├── routes/           91 endpoints (96 in all, with 5 declared in server.js)
 │   ├── services/         mail, push, cron, settlement
 │   └── utils/            credential sealing, phone normalisation
 ├── mobile/
