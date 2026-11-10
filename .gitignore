@@ -17,3 +17,10 @@ tests/alertshots/
 tests/rolesignupshots/
 tests/updateshots/
 tests/bannershots/
+
+# Build output of docs/report-src/build_report.py. The published copies live
+# in docs/; these are the intermediates the build leaves behind.
+docs/report-src/TenantPro Project Report.docx
+docs/report-src/TenantPro Project Report.pdf
+docs/report-src/pass1.docx
+docs/report-src/pass1.pdf
