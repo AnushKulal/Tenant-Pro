@@ -1451,6 +1451,29 @@ export default function Sheets() {
                                             <T w={400} s={12.5} lh={1.5} c={t.fg2} style={{ marginTop: 11 }}>{`“${j.note}”`}</T>
                                         ) : null}
 
+                                        {/* Under eighteen. Drawn like the "matched"
+                                            card above it, and for the same reason: it
+                                            is not decoration on the row, it changes the
+                                            decision being made on it. A minor cannot
+                                            hold a tenancy in their own name, so the
+                                            person who consents has to be reachable
+                                            BEFORE the landlord accepts, not after. */}
+                                        {j.isMinor ? (
+                                            <View style={{ marginTop: 11, padding: 11, borderRadius: 13, backgroundColor: t.asoft, borderWidth: 1, borderColor: t.line }}>
+                                                <Row gap={7} align="center">
+                                                    <Glyph name="shield-checkmark" size={14} color={t.amber} />
+                                                    <T mono w={600} s={9.5} ls={0.1} c={t.amber}>UNDER 18 — GUARDIAN CONSENTS</T>
+                                                </Row>
+                                                <T w={600} s={12.5} lh={1.4} c={t.fg} style={{ marginTop: 6 }}>{j.guardianLine}</T>
+                                                {j.guardianPhoneLabel ? (
+                                                    <Press onPress={j.callGuardian} style={{ marginTop: 8, flexDirection: 'row', alignItems: 'center', columnGap: 6, paddingVertical: 9, paddingHorizontal: 11, borderRadius: 11, backgroundColor: t.ink2, borderWidth: 1, borderColor: t.line, alignSelf: 'flex-start' }}>
+                                                        <Glyph name="call" size={13} color={t.pos} />
+                                                        <T w={600} s={12} c={t.fg}>{j.guardianPhoneLabel}</T>
+                                                    </Press>
+                                                ) : null}
+                                            </View>
+                                        ) : null}
+
                                         {/* Reach them before deciding. */}
                                         <Row gap={7} style={{ marginTop: 12 }}>
                                             <Press onPress={j.call} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', columnGap: 6, paddingVertical: 11, borderRadius: 13, backgroundColor: t.lsoft, borderWidth: 1, borderColor: t.line }}>

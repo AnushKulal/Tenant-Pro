@@ -3337,6 +3337,21 @@ function deriveVm(s, api) {
           property: j.property,
           note: j.note,
           hasNote: !!j.note,
+          // Under eighteen, and who consents for them.
+          //
+          // The signup form tells a minor that their guardian's details go to
+          // their landlord. They were written to the account and read back by
+          // nothing, so the sentence was not true — the same shape of promise
+          // this form was rewritten to stop making. It is true now: the
+          // landlord sees it on the row where they decide.
+          isMinor: !!j.guardian,
+          guardianLine: j.guardian
+            ? `${j.guardian.name}${j.guardian.relation ? ` · ${j.guardian.relation}` : ''}`
+            : '',
+          guardianPhoneLabel: j.guardian && j.guardian.phone ? fmtPhone(j.guardian.phone) : '',
+          callGuardian: () => (j.guardian && j.guardian.phone
+            ? callNumber(j.guardian.phone, j.guardian.name)
+            : flash('No guardian number on file')),
           // Somebody the landlord entered themselves, who has now registered — not a
           // stranger at the door. Shown as its own line because the difference decides
           // the answer: "wants to join" invites a decline, and declining here declines
@@ -8413,6 +8428,12 @@ export function AppProvider({ children }) {
           route: asTenant ? 'tdocs' : 'home'
         });
         flash('Account created');
+        // The fourth way into a portal, and the one that was missed when the
+        // other three were wired up. A commit claimed this path was covered; it
+        // was not, and a fact-check against the code found the claim before a
+        // user did. Someone who registers is the single most likely person to
+        // want the tour, so of the four this was the worst one to omit.
+        maybeStartTour(asTenant ? 'tenant' : 'owner');
         // A code carried in from "Join as a guest" is spent here, the moment there is
         // an account to attribute the request to. Sent BEFORE the ID step rather than
         // after: the landlord sees it straight away with a "NO ID ON FILE" badge,

@@ -53,7 +53,7 @@ there is nobody left to verify it against.
 - Properties, rooms and tenants, with occupancy and arrears at a glance
 - Rent due dates computed per tenancy, not per calendar month
 - A confirmation queue: no payment settles on the payer's say-so
-- Ledger of every rupee in and out, searchable
+- Ledger of every rupee in, searchable by person, room, method, reference, amount or date
 - Maintenance tickets with a shared thread per issue
 - Tenant identity documents, with the landlord's read revoked when a tenancy ends
 - Rent reminders by email and push
@@ -69,7 +69,7 @@ there is nobody left to verify it against.
 
 **Both**
 - A guided tour on first run, replayable from Settings
-- A notifications bell built from data already held — no extra endpoint
+- A notifications bell whose rows are derived from data already held — no new list endpoint, though marking them seen needed one
 - Check for updates from Settings, and a notice when a new build is out
 
 ## Tech
@@ -90,12 +90,13 @@ Tenant-Pro/
 │   ├── config/           schema.sql, migrations, seed data
 │   ├── controllers/      request handlers
 │   ├── routes/           91 endpoints (96 in all, with 5 declared in server.js)
-│   ├── services/         mail, push, cron, settlement
+│   ├── services/         sessions, push, cron, gateway, SMS, scoring
 │   └── utils/            credential sealing, phone normalisation
 ├── mobile/
 │   └── src/
-│       ├── redesign/     the current UI: screens, view-model, layout rule
-│       └── api/          request client, token refresh, interceptors
+│       ├── redesign/     the current UI: screens, view-model, layout rule,
+│       │                 request client, token refresh, interceptors
+│       └── api/          the older axios client, kept for the v1 screens
 ├── tests/                22 suites, 750 assertions, no test framework
 ├── docs/                 project report, payments setup, test plan
 └── .github/workflows/    OTA publish, Android build, rollback
@@ -119,8 +120,10 @@ cp .env.example .env          # then fill in DB_* and JWT_SECRET
 node server.js
 ```
 
-The schema is created and migrated on first boot from `config/schema.sql` — there
-is no separate import step. For data to work with:
+Create the database itself first (`CREATE DATABASE tenantpro;`) — the server
+connects to the one `DB_NAME` names and will not create it. Everything inside it
+is then created and migrated on each boot from `config/schema.sql`, so there is
+no import step and no migration to run by hand. For data to work with:
 
 ```bash
 node scripts/seed.js --wipe
@@ -147,10 +150,33 @@ It is the fastest way to find a misconfiguration.
 ## Tests
 
 ```bash
-node tests/api.e2e.js        # against a live server and real MySQL
-node tests/ui.e2e.js         # the compiled app, driven in Chromium
-node tests/layout.test.js    # pure, no server needed
+# Pure suites need nothing running.
+node tests/layout.test.js
+node tests/appversion.test.js
+
+# The API suite needs a live server and a seeded database. The three accounts
+# have no defaults — `scripts/seed.js` prints the ones it just made — and the
+# suite's own default port is 4000, so E2E_BASE has to match your server.
+E2E_BASE=http://127.0.0.1:5000 \
+E2E_OWNER=landlord20260101@example.com \
+E2E_TENANT=sandeep.naik1000@example.com \
+E2E_UNLINKED=sneha.bhat2000@example.com \
+node tests/api.e2e.js
+
+# The browser suites need the app exported for web and served first. The API URL
+# is baked in at export time, so it must match the port the server is on.
+cd mobile && EXPO_PUBLIC_API_URL=http://127.0.0.1:5000 \
+  npx expo export --platform web --output-dir /tmp/webdist && cd ..
+npx serve -s /tmp/webdist -l 8080 &
+UI_URL=http://127.0.0.1:8080 \
+E2E_OWNER=landlord20260101@example.com \
+E2E_TENANT=sandeep.naik1000@example.com \
+node tests/ui.e2e.js
 ```
+
+`tests/README.md` has the rest: which tenant not to point a suite at, that
+`api.e2e.js` mutates the database and wants a reseed between runs, and the rate
+limiter below.
 
 750 assertions across 22 suites. None of them uses a test framework: each is a
 plain Node script that exits non-zero on failure.
@@ -165,9 +191,10 @@ plain Node script that exits non-zero on failure.
   portals end to end, a ticket crossing from tenant to landlord with the clock
   running, discovery, the bell, the tour, signup validation, updates and layout.
 
-Anything behind a native module — camera, image picker, push delivery, the UPI
-hand-off — is **skipped rather than passed**, so a green run never claims
-coverage it does not have.
+Nothing behind a native module is asserted at all — camera, image picker, push
+delivery and the UPI hand-off are simply outside what a browser can reach — so a
+green run claims no coverage it does not have. It also does not announce the
+gap, which is worth knowing when reading one.
 
 A full run signs in often enough to trip the auth rate limiter. The production
 limits are the defaults; raise them for a test run only:

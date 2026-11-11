@@ -313,6 +313,18 @@ export function mapJoinRequest(r, now) {
         name: r.requester_name || 'Someone',
         email: r.requester_email || '',
         phone: r.requester_phone || '',
+        // Set only when the applicant said they are under eighteen at signup. A
+        // minor cannot hold a tenancy in their own name, so the landlord needs
+        // to know that while deciding rather than after, and needs a way to
+        // reach the person who can consent. Null for everybody else, which is
+        // what the screens test.
+        guardian: r.requester_guardian_name
+            ? {
+                name: r.requester_guardian_name,
+                relation: r.requester_guardian_relation || '',
+                phone: r.requester_guardian_phone || ''
+            }
+            : null,
         propertyId: r.property_id != null ? String(r.property_id) : null,
         property: r.property_name || '',
         unit: r.unit_number ? String(r.unit_number) : null,

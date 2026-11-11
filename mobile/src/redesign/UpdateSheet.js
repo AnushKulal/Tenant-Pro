@@ -100,7 +100,14 @@ export default function UpdateSheet() {
                     </View>
                 </Row>
 
-                {notes.length > 0 && phase === 'idle' ? (
+                {/* 'available' as well as 'idle'. The check used to leave the
+                    phase at 'idle' when it put this sheet on screen; the shared
+                    store sets 'available', so this gate silently stopped
+                    matching and the WHAT'S NEW list never rendered again. The
+                    sheet still appeared and still worked — it just stopped
+                    saying what it was about to install, which is the one thing
+                    it is there to say. */}
+                {notes.length > 0 && (phase === 'idle' || phase === 'available') ? (
                     <View style={{ backgroundColor: t.ink3, borderRadius: 18, borderWidth: 1, borderColor: t.line, padding: 15, marginBottom: 16, rowGap: 9 }}>
                         <Eyebrow s={9} ls={0.12} c={t.fg3}>WHAT’S NEW</Eyebrow>
                         {notes.slice(0, 5).map((n, i) => (
