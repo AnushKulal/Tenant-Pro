@@ -85,7 +85,7 @@ The rest stands. There are no accounting exports and no tax filing. Expense and 
 
 ### 1.6 Organization of the Report
 
-Seven chapters follow. Chapter 2 reviews the manual practices and the digital applications already in this space, together with the regulatory and security material that constrains any design here, and ends with a gap analysis. Chapter 3 analyses the existing arrangement, lists its limitations, describes what is proposed instead, and reports a feasibility study run along four axes. Chapter 4 covers the architecture, the use case, activity and data flow models, and the design of the payment, session and database layers. Chapter 5 states the hardware, software, functional and non-functional requirements. Chapter 6 goes through the implementation module by module and reports the testing and its results. Chapter 7 shows the finished interface with screenshots from the running application. Chapter 8 concludes, states the limitations honestly, and sets out what has been identified for later.
+Seven chapters and three appendices follow. Chapter 2 reviews the manual practices and the digital applications already in this space, then the regulatory, legal, accessibility and update-delivery material that constrains any design here, and ends with a gap analysis. Chapter 3 analyses the existing arrangement, lists its limitations, describes what is proposed instead, and reports a feasibility study run along four axes. Chapter 4 covers the architecture, the use case, activity and data flow models, and the design of the payment, session, database, layout, update and alert layers. Chapter 5 states the hardware, software, functional and non-functional requirements, the last two enumerated in full. Chapter 6 goes through the implementation module by module and reports the testing, its results and the strategy behind it. Chapter 7 shows the finished interface with screenshots from the running application. Chapter 8 concludes, states the limitations honestly, and sets out what has been identified for later. Appendix A lists every endpoint the server declares, Appendix B the database schema, and Appendix C every test suite in the build; all three are generated from the source rather than maintained by hand.
 
 
 ---
@@ -154,7 +154,85 @@ Current practice, set out in the OAuth 2.0 security guidance, pairs a short-live
 The literature is equally clear that the client half is where this usually goes wrong. A client that signs the user out on any authentication-looking error will sign them out on a dropped connection. A client that fires several requests at once on a cold start, all failing on the same expired token, will issue several refreshes, and all but the first will replay a spent token — which a correctly implemented server reads as theft. Both failure modes were designed against here and both are covered by tests.
 
 
-### 2.6 Gap Analysis
+### 2.7 The Regulatory and Legal Setting
+
+Most of the design decisions in this project were taken under constraints that come from outside software. They are set out here because a reader who does not know them will read several later choices as arbitrary when they are not. The account below is deliberately cautious. Where a point rests on commentary rather than on the text of a regulation, it says so, and nothing here should be read as legal advice.
+
+
+#### 2.7.1 Who may hold somebody else's money
+
+The Reserve Bank of India regulates entities that collect payments from customers and pass them on to merchants. An entity that does this is a payment aggregator, and operating as one requires authorisation, a minimum net worth running into the tens of crores of rupees, and the holding of collected funds in an escrow account with a scheduled commercial bank. The framework has been revised more than once since it was first issued, and the direction of travel has been towards bringing more arrangements inside it rather than fewer.
+
+The practical consequence for a small rental application is blunt. The moment the platform receives a tenant's rent and later pays it to the landlord, it is doing the thing the framework describes, whatever it calls itself and however briefly it holds the money. The alternative is not to receive it at all, which is the route taken here and the reason the confirmation model exists in the form it does.
+
+It is worth being precise about what the platform does do, because "does not touch the money" can sound like a slogan. The application computes the amount owed, names the destination — a UPI address belonging to the landlord, or a payment link issued against the landlord's own merchant account — and records what the parties say happened. The rupees move between the tenant's bank and the landlord's bank through rails the platform has no part in. No account belonging to the operator appears anywhere in that chain.
+
+
+#### 2.7.2 The gateway route, and why it is not an exception
+
+Where a landlord connects a payment gateway, money does pass through an intermediary, but the merchant account is the landlord's own. The landlord completes that gateway's verification in their own name, the funds settle to the landlord's bank on the gateway's schedule, and the platform's role is to ask the gateway to issue a payment link and later to ask it what happened. The gateway is the regulated entity; the landlord is its merchant; the platform is neither.
+
+The arrangement that would change this is split settlement, where a platform collects through its own account and the gateway divides the proceeds between the platform and the merchant. That is attractive because it removes the onboarding friction described in Chapter 8, and it is not pursued here, because it moves the operator into the category this design exists to stay out of.
+
+
+#### 2.7.3 Personal data
+
+The Digital Personal Data Protection Act, 2023 governs the handling of personal data in India, with rules issued subsequently and obligations that commence in stages. The duties most relevant to a system of this kind are familiar in shape to anyone who has met comparable regimes elsewhere: collect for a stated purpose, collect no more than that purpose needs, keep it no longer than the purpose requires, and secure it.
+
+Two design choices in this project follow directly. The first is the decision not to widen the registration form, described in Chapter 6: a field asked for before it is needed is personal data held without a purpose to justify it, and the survey of comparable platforms found none of them asking for an address, an employer or an income at account creation either. The second is the handling of identity documents, where the landlord's ability to read a tenant's document is tied to the tenancy and ends with it. A former landlord retaining a readable copy of a former tenant's identity document is exactly the retention this kind of obligation is aimed at.
+
+
+#### 2.7.4 Identity documents, and Aadhaar in particular
+
+Indian renting practice asks for an identity document, and in most cases that document is Aadhaar. The legal position around it is more restrictive than everyday practice suggests. The governing Act restricts the sharing of core biometric information outright, restricts the publication or public display of an Aadhaar number, and limits who may perform authentication against the Aadhaar database and under what permission. Private-entity authentication in particular has a history: a provision permitting it was struck down by the Supreme Court in 2018, and a later amendment reopened a narrower route that requires application and approval rather than being available on request.
+
+The design here avoids the whole area rather than navigating it. The application never authenticates anybody against Aadhaar, never asks for an Aadhaar number as a field, and treats Aadhaar as one of five acceptable documents rather than as a requirement — passport, driving licence, voter identity card and PAN are equally acceptable, and a tenant may satisfy the requirement with whichever they have. A document is held as an uploaded image, with the visibility rules described above, and no number is parsed out of it.
+
+This is a conservative reading, and a more permissive one is available. It was taken deliberately, on the view that a student project has no business building on a permission it has not obtained, and that a landlord looking at a photograph of a document is doing exactly what they would do at the front desk.
+
+
+#### 2.7.5 Who may sign a tenancy
+
+The Indian Contract Act, 1872 requires a party to a contract to be competent to contract, and a person who has not attained majority is not. The effect for rented accommodation is that a tenant under eighteen cannot hold a tenancy in their own name, and an agreement purporting to bind them is open to challenge.
+
+This is not an academic point for the population this project serves. Students in paying guest accommodation include people in their first year of higher education who have not yet turned eighteen, and a system that signs them up as ordinary tenants is recording something that does not hold. The application asks the question at registration and, since the work described in Chapter 6, records who consents on the minor's behalf and surfaces that person to the landlord before the landlord accepts them. What it does not do is attempt to capture or verify the consent itself, which is a document-and-signature problem rather than a form-field problem.
+
+
+#### 2.7.6 Tax, and why it shapes a field that does not exist yet
+
+Two parts of Indian income tax law touch rented accommodation directly. A tenant paying rent above a monthly threshold is required to deduct tax at source under section 194-IB and to file the corresponding form, which requires the landlord's permanent account number. Separately, an employee claiming house rent allowance must report the landlord's permanent account number to their employer once annual rent crosses a stated figure, or furnish a declaration instead.
+
+Neither obligation falls on the platform. Both fall on people the platform serves, and both require a piece of information the platform does not currently hold. That is the reason the landlord's permanent account number appears in Chapter 8 as identified future work rather than as a field somebody forgot: it is needed for a rent receipt to be useful to a salaried tenant, and collecting it has a purpose that can be stated, which is the test the previous section sets.
+
+
+#### 2.7.7 Verification of tenants by the police
+
+Several Indian states and cities require a landlord to have a new tenant verified by the local police, and the requirement is usually framed as an obligation on the landlord rather than on the tenant. The published guidance varies between jurisdictions, as do the forms, the fees and the consequences of not doing it, and secondary sources disagree about how strictly the obligation is enforced in practice.
+
+The application does not attempt this, and the disagreement in the sources is the reason. A feature that told every landlord that verification is mandatory would be wrong in some states; one that told them it is optional would be wrong in others. A per-state workflow keyed to the property's location is the shape such a feature would have to take, and it is recorded in Chapter 8 as identified rather than built.
+
+
+### 2.8 Accessibility
+
+Accessibility is not usually reviewed in a project of this kind, and it is reviewed here because three defects in Chapter 6 came out of it. The relevant guidance is the Web Content Accessibility Guidelines, which, although written for the web, states requirements that apply to any interface with the same force.
+
+Two of its requirements bear directly on screens in this application. The first is that every control must have a name that assistive technology can report. A control whose entire content is an icon has no such name unless one is supplied, and a screen reader then announces it as "button" and nothing more, which tells the user that something is there and nothing about what it does. The application had two such controls, found as described in Chapter 6.
+
+The second is that content a sticky header obscures must remain reachable, and in particular that a header must not cover the element a person is typing into. This is the requirement behind the focus clamp discussed at length in the testing chapter, and the defect found there is a textbook instance: the clamp was correct until a second bar appeared above the header, after which a field being typed into could finish underneath it.
+
+The broader observation from this project is that these two requirements have an unusual property. A control with no accessible name is also a control an automated test cannot address by name, and must instead reach by guessing coordinates. The accessibility defect and the testability defect are the same defect. That makes a certain amount of accessibility work self-enforcing, since a suite that insists on addressing controls by name will not compile against an interface that has not named them — but only a certain amount, and Chapter 8 argues for a direct audit rather than relying on the coincidence.
+
+
+### 2.9 Over-the-Air Update Delivery
+
+A mobile application that ships as a store package has a release cycle measured in days, because a package has to be built, submitted, reviewed and then installed by each user. For a product with a small number of users and a short list of defects, that cycle is the dominant constraint on how quickly anything can be fixed.
+
+The framework used here supports a second channel. Where a change affects only the JavaScript of the application and not its native code, a new bundle can be published and applied by installed copies without a new package. The cycle for such a change is minutes, and the user's involvement is a restart.
+
+The constraint that makes this coherent is the runtime version. A published bundle is offered only to installations whose native runtime matches the one it was built against, which is what stops a bundle that depends on a newly added native module from reaching a build that does not have it. The consequence, and it is the reason Chapter 6 has a section on the subject, is that there are two categories of update with different mechanics, different user experiences and different honest things to say about them, and an application that presents them as one thing will eventually promise an installation it cannot perform.
+
+
+### 2.10 Gap Analysis
 
 Putting the three strands together, the gap is reasonably clear. Manual systems still dominate the independent rental sector despite being demonstrably lossy, because the cost of switching is real and the losses are invisible. The simpler digital applications cut the owner's effort but leave the tenant where they were, which means the dispute the system most needs to prevent is the one thing it does nothing about. The more capable platforms do give the tenant a real view, but they get there by taking custody of the rent, which is regulated and is in any case unattractive to the owners this project is for.
 
@@ -543,6 +621,64 @@ The structure of each principal table is given below, with the MySQL type, the k
 | device | varchar(200) | NULL | User agent, truncated and never parsed, for a future sessions screen |
 | created_at | timestamp | DEFAULT NOW() | When the session was issued |
 
+### 4.10 The Alignment Rule
+
+Twenty-eight screens laid out independently will drift. Each one chooses its own top padding, its own gutter and its own place to put a title, and the result is an application where nothing is quite wrong and nothing quite lines up. This project reached that state and then undid it, and the undoing is worth describing because it is a piece of architecture rather than a piece of styling.
+
+The rule has four parts. The header sits directly below the system bars on every screen rather than on the landlord's screens only. Content is anchored one consistent distance below it, instead of each screen choosing a number between twelve and twenty-six. A screen's title is sticky rather than fixed: the screen keeps its full-size title on arrival, and once that has scrolled out of view a compact copy fades into the header, so the reader never loses the context and never sees it twice. And a field being typed into can never end up underneath the header.
+
+All four live in one module. That is the point of the exercise: a rule stated in one file is a rule that can be changed in one place and tested on its own, whereas the same rule expressed as a convention in twenty-eight files is a convention that holds until somebody adds the twenty-ninth.
+
+
+#### 4.10.1 The sticky title, and why it needs a wire
+
+The compact title in the header is drawn by the header. Whether to draw it depends on how far the body has scrolled, and the body is a sibling of the header rather than a child, so the scroll offset has to travel between two components that have no relationship in the tree. That wire is the single piece of shared state the module introduces, and it is introduced deliberately rather than by accident: the alternative, having each screen tell the header what to show, is the drift the rule exists to stop.
+
+The hand-off point is latched rather than computed fresh on every frame. A title that appears and disappears as the reader nudges the scroll position by a pixel is worse than one that appears slightly late, so the module uses a dead band: the switch happens a little past the threshold going down and a little before it coming back up. The value is small and the effect is that the title changes once rather than flickering.
+
+
+#### 4.10.2 The focus clamp
+
+When the keyboard opens, the view scrolls so that the field being typed into is above it. The amount to scroll is computed from the keyboard's height and the field's position, and left alone that calculation will happily push the field up behind the header.
+
+The clamp bounds it. It works out how much room exists between the field and the bottom of the header and permits no more scroll than that, which in the common case — a field low on a long page — changes nothing at all, and in the case that matters moves the field exactly as far as it can go and no further. A field already behind the header is not moved at all, because scrolling it would make matters worse rather than better.
+
+The clamp has one input that was missing until late in the project: anything the shell draws above the header. The notice described in section 4.11 is such a thing, and its arrival is what exposed the omission. Anything mounted above the header now reports its height, and the clamp subtracts it. With nothing above the header the value is zero and the arithmetic is what it always was.
+
+
+#### 4.10.3 The revert flag
+
+The rule is behind a build-time constant, as the redesign itself is and as the guided tour is. With the flag off, every screen receives the exact top padding it had before the rule existed, recovered from a table in the module rather than from anybody's memory, and the header region returns to the landlord's screens only.
+
+Build-time rather than runtime is a deliberate choice. A runtime setting can leave a user half-migrated, with some screens following one rule and some another, and the state that produces is not one anybody designed. A constant is one value to change in one commit, and because the module is pure JavaScript the change reaches installed copies through the update channel in minutes.
+
+Each of the three flags is tested in both positions. A revert path that has never been taken is a claim rather than a feature, and the only way to know that turning something off restores what was there before is to turn it off and look.
+
+
+### 4.11 Update Delivery
+
+Chapter 6 describes what the two kinds of update look like to a user. The design question underneath is where the decision lives.
+
+For the over-the-air kind, the application decides. It asks the update server whether a bundle exists for its own runtime, and the server answers from what has been published. Nothing in that exchange requires the application to know anything about versions, because the runtime constraint does the filtering.
+
+For a store build the application cannot decide, because it cannot know. The update server will never mention a bundle built for a different runtime, so a phone running one version has no way to learn that a newer one exists. Something has to tell it, and the choice is between the application comparing two version strings it has been given and the server doing the comparison and sending a verdict.
+
+The verdict is computed on the server. The reasoning is specific to what this feature is: if the comparison were wrong, every phone would either be nagged permanently or told nothing for ever, and the fix for a mistake in the application's own copy of that logic would have to arrive through precisely the channel that is not working. On the server it is a deploy. The application sends the version it is running and renders what it is told, and when it can get no answer at all it shows nothing, because silence is the right failure for a notice nobody asked for.
+
+The comparison itself is small and is tested harder than its size suggests, for a reason the testing chapter returns to: compared as strings rather than as numbers, version 1.10.0 sorts before 1.9.0, so a release at 1.10.0 would reach nobody and nothing anywhere would look broken.
+
+
+### 4.12 Derived Alerts
+
+The notification list on both sides is computed rather than stored. There is no alerts table, no row written when something happens, and no background job sweeping for conditions. The list is produced from the data the application has already fetched: a payment awaiting confirmation is an alert because it is a payment awaiting confirmation, not because a row somewhere says so.
+
+The advantages are the ordinary advantages of derivation. There is no second copy to fall out of step with the first, nothing to clean up when the underlying row changes, and no possibility of an alert that outlives the condition that produced it. A tenant whose payment is confirmed stops having an unconfirmed payment, and the alert stops existing in the same instant, because it never existed separately.
+
+What derivation cannot produce is the knowledge of whether the user has seen any of it. Current state can say that a payment was confirmed; it cannot say that the person has not yet noticed. That single fact is the only thing in the feature that must be stored, and it is stored as one timestamp per account: the moment the list was last opened. Each row carries the moment its subject occurred, and a row more recent than the timestamp is unread.
+
+Rows with no meaningful moment carry none and are never unread. Rent falling due on Friday is true every day of that week, and an application that counts it as news every morning is an application whose notification badge people learn to ignore. The distinction between a standing fact and an event is made in the derivation rather than in the display, which is the right place for it, because it is a statement about the data rather than about the screen.
+
+
 ---
 
 ## CHAPTER 5 — SYSTEM REQUIREMENTS
@@ -610,6 +746,83 @@ Security requires third-party credentials to be stored encrypted and never retur
 
 Reliability requires that a passing network failure never signs a user out and is never reported as a rejected credential. Maintainability requires that behaviour shared between the two applications is implemented once. Portability requires that schema changes apply themselves at boot, so that a deploy is a code deploy and nothing more.
 
+
+### 5.6 Functional Requirements in Detail
+
+The requirements below are stated as the system actually behaves at the commit this report documents, rather than as they were first written down. Where a requirement was specified and not built, it appears in Chapter 8 instead of here.
+
+
+#### 5.6.1 Accounts and sessions
+
+- A landlord and a tenant register through separate endpoints and separate forms, and one email address or mobile number belongs to one or the other and never to both.
+- Registration issues a session immediately, so a new account is signed in rather than returned to a sign-in screen.
+- A password is at least six characters, enforced on the server for both roles.
+- Each field on a registration form reports its own fault, and the summary states how many fields need attention rather than reciting the rules.
+- A tenant who states they are under eighteen must supply a guardian's name and mobile number before the account is created.
+- A session may be ended, and ending it makes the issued tokens unusable rather than merely forgetting them on the device.
+- A refresh token is single-use; presenting a spent one is treated as evidence of theft and ends the session family.
+
+#### 5.6.2 Properties, rooms and tenancies
+
+- A landlord records properties, each holding rooms, each holding occupants, so that the model matches the building rather than flattening it to a list of names.
+- A tenancy records its rent, its deposit, its start date, its billing cycle and its notice period.
+- A rent due date is computed from the tenancy's own start date, so a tenant who moved in on the nineteenth is due on the nineteenth.
+- A tenant may be brought on board by direct entry, by redeeming an invite code, or by asking to join a published room.
+- A join request shows the landlord who is asking, how to reach them, whether an identity document is on file, and, where the applicant is a minor, who consents for them.
+
+#### 5.6.3 Rent and payments
+
+- A tenant may pay by UPI into the landlord's own address or, where the landlord has connected one, through a payment gateway on the landlord's own merchant account.
+- A payment reported by a tenant is recorded as a claim and does not advance the rent cycle until confirmed.
+- A claim is confirmed by the landlord, or by the gateway answering a direct query, and both routes run the same settlement logic.
+- A payment entered by the landlord is recorded as confirmed, because it is the landlord's own statement about their own money.
+- A rejected claim carries a reason, and the tenant sees it.
+- Every confirmed payment appears in a ledger searchable by person, room, method, reference, amount or date.
+
+#### 5.6.4 Maintenance, documents and discovery
+
+- A tenant raises a maintenance request with a title and a description, and both parties see one thread per issue with every reply and status change in order.
+- A tenant holds identity documents against their account; the landlord may see that a document exists, and may read it only while the tenancy runs.
+- A landlord may publish a vacant room; a tenant without a tenancy may search what is published, filter it and ask about one.
+- A tenant may open a summary of their own tenancy terms, which states on its face that it is a summary and not a registered deed.
+
+#### 5.6.5 Notification and guidance
+
+- Rent reminders are sent automatically on a schedule, by email and by push.
+- Both portals show a derived list of what needs attention, with unread state on the tenant's side.
+- A first-time user of either portal is offered a guided tour, which is replayable from Settings afterwards.
+- The application checks for an over-the-air update on launch and on returning to the foreground, and can be asked to check on demand.
+- Where the server announces a newer store build, every screen of both portals carries a notice naming the version.
+
+### 5.7 Non-Functional Requirements in Detail
+
+
+#### 5.7.1 Security
+
+- Gateway credentials are sealed with authenticated encryption before storage and are never returned to any client, in any form, under any role.
+- Refresh tokens are stored as hashes, so a leak of the table does not yield usable tokens.
+- Authentication and password-reset endpoints are rate limited, with the limits configurable but defaulting to the production values.
+- Every write that names a room, a property or a tenant verifies that the named object belongs to the caller, through one shared check rather than per-handler.
+
+#### 5.7.2 Privacy
+
+- No field is collected at registration beyond what registration needs.
+- A landlord's access to a tenant's identity document ends with the tenancy.
+- No Aadhaar number is requested as a field, and no authentication is performed against any national identity database.
+
+#### 5.7.3 Usability and accessibility
+
+- Every control carries a name that assistive technology can report, including controls whose entire content is an icon.
+- A field being typed into is never covered by the header.
+- Every screen states what it is; no screen relies on the user remembering which portal they are in.
+- An error message states what went wrong and what to do about it.
+
+#### 5.7.4 Reliability and operability
+
+- A malformed or incomplete request is answered with a client error and a message, never with a server error and a database string.
+- The database schema is created and migrated on boot, so a deployment requires no manual migration step.
+- A single endpoint reports the health of the database, mail, push, SMS, uploads, gateways, discovery and the announced store build.
+- Any release may be reverted: a feature by a flag and an update published over the air, or the whole bundle by republishing a previous one.
 
 ---
 
@@ -845,6 +1058,54 @@ The last one is the most instructive defect in the project, and it is worth the 
 What makes it worth recording is not the bug but how it surfaced. The test suite that should have caught it was making the identical assumption: it measured "the header" as the top fifty-eight pixels of the window. Both were wrong in the same direction, for the same reason, and neither could detect the other. It took a third thing — a bar that had never existed before — to put them out of step. A test that shares its subject's assumptions does not verify them, and nothing in a green run says which assumptions those are.
 
 
+### 6.16 Testing Strategy
+
+The numbers are in section 6.15. This section is about the choices behind them, because several were unusual and two were mistakes.
+
+
+#### 6.16.1 Why there is no test framework
+
+Every suite is a plain Node script with a function that prints a line and increments a counter. There is no runner, no assertion library and no configuration file.
+
+The reason is the environment rather than principle. A suite with no dependencies runs anywhere Node runs, needs no install step before it can be used, and cannot break because a runner changed its reporting format between versions. The cost is real and should be stated: there is no parallel execution, no filtering to a single test by name, and no machine-readable output, so wiring these into a continuous integration system will mean adding at least the last of those.
+
+One claim made about this arrangement turned out to be untrue for one suite, and the fact-checking described in section 6.15.5 is what found it: a suite had been left loading a dependency by an absolute path into one machine's scratch directory, so "runs anywhere Node runs" was false of it. It now resolves the dependency relative to the repository.
+
+
+#### 6.16.2 Seeded data, and designing data that breaks things
+
+The end-to-end suites run against a database built by a generator with a fixed seed, so a failing run can be reproduced exactly rather than approximately.
+
+What the generator produces matters more than that it is deterministic. It deliberately creates the rows that break screens and that never appear when you are looking for them: a tenant with no room, a guest with no email address, a guest whose stay has already ended, rent that is overdue and rent due today and rent never set at all, a payment declared and undecided, another rejected with a reason, maintenance threads where the landlord spoke last and others where the tenant did, a tenant who has given notice, and a property with no rooms in it.
+
+This is the opposite of the usual instinct, which is to seed data that looks tidy. Tidy data tests the happy path twice and the interesting paths never.
+
+
+#### 6.16.3 Driving the compiled application
+
+The browser suites run the same JavaScript the phone runs. An export for web produces the identical view-model, the identical screens and the identical request client, laid out by a renderer and driven through a browser engine.
+
+The limits are worth stating plainly, because a green run is persuasive. Nothing behind a native module is exercised: not the camera, not the image picker, not push delivery, and not the hand-off to a UPI application. Those are the parts of the system a tenant touches with money in play, and no assertion in this build covers any of them. Running a desktop browser is not a substitute for a device and is not claimed as one; it is the only automated way available in this project's environment to assert that a real screen renders a real row correctly, and it found defects that no unit test had.
+
+
+#### 6.16.4 Verifying across two sessions at once
+
+One suite is unlike the others. The cross-portal suite opens two browser contexts, signs a tenant into one and a landlord into the other, and then asserts something neither side can assert alone: that a maintenance request raised on one appears on the other, and how long it takes.
+
+Two numbers come out of it, and both are reported because they answer different questions. A ticket reaches the landlord in about two seconds if the landlord touches the screen, because any navigation refetches. It reaches an untouched screen in about nine, which is wherever in the application's polling cycle the request happened to land. Quoting only the first would overstate the system; quoting only the second would understate it.
+
+This suite also produced a lesson about measurement. An early version navigated the landlord's screen while waiting, and so measured the first number while appearing to measure the second. A timing measurement that starts on an unknown screen measures nothing, and the suite now checks it is where it thinks it is before the clock starts.
+
+
+#### 6.16.5 Checking the documentation against the code
+
+The last technique was not planned as one. Both this report and the repository's README state what the system does, and those statements were checked against the source by agents instructed to verify rather than to proofread.
+
+Thirty statements did not survive. Four of them were false because the software was wrong rather than the sentence, and are recorded in Table 6.4. The remainder were errors in the documents and have been corrected.
+
+The result that justifies calling this a verification technique rather than an editing pass is the first row of that table. A defect had been recorded as fixed, in this report and in a commit message, and three of its four cases had been. Every suite passed. Nothing was red. The claim stood as evidence of thoroughness until something read it against the code, and a defect recorded as fixed is worse than one recorded as open, because it stops anybody looking.
+
+
 ---
 
 ## CHAPTER 7 — RESULTS AND SCREENSHOTS
@@ -1015,3 +1276,640 @@ Two documentation items close the list. The report and the repository's own READ
 - [23] Microsoft. Playwright Documentation — browser automation for end-to-end testing. Retrieved from https://playwright.dev/
 Note on secondary sources. Several of the regulatory points in this report rest on consultancy and industry commentary rather than on the Reserve Bank of India's own text. Where the report leans on them, particularly for the net-worth thresholds and the restrictions on split settlement, the claims should be checked against the Directions themselves before anybody makes a structuring decision. The code figures, endpoint counts and assertion totals were measured directly from the repository and from live test runs, and are not estimates.
 
+
+---
+
+## APPENDIX A — API ENDPOINT INVENTORY
+
+
+### A.1 How to read this appendix
+
+Every route the server declares, grouped by the router that declares it and listed with the method, the full path as mounted, and the handler that answers it. It is generated from the source rather than maintained by hand, because a hand-kept list of ninety-six routes is a list that is wrong within a month. The count here is therefore the count in the code at the commit this report documents.
+
+Two entries are worth noting before the tables. The route at the server root returns a plain string and exists so that a deployment platform's health probe has something to hit. And one development route sits behind a check on the environment, so a production deployment exposes ninety-four of the ninety-six listed.
+
+
+### A.2 Landlord authentication (/api/auth)
+
+
+**Table A.1 — Landlord authentication**
+
+| Method | Path | Handler |
+|---|---|---|
+| POST | /api/auth/register | registerOwner |
+| POST | /api/auth/login | loginOwner |
+| POST | /api/auth/forgot-password | forgotPassword |
+| POST | /api/auth/reset-password | resetPassword |
+| POST | /api/auth/refresh | refreshToken |
+| POST | /api/auth/logout | logout |
+| POST | /api/auth/google/start | startGoogle |
+| GET | /api/auth/google/callback | googleCallback |
+| POST | /api/auth/google/poll | pollGoogle |
+| POST | /api/auth/google/complete | completeGoogle |
+
+### A.3 Landlord data (/api/owner)
+
+
+**Table A.2 — Landlord data**
+
+| Method | Path | Handler |
+|---|---|---|
+| PUT | /api/owner/profile | updateProfile |
+| PUT | /api/owner/profile/verify | verifyProfileContact |
+| GET | /api/owner/pulse | getPulse |
+| GET | /api/owner/dashboard | getDashboardStats |
+| GET | /api/owner/transactions | getAllTransactions |
+| GET | /api/owner/requests | getRequests |
+| PUT | /api/owner/requests/:id/status | updateStatus |
+| GET | /api/owner/requests/:id/messages | getMessages |
+| POST | /api/owner/requests/:id/messages | createMessage |
+| GET | /api/owner/join-requests | getJoinRequests |
+| PUT | /api/owner/join-requests/:id | decideJoinRequest |
+| GET | /api/owner/tenants/:id/documents | getTenantDocuments |
+| GET | /api/owner/join-requests/:id/documents | getApplicantDocuments |
+| PUT | /api/owner/documents/:id | decideDocument |
+| POST | /api/owner/tenants/:id/id-request | createIdRequest |
+| DELETE | /api/owner/tenants/:id/id-request | cancelIdRequest |
+| POST | /api/owner/push-token | savePushToken |
+| DELETE | /api/owner/push-token | dropPushToken |
+| POST | /api/owner/push-test | sendTestPush |
+| GET | /api/owner/demo | getDemoStatus |
+| POST | /api/owner/demo/reset | resetDemo |
+
+### A.4 Payments (/api/payments)
+
+
+**Table A.3 — Payments**
+
+| Method | Path | Handler |
+|---|---|---|
+| GET | /api/payments/settings | getPaymentSettings |
+| POST | /api/payments/settings | savePaymentSettings |
+| POST | /api/payments/gateway | connectGateway |
+| PUT | /api/payments/gateway | toggleGateway |
+| DELETE | /api/payments/gateway | disconnectGateway |
+| GET | /api/payments/declared | getDeclaredPayments |
+| PUT | /api/payments/declared/:id | decidePayment |
+| POST | /api/payments/:id/payments | recordPayment |
+
+### A.5 Properties (/api/properties)
+
+
+**Table A.4 — Properties**
+
+| Method | Path | Handler |
+|---|---|---|
+| GET | /api/properties | getProperties |
+| POST | /api/properties | addProperty |
+| PUT | /api/properties/:id | updateProperty |
+| DELETE | /api/properties/:id | deleteProperty |
+
+### A.6 Tenant authentication (/api/tenant-auth)
+
+
+**Table A.5 — Tenant authentication**
+
+| Method | Path | Handler |
+|---|---|---|
+| POST | /api/tenant-auth/register | registerTenant |
+| POST | /api/tenant-auth/login | loginTenant |
+
+### A.7 Tenant portal (/api/tenant-portal)
+
+
+**Table A.6 — Tenant portal**
+
+| Method | Path | Handler |
+|---|---|---|
+| GET | /api/tenant-portal/me | getMe |
+| POST | /api/tenant-portal/alerts/seen | markAlertsSeen |
+| POST | /api/tenant-portal/claim-account | claimAccount |
+| POST | /api/tenant-portal/push-token | savePushToken |
+| DELETE | /api/tenant-portal/push-token | dropPushToken |
+| POST | /api/tenant-portal/push-test | sendTestPush |
+| GET | /api/tenant-portal/discover | discover |
+| GET | /api/tenant-portal/discover/:id | discoverOne |
+| GET | /api/tenant-portal/pulse | getPulse |
+| GET | /api/tenant-portal/payments | getPayments |
+| POST | /api/tenant-portal/payments | declarePayment |
+| POST | /api/tenant-portal/payments/online | startOnlinePayment |
+| POST | /api/tenant-portal/payments/:id/check | checkOnlinePayment |
+| GET | /api/tenant-portal/leave | getLeavePlan |
+| POST | /api/tenant-portal/leave | giveNotice |
+| DELETE | /api/tenant-portal/leave | withdrawNotice |
+| GET | /api/tenant-portal/requests | getRequests |
+| POST | /api/tenant-portal/requests | createRequest |
+| GET | /api/tenant-portal/requests/:id/messages | getRequestMessages |
+| POST | /api/tenant-portal/requests/:id/messages | createRequestMessage |
+| GET | /api/tenant-portal/property-lookup | lookupProperty |
+| POST | /api/tenant-portal/join-requests | createJoinRequest |
+| GET | /api/tenant-portal/join-requests | getMyJoinRequests |
+| GET | /api/tenant-portal/documents | getMyDocuments |
+| POST | /api/tenant-portal/documents | addMyDocument |
+| DELETE | /api/tenant-portal/documents/:id | deleteMyDocument |
+
+### A.8 Tenants (/api/tenants)
+
+
+**Table A.7 — Tenants**
+
+| Method | Path | Handler |
+|---|---|---|
+| POST | /api/tenants | addTenant |
+| PUT | /api/tenants/assign | assignUnit |
+| GET | /api/tenants/unit/:unit_id | getTenantsByUnit |
+| GET | /api/tenants | getAllTenants |
+| PUT | /api/tenants/:id | updateTenant |
+| PUT | /api/tenants/:id/move-out | Delete |
+| DELETE | /api/tenants/:id | Delete |
+| PUT | /api/tenants/:id/financials | updateFinancials |
+| PUT | /api/tenants/:id/stay | updateStay |
+| GET | /api/tenants/unassigned | getUnassignedTenants |
+| PUT | /api/tenants/:id/assign | assignTenantToRoom |
+
+### A.9 Rooms (/api/units)
+
+
+**Table A.8 — Rooms**
+
+| Method | Path | Handler |
+|---|---|---|
+| GET | /api/units/available | getAvailableUnits |
+| GET | /api/units | getUnits |
+| POST | /api/units | addUnit |
+| PUT | /api/units/:id | updateUnit |
+| DELETE | /api/units/:id | deleteUnit |
+| PUT | /api/units/:id/settings | updateUnitSettings |
+| GET | /api/units/:id/listing | getListing |
+| PUT | /api/units/:id/listing | saveListing |
+
+### A.10 Gateway webhooks (/api/webhooks)
+
+
+**Table A.9 — Gateway webhooks**
+
+| Method | Path | Handler |
+|---|---|---|
+| POST | /api/webhooks/payments/:provider | handlePaymentWebhook |
+
+### A.11 Declared on the application directly
+
+
+**Table A.10 — Routes outside the routers**
+
+| Method | Path | Note |
+|---|---|---|
+| GET | /api/app/version | Whether a newer store build exists, compared server-side |
+| GET | /api/id-preview/:id | Short-lived link to a blurred identity document |
+| GET | / | Health probe for the hosting platform |
+| GET | /healthz | Full status: database, mail, push, SMS, uploads, gateways, discovery, announced build |
+| GET | /api/test-cron | Development only; absent in production |
+
+---
+
+## APPENDIX B — DATABASE SCHEMA
+
+
+### B.1 How to read this appendix
+
+The tables the server creates on first boot, with their columns and types as declared. Generated from config/schema.sql, which is the file the server actually runs, so this is the schema rather than a drawing of it. Twenty-two tables are declared there. A twenty-third, oauth_sessions, is created by the migration code in config/initDb.js instead, because it arrived after that file had taken over responsibility for changes to an existing database; a deployment therefore holds twenty-three.
+
+Columns added after a table first shipped are applied separately by the migration helpers at boot and may not appear in the CREATE statement below; where that matters the text says so. The entity relationships are in Chapter 4 and are not repeated here.
+
+
+### B.2 owners
+
+
+**Table B.1 — owners**
+
+| Column | Type and constraints |
+|---|---|
+| id | int(11) NOT NULL AUTO_INCREMENT |
+| name | varchar(100) NOT NULL |
+| email | varchar(100) NOT NULL |
+| phone | varchar(15) NOT NULL |
+| password_hash | varchar(255) NOT NULL |
+| created_at | timestamp NOT NULL DEFAULT current_timestamp() |
+| profile_pic | varchar(255) DEFAULT NULL |
+
+### B.3 properties
+
+
+**Table B.2 — properties**
+
+| Column | Type and constraints |
+|---|---|
+| id | int(11) NOT NULL AUTO_INCREMENT |
+| owner_id | int(11) NOT NULL |
+| name | varchar(150) NOT NULL |
+| property_type | enum('PG','Apartment','Independent House','Hostel') NOT NULL |
+| address | text NOT NULL |
+| locality | varchar(100) DEFAULT NULL |
+| city | varchar(100) DEFAULT 'Bengaluru' |
+| pincode | varchar(10) DEFAULT NULL |
+| latitude | decimal(10,7) DEFAULT NULL |
+| longitude | decimal(10,7) DEFAULT NULL |
+| upi_id | varchar(50) DEFAULT NULL |
+| image_url | varchar(255) DEFAULT NULL |
+| created_at | timestamp NOT NULL DEFAULT current_timestamp() |
+
+### B.4 units
+
+
+**Table B.3 — units**
+
+| Column | Type and constraints |
+|---|---|
+| id | int(11) NOT NULL AUTO_INCREMENT |
+| property_id | int(11) NOT NULL |
+| unit_number | varchar(50) NOT NULL |
+| room_type | varchar(50) DEFAULT 'Standard' |
+| capacity | int(11) DEFAULT 1 |
+| rent_split_type | enum('Equal','Custom') DEFAULT 'Equal' |
+| base_rent | decimal(10,2) NOT NULL |
+| image_url | varchar(255) DEFAULT NULL |
+| status | enum('Vacant','Occupied','Maintenance') DEFAULT 'Vacant' |
+| notify_email | tinyint(1) DEFAULT 1 |
+| notify_sms | tinyint(1) DEFAULT 1 |
+| notify_whatsapp | tinyint(1) DEFAULT 0 |
+
+### B.5 tenants
+
+
+**Table B.4 — tenants**
+
+| Column | Type and constraints |
+|---|---|
+| id | int(11) NOT NULL AUTO_INCREMENT |
+| owner_id | int(11) NOT NULL |
+| unit_id | int(11) DEFAULT NULL |
+| status | enum('Active','Inactive') DEFAULT 'Active' |
+| name | varchar(100) NOT NULL |
+| phone | varchar(15) NOT NULL |
+| email | varchar(100) DEFAULT NULL |
+| aadhar | varchar(20) DEFAULT NULL |
+| company | varchar(150) DEFAULT NULL |
+| emergency_phone | varchar(15) DEFAULT NULL |
+| deposit | decimal(10,2) DEFAULT 0.00 |
+| rent_share | decimal(10,2) DEFAULT 0.00 |
+| image_url | varchar(255) DEFAULT NULL |
+| id_proof_url | varchar(255) DEFAULT NULL |
+| credit_score | int(11) DEFAULT 100 |
+| created_at | timestamp NOT NULL DEFAULT current_timestamp() |
+| move_in_date | date DEFAULT NULL |
+| billing_cycle | varchar(20) DEFAULT 'Anniversary' |
+| next_rent_due | date DEFAULT NULL |
+| stay_until | date DEFAULT NULL |
+
+### B.6 document_requests
+
+
+**Table B.5 — document_requests**
+
+| Column | Type and constraints |
+|---|---|
+| id | int(11) NOT NULL AUTO_INCREMENT |
+| owner_id | int(11) NOT NULL |
+| tenant_id | int(11) NOT NULL |
+| doc_type | varchar(20) DEFAULT NULL |
+| note | varchar(300) DEFAULT NULL |
+| status | enum('Pending','Fulfilled','Cancelled') NOT NULL DEFAULT 'Pending' |
+| created_at | timestamp NOT NULL DEFAULT current_timestamp() |
+| closed_at | timestamp NULL DEFAULT NULL |
+| document_id | int(11) DEFAULT NULL |
+
+### B.7 push_tokens
+
+
+**Table B.6 — push_tokens**
+
+| Column | Type and constraints |
+|---|---|
+| id | int(11) NOT NULL AUTO_INCREMENT |
+| role | enum('owner','tenant') NOT NULL |
+| account_id | int(11) NOT NULL |
+| token | varchar(255) NOT NULL |
+| platform | varchar(16) DEFAULT NULL |
+| created_at | timestamp NOT NULL DEFAULT current_timestamp() |
+| last_seen_at | timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp() |
+
+### B.8 leases
+
+
+**Table B.7 — leases**
+
+| Column | Type and constraints |
+|---|---|
+| id | int(11) NOT NULL AUTO_INCREMENT |
+| tenant_id | int(11) NOT NULL |
+| unit_id | int(11) NOT NULL |
+| start_date | date NOT NULL |
+| end_date | date DEFAULT NULL |
+| deposit_amount | decimal(10,2) NOT NULL |
+| monthly_rent | decimal(10,2) NOT NULL |
+| status | enum('Active','Notice Period','Moved Out') DEFAULT 'Active' |
+
+### B.9 expenses
+
+
+**Table B.8 — expenses**
+
+| Column | Type and constraints |
+|---|---|
+| id | int(11) NOT NULL AUTO_INCREMENT |
+| property_id | int(11) NOT NULL |
+| expense_category | varchar(50) NOT NULL |
+| amount | decimal(10,2) NOT NULL |
+| expense_date | date NOT NULL |
+| description | text DEFAULT NULL |
+
+### B.10 payment_settings
+
+
+**Table B.9 — payment_settings**
+
+| Column | Type and constraints |
+|---|---|
+| id | int(11) NOT NULL AUTO_INCREMENT |
+| owner_id | int(11) NOT NULL |
+| upi_id | varchar(100) DEFAULT NULL |
+| upi_number | varchar(15) DEFAULT NULL |
+| qr_code_url | varchar(255) DEFAULT NULL |
+| gateway | varchar(20) DEFAULT NULL |
+| gateway_key_id | varchar(120) DEFAULT NULL |
+| gateway_secret | varchar(512) DEFAULT NULL |
+| gateway_enabled | tinyint(1) NOT NULL DEFAULT 0 |
+| updated_at | timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp() |
+
+### B.11 rent_invoices
+
+
+**Table B.10 — rent_invoices**
+
+| Column | Type and constraints |
+|---|---|
+| id | int(11) NOT NULL AUTO_INCREMENT |
+| lease_id | int(11) NOT NULL |
+| invoice_month | varchar(7) NOT NULL |
+| base_amount | decimal(10,2) NOT NULL |
+| late_fee | decimal(10,2) DEFAULT 0.00 |
+| total_due | decimal(10,2) NOT NULL |
+| due_date | date NOT NULL |
+| status | enum('Unpaid','Partial','Paid') DEFAULT 'Unpaid' |
+
+### B.12 tenant_users
+
+
+**Table B.11 — tenant_users**
+
+| Column | Type and constraints |
+|---|---|
+| id | int(11) NOT NULL AUTO_INCREMENT |
+| name | varchar(100) NOT NULL |
+| email | varchar(100) DEFAULT NULL |
+| phone | varchar(15) NOT NULL |
+| password_hash | varchar(255) DEFAULT NULL |
+| tenant_id | int(11) DEFAULT NULL |
+| status | enum('Unlinked','Pending','Linked') DEFAULT 'Unlinked' |
+| is_guest | tinyint(1) NOT NULL DEFAULT 0 |
+| guest_code | varchar(16) DEFAULT NULL |
+| alerts_seen_at | datetime DEFAULT NULL |
+| guardian_name | varchar(120) DEFAULT NULL |
+| guardian_relation | varchar(40) DEFAULT NULL |
+| guardian_phone | varchar(20) DEFAULT NULL |
+| created_at | timestamp NOT NULL DEFAULT current_timestamp() |
+
+### B.13 payments
+
+
+**Table B.12 — payments**
+
+| Column | Type and constraints |
+|---|---|
+| id | int(11) NOT NULL AUTO_INCREMENT |
+| tenant_id | int(11) NOT NULL |
+| amount_paid | decimal(10,2) NOT NULL |
+| payment_date | date NOT NULL |
+| due_date | date DEFAULT NULL |
+| payment_method | varchar(50) NOT NULL |
+| reference_id | varchar(100) DEFAULT NULL |
+| status | enum('Declared','Confirmed','Rejected') NOT NULL DEFAULT 'Confirmed' |
+| declared_by | int(11) DEFAULT NULL |
+| decided_at | timestamp NULL DEFAULT NULL |
+| decision_note | varchar(300) DEFAULT NULL |
+| confirmation_source | enum('landlord','gateway','bank') NOT NULL DEFAULT 'landlord' |
+| gateway_ref | varchar(120) DEFAULT NULL |
+| created_at | timestamp NOT NULL DEFAULT current_timestamp() |
+
+### B.14 password_resets
+
+
+**Table B.13 — password_resets**
+
+| Column | Type and constraints |
+|---|---|
+| id | int(11) NOT NULL AUTO_INCREMENT |
+| email | varchar(100) NOT NULL |
+| role | varchar(10) NOT NULL DEFAULT 'owner' |
+| code | varchar(255) NOT NULL |
+| attempts | int(11) NOT NULL DEFAULT 0 |
+| expires_at | datetime NOT NULL |
+| created_at | timestamp NOT NULL DEFAULT current_timestamp() |
+
+### B.15 settlements
+
+
+**Table B.14 — settlements**
+
+| Column | Type and constraints |
+|---|---|
+| id | int(11) NOT NULL AUTO_INCREMENT |
+| lease_id | int(11) NOT NULL |
+| move_out_date | date NOT NULL |
+| total_deposit | decimal(10,2) NOT NULL |
+| damage_deductions | decimal(10,2) DEFAULT 0.00 |
+| pending_rent_deductions | decimal(10,2) DEFAULT 0.00 |
+| final_refund_amount | decimal(10,2) NOT NULL |
+| status | enum('Pending','Settled') DEFAULT 'Pending' |
+
+### B.16 maintenance_requests
+
+
+**Table B.15 — maintenance_requests**
+
+| Column | Type and constraints |
+|---|---|
+| id | int(11) NOT NULL AUTO_INCREMENT |
+| tenant_id | int(11) NOT NULL |
+| owner_id | int(11) NOT NULL |
+| category | varchar(50) NOT NULL DEFAULT 'General' |
+| title | varchar(150) NOT NULL |
+| description | text DEFAULT NULL |
+| priority | enum('Low','Medium','High') DEFAULT 'Medium' |
+| status | enum('Open','In Progress','Resolved','Closed') DEFAULT 'Open' |
+| image_url | varchar(500) DEFAULT NULL |
+| created_at | timestamp NOT NULL DEFAULT current_timestamp() |
+| updated_at | timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp() |
+
+### B.17 maintenance_messages
+
+
+**Table B.16 — maintenance_messages**
+
+| Column | Type and constraints |
+|---|---|
+| id | int(11) NOT NULL AUTO_INCREMENT |
+| request_id | int(11) NOT NULL |
+| sender_role | enum('tenant','owner','system') NOT NULL |
+| kind | enum('message','status') NOT NULL DEFAULT 'message' |
+| body | text NOT NULL |
+| status_from | varchar(20) DEFAULT NULL |
+| status_to | varchar(20) DEFAULT NULL |
+| created_at | timestamp NOT NULL DEFAULT current_timestamp() |
+
+### B.18 join_requests
+
+
+**Table B.17 — join_requests**
+
+| Column | Type and constraints |
+|---|---|
+| id | int(11) NOT NULL AUTO_INCREMENT |
+| tenant_user_id | int(11) NOT NULL |
+| owner_id | int(11) NOT NULL |
+| property_id | int(11) NOT NULL |
+| unit_id | int(11) DEFAULT NULL |
+| status | enum('Pending','Accepted','Rejected') NOT NULL DEFAULT 'Pending' |
+| note | varchar(300) DEFAULT NULL |
+| requested_stay_until | date DEFAULT NULL |
+| requested_unit_id | int(11) DEFAULT NULL |
+| source | enum('code','phone_match') NOT NULL DEFAULT 'code' |
+| created_at | timestamp NOT NULL DEFAULT current_timestamp() |
+| decided_at | timestamp NULL DEFAULT NULL |
+
+### B.19 tenant_documents
+
+
+**Table B.18 — tenant_documents**
+
+| Column | Type and constraints |
+|---|---|
+| id | int(11) NOT NULL AUTO_INCREMENT |
+| tenant_user_id | int(11) NOT NULL |
+| doc_type | varchar(20) NOT NULL |
+| doc_number | varchar(64) DEFAULT NULL |
+| file_url | varchar(500) NOT NULL |
+| status | enum('Pending','Verified','Rejected') NOT NULL DEFAULT 'Pending' |
+| verified_by | int(11) DEFAULT NULL |
+| verified_at | timestamp NULL DEFAULT NULL |
+| note | varchar(300) DEFAULT NULL |
+| created_at | timestamp NOT NULL DEFAULT current_timestamp() |
+
+### B.20 demo_state
+
+
+**Table B.19 — demo_state**
+
+| Column | Type and constraints |
+|---|---|
+| id | tinyint(4) NOT NULL DEFAULT 1 |
+| owner_id | int(11) DEFAULT NULL |
+| last_reset_at | timestamp NULL DEFAULT NULL |
+| reset_count | int(11) NOT NULL DEFAULT 0 |
+
+### B.21 contact_verifications
+
+
+**Table B.20 — contact_verifications**
+
+| Column | Type and constraints |
+|---|---|
+| id | int(11) NOT NULL AUTO_INCREMENT |
+| role | enum('owner','tenant') NOT NULL |
+| account_id | int(11) NOT NULL |
+| channel | enum('phone','email') NOT NULL |
+| value | varchar(150) NOT NULL |
+| code_hash | varchar(255) NOT NULL |
+| expires_at | datetime NOT NULL |
+| attempts | tinyint(4) NOT NULL DEFAULT 0 |
+| consumed_at | datetime DEFAULT NULL |
+| created_at | timestamp NOT NULL DEFAULT current_timestamp() |
+
+### B.22 sessions
+
+
+**Table B.21 — sessions**
+
+| Column | Type and constraints |
+|---|---|
+| id | int(11) NOT NULL AUTO_INCREMENT |
+| token_hash | char(64) NOT NULL |
+| account_kind | enum('owner','tenant') NOT NULL |
+| account_id | int(11) NOT NULL |
+| expires_at | datetime NOT NULL |
+| created_at | timestamp NOT NULL DEFAULT current_timestamp() |
+| last_used_at | datetime DEFAULT NULL |
+| replaced_at | datetime DEFAULT NULL |
+| revoked_at | datetime DEFAULT NULL |
+| revoked_reason | varchar(20) DEFAULT NULL |
+| device | varchar(200) DEFAULT NULL |
+
+### B.23 listings
+
+
+**Table B.22 — listings**
+
+| Column | Type and constraints |
+|---|---|
+| id | int(11) NOT NULL AUTO_INCREMENT |
+| unit_id | int(11) NOT NULL |
+| owner_id | int(11) NOT NULL |
+| published | tinyint(1) NOT NULL DEFAULT 0 |
+| headline | varchar(150) DEFAULT NULL |
+| description | text DEFAULT NULL |
+| available_from | date DEFAULT NULL |
+| deposit_months | decimal(4,1) NOT NULL DEFAULT 1.0 |
+| preferred | enum('Anyone','Students','Working professionals','Families') NOT NULL DEFAULT 'Anyone' |
+| furnishing | enum('Unfurnished','Semi-furnished','Fully furnished') NOT NULL DEFAULT 'Semi-furnished' |
+| amenities | varchar(400) DEFAULT NULL |
+| created_at | timestamp NOT NULL DEFAULT current_timestamp() |
+| updated_at | timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp() |
+
+---
+
+## APPENDIX C — TEST SUITE INVENTORY
+
+
+### C.1 How to read this appendix
+
+Every suite in the build, what it needs running, and what it asserts. Assertion counts are those a passing run prints, not counts of lines in the source, so a suite that skips an assertion on a platform that cannot reach it reports the smaller number.
+
+None of these uses a test framework. Each is a plain Node script that exits non-zero when an assertion fails, which is why the whole set can be run from a shell loop and why a failing run is reproducible from one command.
+
+
+**Table C.1 — Every suite in the build**
+
+| Suite | Needs | What it covers |
+|---|---|---|
+| api.e2e.js | Live server and MySQL | Not a unit test: nothing is stubbed. It signs in, reads what it was given, and |
+| appversion.test.js | Nothing | Does the app know a newer BUILD exists? |
+| gateway.test.js | Nothing | `fetch` is the interesting stub. Every request this code makes to Razorpay is captured |
+| guardian.e2e.js | Live server and MySQL | A tenant under 18, end to end — form to column. |
+| layout.test.js | Nothing | Three things in that file are pure functions of numbers, and all three are |
+| ratelimit.test.js | Nothing | The limiter still limits. |
+| refresh.client.test.js | Nothing | These assertions are all about not logging somebody out. The server half is tested |
+| refresh.e2e.js | Live server and MySQL | The whole point of this feature is that a session can be ENDED. So most of these |
+| secretbox.test.js | Nothing | — |
+| session.test.js | Nothing | This is the bug the user actually hit — "Your session expired. Please sign in |
+| ui.alerts.e2e.js | Live server, MySQL and a served web build | The bell: in-app notifications on both sides. |
+| ui.crossportal.e2e.js | Live server, MySQL and a served web build | Does a tenant raising a problem actually reach their landlord — and how fast? |
+| ui.discover.e2e.js | Live server, MySQL and a served web build | Drives the compiled app in Chromium: the place-discovery feature, the three |
+| ui.e2e.js | Live server, MySQL and a served web build | Not the emulator the user asked for — this container has no KVM, so an Android |
+| ui.layout.e2e.js | Live server, MySQL and a served web build | The header/content alignment rule, in a real browser: does the screen's title |
+| ui.signout.e2e.js | Live server, MySQL and a served web build | Does the app tell you it is signing out? |
+| ui.signup.e2e.js | Live server, MySQL and a served web build | Signing up: the happy path, and every way of getting it wrong. |
+| ui.signuproles.e2e.js | Live server, MySQL and a served web build | A landlord and a tenant are not signing up for the same thing. |
+| ui.storebanner.e2e.js | Live server, MySQL and a served web build | "A new version is available" — on every screen, in both portals. |
+| ui.tour.e2e.js | Live server, MySQL and a served web build | The guided tour: does it appear for somebody new, does every control do what |
+| ui.updates.e2e.js | Live server, MySQL and a served web build | "Check for updates", on both portals. |
+| vm.gateway.test.js | Nothing | deriveVm is pure — state and an api object in, a plain tree out — so this needs no |
