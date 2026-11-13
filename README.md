@@ -237,7 +237,7 @@ deliberate default: an unconfigured server must not put a banner on every phone.
 - [`docs/PAYMENTS.md`](docs/PAYMENTS.md) — switching on online rent payments, step by step
 - [`ROLLBACK.md`](ROLLBACK.md) — how to undo a release
 
-## Authors
+## Author
 
 MCA project, School of Computer Science and IT, JAIN (Deemed-to-be University),
 Bengaluru — 2025–26. Guide: Dr. Kamalraj R.
@@ -245,8 +245,6 @@ Bengaluru — 2025–26. Guide: Dr. Kamalraj R.
 | | |
 |---|---|
 | Anush Kulal M | 24MCAR0133 · [@AnushKulal](https://github.com/AnushKulal) |
-| Akshita Bansal | 24MCAR0131 |
-| Chandan Mathur | 24MCAR0230 |
 
 ## Licence
 

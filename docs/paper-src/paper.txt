@@ -2,8 +2,6 @@
 
 #AUTHORS
 Anush Kulal M|24MCAR0133|POST GRADUATE STUDENT (MCA)
-Akshita Bansal|24MCAR0131|POST GRADUATE STUDENT (MCA)
-Chandan Mathur|24MCAR0230|POST GRADUATE STUDENT (MCA)
 #GUIDE Dr. Kamalraj R|Professor, Department of Computer Science and IT|JAIN (Deemed-to-be University), Bengaluru, India
 
 #H ABSTRACT
@@ -80,7 +78,7 @@ Chandan Mathur|24MCAR0230|POST GRADUATE STUDENT (MCA)
 |Authorisation|1|An endpoint omitting an ownership check
 |Security|1|One registration endpoint enforcing no password length
 |Total|16|—
-#S Source: Defects recorded during verification; classified by the authors.
+#S Source: Defects recorded during verification; classified by the author.
 #T Table 4. Cross-portal propagation latency
 |Condition|Observed latency|Polling interval|Within interval
 |Landlord interacting with the interface|2.3 s|25 s|Yes
@@ -113,7 +111,7 @@ Chandan Mathur|24MCAR0230|POST GRADUATE STUDENT (MCA)
 |Platform outside the flow of funds|UPI to the landlord's own address, or a gateway on the landlord's own merchant account
 |No payment settled on the payer's say-so|Claim-and-confirmation, with one shared settlement function
 |Verification against real infrastructure|185 assertions against live MySQL and 260 against the compiled application
-#S Source: Mapping prepared by the authors from the implementation.
+#S Source: Mapping prepared by the author from the implementation.
 
 #H PROPOSITIONS AND THEIR TESTS
 #P This study has no survey and therefore no statistical hypotheses. What it has instead are propositions about the system that can be tested against the measurements above, and the three that carried the most weight for the design are set out here with the evidence that bore on them.

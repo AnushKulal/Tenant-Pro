@@ -2,7 +2,7 @@
 
 *MCA project report · School of Computer Science and IT · JAIN (Deemed-to-be University), Bengaluru · 2025–26*
 
-*Anush Kulal M (24MCAR0133) · Akshita Bansal (24MCAR0131) · Chandan Mathur (24MCAR0230)*  
+*Anush Kulal M (24MCAR0133)*  
 *Guide: Dr. Kamalraj R*
 
 > Generated from `docs/report-src/content.txt`, the same source the PDF is built from.
