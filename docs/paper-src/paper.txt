@@ -61,14 +61,16 @@ Anush Kulal M|24MCAR0133|POST GRADUATE STUDENT (MCA)
 |Data|Database tables|23
 |Verification|Test suites|22
 |Verification|Assertions|750
-#S Source: Counted from the repository at the commit documented; authors' computation.
+#S Source: Counted from the repository at the commit documented; author's computation.
 #T Table 2. Distribution of assertions across verification layers
 |Layer|What it exercises|Suites|Assertions|Percent
 |Pure and stubbed|Functions in isolation|8|305|40.7
 |Live server|Endpoints against real MySQL|3|185|24.7
 |Browser-driven|The compiled application|11|260|34.7
 |Total|—|22|750|100.0
-#S Source: Assertion counts as printed by a passing run of each suite; authors' computation.
+#S Source: Assertion counts as printed by a passing run of each suite; author's computation.
+#FIG fig_assertions.png|Figure 1. Assertions by verification layer (n = 750)
+#S Source: Table 2. Eight suites run in isolation, three against live MySQL and eleven against the compiled application.
 #T Table 3. Defects located, by class
 |Class|Count|Example
 |Correctness|6|A path promising a message the system could not send
@@ -79,17 +81,23 @@ Anush Kulal M|24MCAR0133|POST GRADUATE STUDENT (MCA)
 |Security|1|One registration endpoint enforcing no password length
 |Total|16|—
 #S Source: Defects recorded during verification; classified by the author.
+#FIG fig_defects.png|Figure 2. Defects located during verification, by class (n = 16)
+#S Source: Table 3. None of the sixteen was detected by the eight suites that run in isolation.
 #T Table 4. Cross-portal propagation latency
 |Condition|Observed latency|Polling interval|Within interval
 |Landlord interacting with the interface|2.3 s|25 s|Yes
 |Landlord's screen untouched|9.1 s|25 s|Yes
-#S Source: Measured by the two-context suite; mean of observed runs. Authors' measurement.
+#S Source: Measured by the two-context suite; mean of observed runs. Author's measurement.
+#FIG fig_latency.png|Figure 3. Propagation latency against the 25-second polling interval
+#S Source: Table 4. Both conditions fall inside the interval; the first is faster because any navigation refetches.
 #T Table 5. Endpoint coverage by the verification suites
 |Measure|Count|Percent of declared
 |Routes declared by the server|96|100.0
 |Distinct paths requested by the principal API suite|50|52.1
 |Routes not driven by any suite|approximately 32|33.3
-#S Source: Computed by comparing requested paths against declared routes; authors' computation.
+#S Source: Computed by comparing requested paths against declared routes; author's computation.
+#FIG fig_coverage.png|Figure 4. Endpoint coverage against the 96 routes the server declares
+#S Source: Table 5. About a third of declared routes are driven by no suite; the second figure is approximate at source.
 
 #T Table 6. Test suites in the build
 |Category|Suite|Assertions

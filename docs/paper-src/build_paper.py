@@ -195,6 +195,26 @@ def build():
             numbered(doc, line[3:].strip())
             continue
 
+        if line.startswith("#FIG "):
+            flush_table()
+            # "#FIG file.png|Figure N. Caption|width_in"
+            parts = [p.strip() for p in line[5:].split("|")]
+            path = os.path.join(HERE, parts[0])
+            caption = parts[1] if len(parts) > 1 else ""
+            width = float(parts[2]) if len(parts) > 2 else 5.9
+            if not os.path.exists(path):
+                raise SystemExit(f"figure not found: {path}")
+            p = doc.add_paragraph()
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            p.paragraph_format.space_after = Pt(4)
+            p.add_run().add_picture(path, width=Inches(width))
+            if caption:
+                # Captions sit below a figure and above a table, which is the
+                # convention the reference follows and most style guides state.
+                para(doc, caption, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER,
+                     space_after=Pt(4))
+            continue
+
         if line.startswith("#T "):
             flush_table()
             para(doc, line[3:].strip(), bold=True, align=WD_ALIGN_PARAGRAPH.JUSTIFY, space_after=Pt(4))
