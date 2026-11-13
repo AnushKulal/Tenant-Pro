@@ -10,7 +10,7 @@ constraint is not finding people but writing an ask they will act on.
 ## Rules every message below follows
 
 **Never name the product, and never describe it.** Section 6 of the instrument
-asks about rental apps in general, and Q16 carries the project's central claim. A
+asks about rental apps in general, and Q17 carries the project's central claim. A
 respondent who has been told "I'm building a rent app, please fill my survey"
 knows which answer helps, and a meaningful proportion will supply it. The product
 is mentioned nowhere in the recruitment, the form title, or the thank-you page.
@@ -25,11 +25,20 @@ social proof. It is also the sentence a methods examiner looks for first.
 out to be twelve produces abandoned forms. Time the form yourself before sending
 anything.
 
-**Always say what is not collected.** "It doesn't ask for your name or number" is
-the single line that most increases completion among people who have been burned
-by forms that harvest contacts.
+**Say "confidential", never "anonymous".** The form has one optional email box
+at the end, so "anonymous" is a promise it does not keep, and a respondent who
+reaches that box after being told the form is anonymous has been misled. Saying
+what is not asked for — name, number, address — gets the same reassurance
+honestly, and it is the line that most increases completion among people who have
+been burned by forms that harvest contacts.
 
 **Ask once, remind once.** A third message annoys people and converts nobody.
+
+**Quote one number for the length, everywhere.** Five minutes, on every channel
+and in the consent text. Version 1 of these messages said four minutes on the
+landlord channels and five elsewhere, against a form that actually ran nearly
+seven; a form that overruns its promise is abandoned mid-way, and a partial
+response is worth less than no response.
 
 ---
 
@@ -70,7 +79,7 @@ avoid exam weeks for student groups.
 > Hi all — I'm doing a short survey for my postgraduate project on how rent,
 > deposits and maintenance get recorded in PGs, hostels and rented flats.
 >
-> It's 5 minutes, anonymous, and doesn't ask for your name or number.
+> It's 5 minutes and confidential — no name or phone number asked.
 >
 > If you're renting right now, it would really help me out: [LINK]
 >
@@ -87,8 +96,8 @@ you removed.*
 > are recorded in PGs and hostels — receipts, agreements, deposit returns, that
 > sort of thing.
 >
-> It's a 5-minute survey. It's anonymous and doesn't ask for your name, number or
-> address. I'm not selling anything and this isn't for a company.
+> It's a 5-minute survey, confidential — no name, number or address asked.
+> This is coursework, not a sales pitch.
 >
 > If you're renting at the moment: [LINK]
 >
@@ -105,8 +114,8 @@ and it costs you nothing to honour.*
 > survey on how rent and deposits are recorded in rented accommodation.
 >
 > Would you be okay with me posting it in the group, or would you prefer to forward
-> it yourself? It's 5 minutes, anonymous, collects no contact details, and isn't
-> commercial.
+> it yourself? It's 5 minutes and confidential. It asks no name, number or address;
+> there's one optional email box at the end for anyone willing to be interviewed.
 >
 > Happy to send you the questions first so you can see exactly what's being asked.
 
@@ -124,8 +133,8 @@ coursework, and they are interested in what other owners do.
 > are handled in independently owned rental properties.
 >
 > I'm looking for owners who let out anywhere from one room to twenty-plus. The
-> survey takes about 4 minutes, is anonymous, and asks nothing about your income or
-> your tenants' details.
+> survey takes about 5 minutes, is confidential, and asks nothing about your income
+> or your tenants' details.
 >
 > [LINK]
 >
@@ -137,8 +146,8 @@ coursework, and they are interested in what other owners do.
 ## Message 5 — One-to-one ask (highest conversion — use for the landlord gap)
 
 > Hi [name] — could I ask a favour? I'm doing a survey for my PG project on how
-> rent and deposits get recorded. It's about 4 minutes and completely anonymous —
-> no name, no number.
+> rent and deposits get recorded. It's about 5 minutes and confidential — no name
+> or number asked.
 >
 > [LINK]
 >
@@ -152,7 +161,7 @@ coursework, and they are interested in what other owners do.
 Keep it to two lines; a story is read in under two seconds.
 
 > Doing a 5-min survey for my PG project on renting — rent, deposits, receipts.
-> Anonymous, no name or number asked. Link in sticker 👇
+> Confidential, no name or number asked. Link in sticker 👇
 
 ---
 
@@ -160,12 +169,12 @@ Keep it to two lines; a story is read in under two seconds.
 
 Generate a QR code for the form link and put it on an A5 sheet.
 
-> **5-minute anonymous survey**
+> **5-minute confidential survey**
 >
 > Postgraduate research on how rent, deposits and repairs are recorded in PGs and
 > hostels.
 >
-> No name, no phone number, no address collected.
+> No name, phone number or address asked.
 >
 > *[QR code]*
 >
@@ -193,14 +202,24 @@ in" acknowledges them without quantifying anything.*
 1. **Fill the form yourself, twice** — once down the tenant branch, once down the
    landlord branch. Check the branching sends you to the right sections and that
    the attention check behaves.
-2. **Time it.** If it runs over 6 minutes, cut questions until it doesn't. Q11,
-   Q14, Q17 and Q22 are the optional ones to cut first.
+2. **Time it.** The instrument is built to 4.6 minutes on the tenant path and 4.2
+   on the landlord path. If your run comes in over 5 minutes, cut in this order:
+   Q14 (time spent chasing), Q10 (what settled the disagreement), Q7 (payment
+   method). Q6, Q8, Q9, Q13, Q15 and Q17 carry P1–P4 and must not be cut.
 3. **Delete every test response** before the first real message goes out. Open the
    response sheet and confirm it is empty. A test row left in the sheet becomes a
    data point nobody can identify later.
 4. **Check the form accepts responses from people not signed in.** The commonest
    failure is a form restricted to one organisation, which silently turns away
    most of the people you are recruiting.
-5. **Send to one small group first** and watch the first ten responses arrive. If
+5. **Build both versions of the form.** Q17's two substantive options cannot be
+   shuffled without shuffling the residuals into the middle, so make two copies
+   of the form identical but for the order of those two options, and split
+   recruitment between them. Without this, any gap on the project's central
+   question can be attributed to which option was listed first.
+6. **Send to one small group first** and watch the first ten responses arrive. If
    something is confusing, you find out at a cost of ten responses rather than
    three hundred.
+7. **Set a calendar reminder to clear the email column** within 48 hours of each
+   batch, per the handling rule in the instrument. An email sitting beside city,
+   age band and rent band is not a confidential response.
