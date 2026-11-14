@@ -13,10 +13,10 @@ Anush Kulal M|24MCAR0133|POST GRADUATE STUDENT (MCA)
 #H INTRODUCTION
 #P Paying guest establishments, private hostels and small apartment blocks of between two and twenty rooms are where a large proportion of urban renters in India live. Almost all of these properties belong to individuals rather than to firms, and almost all are run without software of any kind. A register at the front desk records names. Rent comes by UPI transfer or in cash. Deposits are remembered rather than written down. Maintenance complaints arrive by telephone and are either dealt with or forgotten, with nothing recorded either way.
 #P At one property with four rooms this is adequate. At two properties with twelve it is not, and it fails unevenly. The landlord loses the ability to answer the central question of the business, which is who has not paid. The tenant loses more. Having paid, they hold a transaction screenshot that proves money moved and says nothing about which month it was for, and they hold no acknowledgement from the person who received it.
-#P The products already serving this market split along a line that runs through the whole category. The simpler ones are digital registers with no tenant-facing side at all. The more capable ones do give the tenant a view, and they make that view authoritative by collecting the rent themselves and settling it onward. That is clean as software and consequential as regulation: an entity that receives payments from customers and remits them to merchants is a payment aggregator under the applicable framework, which carries an authorisation requirement, a minimum net worth in the tens of crores of rupees, and an obligation to hold collected funds in escrow. It also means a landlord's rent spends time in an account that is not theirs, which landlords interviewed during this project objected to without being asked.
-#P This paper describes a system built on the view that these are not the only two options available.
+#P The products already serving this market split along a line that runs through the whole category. The simpler ones are digital registers with no tenant-facing side at all. The more capable ones do give the tenant a view, and they make that view authoritative by collecting the rent themselves and settling it onward. That is clean as software and consequential as regulation: an entity that receives payments from customers and remits them to merchants is a payment aggregator under the applicable framework, which carries an authorisation requirement, a minimum net worth in the tens of crores of rupees, and an obligation to hold collected funds in escrow. It also means a landlord's rent spends time in an account that is not theirs, which landlords interviewed during this project objected to without being asked. This paper describes a system built on the view that these are not the only two options available.
 
 #H REVIEW OF LITERATURE
+#P The literature bearing on this project falls into three groups: work on why small enterprises remain on manual systems, the regulatory texts that govern who may hold a payment and what personal data may be collected, and published guidance on session security and accessibility. Each is summarised below, followed by the gap this study addresses.
 #L Management literature on small enterprises: Work on why small businesses remain on manual systems finds consistently that the barrier is not the price of software but the time and risk of migration, and that manual systems fail quietly. A missed payment, a partial payment nobody followed up, or a deposit returned in full when deductions were due leave no trace, so the owner's sense of the business is reliably better than its accounts would be. The design conclusion is that any replacement must be usable without a migration project.
 #L Existing digital rental products: A review of applications targeting the Indian rental market showed the split described above, and a second weakness in the simpler products: several model a property as a flat list of tenants with no intervening notion of rooms, which fails as soon as an owner holds more than one building.
 #L Payment aggregator regulation: The Reserve Bank of India regulates entities that collect payments from customers and pass them to merchants. The framework has been revised more than once and the direction of travel has been to bring more arrangements inside it. The consequence for a small rental application is blunt: the moment the platform receives a tenant's rent and later pays it to the landlord, it is doing the regulated thing, whatever it calls itself and however briefly it holds the money.
@@ -27,27 +27,26 @@ Anush Kulal M|24MCAR0133|POST GRADUATE STUDENT (MCA)
 #L Research gap: The regulatory and security literature describes constraints well and the product literature describes features well, but neither addresses the question this project sets: whether a complete, shared and trustworthy tenancy record can be maintained by a platform that never receives the money, and what such a system must do differently as a result.
 
 #H OBJECTIVES
-#N To replace manual record keeping with a structured record of properties, rooms, tenants, tenancies, rent, deposits and payments, held in a relational database rather than in a register.
-#N To give the tenant a real view of that record, so that the person paying the rent can see what is owed, what has been paid and what the landlord has formally acknowledged.
+#N To replace manual record keeping with a structured record of properties, rooms, tenants, tenancies, rent, deposits and payments held in a relational database, and to present that same record to the tenant, so that the person paying the rent can see what is owed, what has been paid and what the landlord has formally acknowledged.
 #N To keep the platform entirely outside the flow of funds, so that it never holds or transmits a tenant's money and does not fall inside the regulatory perimeter that applies to payment aggregators.
 #N To ensure that no payment is treated as settled on the payer's own say-so, by requiring confirmation from the landlord or from a payment gateway before a rent cycle advances.
 #N To verify the result by driving every layer against real infrastructure rather than against mocks, and to report what that verification found, including what it did not cover.
 
 #H DATA COLLECTION
-#N The evidence in this paper is the system itself and the measurements taken from it. There was no questionnaire and there are no human respondents; the units of observation are source files, endpoints, database tables, test assertions, defects and elapsed times.
-#N All counts were taken mechanically from the repository at a single commit, so that they describe one state of the system rather than an accumulation across several.
+#P The evidence in this paper is the system itself and the measurements taken from it. There was no questionnaire and there are no human respondents, so the sampling and instrument-design questions that ordinarily occupy this section do not arise. The units of observation are source files, endpoints, database tables, test assertions, defects and elapsed times.
+#P All counts were taken mechanically from the repository at a single commit rather than assembled by hand across a period, so that they describe one state of the system instead of an accumulation across several. Where a figure could not be derived exactly it is reported as approximate and labelled as such in the table that carries it.
+#P The measurements fall into three kinds, and they do not carry equal weight. Counts of source files, endpoints and tables are census figures: they are exact, and repeating the count returns the same number. Assertion and defect counts are exact for the commit documented but would change with the next commit. Elapsed times are the only measurements with genuine variance, and the two reported are means over observed runs rather than single observations.
+#P The procedures that produced each kind are set out below.
 #N The build carries 750 assertions across 22 suites. None uses a test framework; each suite is a plain script that exits non-zero when an assertion fails, which removes any dependency between the suites and a runner's conventions.
-#N End-to-end suites run against a live server and a real MySQL instance seeded by a generator with a fixed seed, so that a failing run is exactly reproducible.
-#N The generator deliberately produces records that break interfaces and seldom appear when sought: a tenant with no room, a guest with no email address, rent overdue and due today and never configured, a payment declared and undecided, another rejected with a reason, and a property containing no rooms.
+#N End-to-end suites run against a live server and a real MySQL instance seeded by a generator with a fixed seed, so that a failing run is exactly reproducible. The generator deliberately produces records that break interfaces and seldom appear when sought: a tenant with no room, a guest with no email address, rent overdue and due today and never configured, a payment declared and undecided, another rejected with a reason, and a property containing no rooms.
 #N User-interface suites execute the same JavaScript the handset executes, exported for the web and driven through a browser engine, so that the assertions concern the compiled application rather than a reimplementation of it.
 #N Propagation latency was measured by a suite that opens two browser contexts, signs a tenant into one and a landlord into the other, and times the interval between a maintenance request being raised and its becoming visible to the other party.
-#N Defects are counted as distinct causes, not as failing assertions, and each is counted once irrespective of how many suites observed it.
-#N Endpoint coverage was computed by comparing the distinct paths requested by the suites against the routes the server declares.
-#N Nothing behind a native module is exercised, which excludes the camera, the image picker, push delivery and the handoff to a UPI application. These are stated rather than implied, because a passing run is persuasive.
-#N Running a desktop browser is not a substitute for a device and is not claimed as one.
+#N Defects are counted as distinct causes, not as failing assertions, and each is counted once irrespective of how many suites observed it. Endpoint coverage was computed by comparing the distinct paths requested by the suites against the routes the server declares.
+#N Nothing behind a native module is exercised, which excludes the camera, the image picker, push delivery and the handoff to a UPI application. These limits are stated rather than implied, because a passing run is persuasive; running a desktop browser is not a substitute for a device and is not claimed as one.
 
 #H DATA ANALYSIS
-#P The tables below describe the scale of the implementation, the distribution of verification effort across it, and what that verification found.
+#P The tables below describe the scale of the implementation, the distribution of verification effort across it, and the share of the interface that effort reaches.
+#P The last of these is reported because it is the one that constrains what the rest can be taken to mean. A suite count and an assertion count say how much verification was done; neither says how much of the system it reached, and a paper that gave the first two without the third would invite a reader to assume the answer was all of it.
 #T Table 1. Scale of the implementation
 |Particulars|Measure|Value
 |Source|Source files|178
@@ -58,6 +57,7 @@ Anush Kulal M|24MCAR0133|POST GRADUATE STUDENT (MCA)
 |Verification|Test suites|22
 |Verification|Assertions|750
 #S Source: Counted from the repository at the commit documented; author's computation.
+
 #T Table 2. Distribution of assertions across verification layers
 |Layer|What it exercises|Suites|Assertions|Percent
 |Pure and stubbed|Functions in isolation|8|305|40.7
@@ -65,9 +65,42 @@ Anush Kulal M|24MCAR0133|POST GRADUATE STUDENT (MCA)
 |Browser-driven|The compiled application|11|260|34.7
 |Total|—|22|750|100.0
 #S Source: Assertion counts as printed by a passing run of each suite; author's computation.
-#FIG fig_assertions.png|Figure 1. Assertions by verification layer (n = 750)
-#S Source: Table 2. Eight suites run in isolation, three against live MySQL and eleven against the compiled application.
-#T Table 3. Defects located, by class
+
+#T Table 3. Test suites in the build
+|Category|Suite|Assertions
+|Pure and stubbed|secretbox, session, gateway, vm.gateway, refresh.client, layout, ratelimit, appversion|305
+|Live server|api.e2e, refresh.e2e, guardian.e2e|185
+|Browser-driven|ui.e2e, ui.crossportal, ui.discover, ui.alerts, ui.tour, ui.signup, ui.signuproles, ui.updates, ui.storebanner, ui.layout, ui.signout|260
+#S Source: Suite inventory taken from the repository; assertion counts as printed by a passing run.
+
+#T Table 4. Endpoint coverage by the verification suites
+|Measure|Count|Percent of declared
+|Routes declared by the server|96|100.0
+|Distinct paths requested by the principal API suite|50|52.1
+|Routes not driven by any suite|approximately 32|33.3
+#S Source: Computed by comparing requested paths against declared routes; author's computation.
+
+
+#H HYPOTHESIS TESTING
+#P The hypotheses below are not statistical. This study has no survey and no respondents, so there is no sampling distribution against which a significance level could be computed. Each is stated as a null, tested against the measurements reported above, and capable of surviving. None did.
+#B Maintaining a Shared Tenancy Record Without Receiving Funds
+#L H0: A platform that never receives the rent cannot maintain a tenancy record that both parties treat as authoritative.
+#T Table 5. Payment paths and the location of the receiving account
+|Path|Account the money reaches|Operator account in the path|Advances the rent cycle on
+|UPI to the landlord's address|The landlord's own bank|None|The landlord's confirmation
+|Gateway payment link|The landlord's own merchant account|None|The gateway's answer to a direct query
+|Landlord's own entry|The landlord's own bank|None|Entry, being the landlord's statement about their own money
+#S Source: Payment paths as implemented; author's analysis of the settlement code.
+#T Table 6. Cross-portal propagation latency
+|Condition|Observed latency|Polling interval|Within interval
+|Landlord interacting with the interface|2.3 s|25 s|Yes
+|Landlord's screen untouched|9.1 s|25 s|Yes
+#S Source: Measured by the two-context suite; mean of observed runs. Author's measurement.
+
+#L Result: Rejected. The record is maintained across 23 tables and 96 endpoints with no account belonging to the operator in any payment path, and it propagates to the other party well inside the polling interval. Authority is supplied not by custody but by confirmation, and both confirmation routes terminate in one settlement function so that they cannot disagree. The cost is explicit rather than hidden: the system cannot observe a payment it did not handle, and the confirmation step exists to discharge that cost rather than to conceal it.
+#B Detection of Defects by Unit Testing Compared with End-to-End Execution
+#L H0: Unit testing over mocks detects the defects that end-to-end execution detects.
+#T Table 7. Defects located, by class
 |Class|Count|Example
 |Correctness|6|A path promising a message the system could not send
 |Accessibility|3|Icon-only controls announcing only as "button"
@@ -77,67 +110,34 @@ Anush Kulal M|24MCAR0133|POST GRADUATE STUDENT (MCA)
 |Security|1|One registration endpoint enforcing no password length
 |Total|16|—
 #S Source: Defects recorded during verification; classified by the author.
-#FIG fig_defects.png|Figure 2. Defects located during verification, by class (n = 16)
-#S Source: Table 3. None of the sixteen was detected by the eight suites that run in isolation.
-#T Table 4. Cross-portal propagation latency
-|Condition|Observed latency|Polling interval|Within interval
-|Landlord interacting with the interface|2.3 s|25 s|Yes
-|Landlord's screen untouched|9.1 s|25 s|Yes
-#S Source: Measured by the two-context suite; mean of observed runs. Author's measurement.
-#FIG fig_latency.png|Figure 3. Propagation latency against the 25-second polling interval
-#S Source: Table 4. Both conditions fall inside the interval; the first is faster because any navigation refetches.
-#T Table 5. Endpoint coverage by the verification suites
-|Measure|Count|Percent of declared
-|Routes declared by the server|96|100.0
-|Distinct paths requested by the principal API suite|50|52.1
-|Routes not driven by any suite|approximately 32|33.3
-#S Source: Computed by comparing requested paths against declared routes; author's computation.
-#FIG fig_coverage.png|Figure 4. Endpoint coverage against the 96 routes the server declares
-#S Source: Table 5. About a third of declared routes are driven by no suite; the second figure is approximate at source.
 
-#T Table 6. Test suites in the build
-|Category|Suite|Assertions
-|Pure and stubbed|secretbox, session, gateway, vm.gateway, refresh.client, layout, ratelimit, appversion|305
-|Live server|api.e2e, refresh.e2e, guardian.e2e|185
-|Browser-driven|ui.e2e, ui.crossportal, ui.discover, ui.alerts, ui.tour, ui.signup, ui.signuproles, ui.updates, ui.storebanner, ui.layout, ui.signout|260
-#S Source: Suite inventory taken from the repository; assertion counts as printed by a passing run.
-#T Table 7. Defects located by checking documentation against source
+#L Result: Rejected. Sixteen distinct defects were located by driving endpoints against a real database and the compiled application against a real browser engine. None had been detected by the eight unit suites, which passed throughout. The defects clustered precisely where units meet: authorisation applied in two of three places, a form and a server disagreeing about a rule, and an interface promising something no service implemented. The strongest single instance was a cross-account authorisation defect in which one landlord's tenant could be written into another landlord's room.
+#B Detection of Defects Arising from a Suite's Own Assumptions
+#L H0: A test suite detects defects arising from assumptions it shares with its subject.
+#T Table 8. Defects located by checking documentation against source
 |Defect|Note
 |The guided tour did not start after registration|Recorded as fixed; three of four entry points had been addressed
 |Guardian details were stored but retrieved by no query|The interface's undertaking remained false
 |The update prompt had stopped listing an update's contents|Introduced by a refactor three days earlier
 |One suite loaded a dependency by an absolute path|Executable on one machine only
 #S Source: Thirty statements in the project's documents were checked against the source; four failed because the software was wrong. Author's verification.
-#T Table 8. Objectives and the mechanism that meets each
-|Objective|Mechanism in the implementation
-|Structured record in place of a register|23 tables holding properties, rooms, tenancies, rent, deposits and payments
-|A real tenant-facing view|A tenant portal presenting the same records from the other side
-|Platform outside the flow of funds|UPI to the landlord's own address, or a gateway on the landlord's own merchant account
-|No payment settled on the payer's say-so|Claim-and-confirmation, with one shared settlement function
-|Verification against real infrastructure|185 assertions against live MySQL and 260 against the compiled application
-#S Source: Mapping prepared by the author from the implementation.
 
-#H HYPOTHESIS TESTING
-#P The hypotheses below are not statistical. This study has no survey and no respondents, so there is no sampling distribution against which a significance level could be computed. They are falsifiable statements about the system, each stated before the evidence was gathered, each tested against the measurements reported above, and each capable of failing. Two of the three did.
-#B Maintaining a Shared Tenancy Record Without Receiving Funds
-#L Hypothesis: A system that never receives money can nonetheless maintain a record both parties regard as authoritative.
-#L Evidence: The implementation maintains such a record across 23 tables and 96 endpoints with no account belonging to the operator appearing in any payment path. Authority is supplied not by custody but by the confirmation model: a payment reported by a tenant advances no rent cycle until the landlord confirms it or a gateway answers a direct query, and both routes terminate in one settlement function so that they cannot disagree.
-#L Result: Supported. The cost of the approach is explicit rather than hidden, which is that the system cannot observe a payment it did not handle, and the confirmation step exists to discharge that cost rather than to conceal it.
-#B Detection of Defects by Unit Testing Compared with End-to-End Execution
-#L Hypothesis: If the units are correct, the assembled system is correct.
-#L Evidence: Sixteen distinct defects were located by driving endpoints against a real database and the compiled application against a real browser engine. None had been detected by the unit suites, which passed throughout. The classes are given in Table 3 and include a cross-account authorisation defect in which one landlord's tenant could be written into another landlord's room.
-#L Result: Not supported. The defects clustered precisely where units meet: authorisation applied in two of three places, a form and a server disagreeing about a rule, and an interface promising something no service implemented.
-#B Detection of Defects Arising from a Suite's Own Assumptions
-#L Hypothesis: Verification is independent of the thing verified.
-#L Evidence: The client constrains keyboard-driven scrolling so that a focused input cannot pass beneath the header, computing the prohibited region as the safe-area inset plus the header's height. The suite responsible measured the header the same way, as the uppermost fifty-eight pixels of the window. When a notice bar was introduced above the header, both became wrong in the same direction for the same reason, and the resulting defect was invisible to the suite.
-#L Result: Not supported. Detection required a third element that had not previously existed. A test sharing its subject's assumptions does not verify those assumptions, and a passing run does not disclose which assumptions it is failing to examine.
-
+#L Result: Rejected. The client constrains keyboard-driven scrolling so that a focused input cannot pass beneath the header, computing the prohibited region as the safe-area inset plus the header's height. The suite responsible measured the header the same way, as the uppermost fifty-eight pixels of the window. When a notice bar was introduced above the header, both became wrong in the same direction for the same reason, and the resulting defect was invisible to the suite. Detection required a third element that had not previously existed, and the four defects in Table 8 were located the same way: by checking the project's own documents against its source rather than by running anything.
 #T Table 9. Summary of hypotheses tested
-|Hypothesis|Evidence relied on|Result
-|A shared record can be maintained without receiving funds|23 tables, 96 endpoints, no operator account in any payment path|Supported
-|Unit testing over mocks detects what end-to-end execution detects|16 defects, none detected by the unit suites|Not supported
-|A suite detects defects arising from assumptions it shares|The focus-clamp defect, invisible to the suite that shared its premise|Not supported
-#S Source: Author's analysis of the measurements reported in Tables 1 to 5.
+|Null hypothesis|Evidence relied on|Result
+|A record cannot be maintained without receiving funds|23 tables, 96 endpoints, no operator account in any payment path|Rejected
+|Unit testing over mocks detects what end-to-end execution detects|16 defects, none detected by the unit suites|Rejected
+|A suite detects defects arising from assumptions it shares|The focus-clamp defect, invisible to the suite that shared its premise|Rejected
+#S Source: Author's analysis of the measurements reported in Tables 1 to 8.
+
+#FIG fig_assertions.png|Figure 1. Assertions by verification layer (n = 750)
+#S Source: Table 2. Eight suites run in isolation, three against live MySQL and eleven against the compiled application.
+#FIG fig_coverage.png|Figure 2. Endpoint coverage against the 96 routes the server declares
+#S Source: Table 4. About a third of declared routes are driven by no suite; the second figure is approximate at source.
+#FIG fig_latency.png|Figure 3. Propagation latency against the 25-second polling interval
+#S Source: Table 6. Both conditions fall inside the interval; the first is faster because any navigation refetches.
+#FIG fig_defects.png|Figure 4. Defects located during verification, by class (n = 16)
+#S Source: Table 7. None of the sixteen was detected by the eight suites that run in isolation.
 
 #H FINDINGS
 #L The non-custodial model is workable: A complete two-sided record was maintained with no platform account in any payment path, which keeps the operator outside the payment-aggregator perimeter and leaves settlement where the landlords consulted wanted it.
@@ -150,6 +150,8 @@ Anush Kulal M|24MCAR0133|POST GRADUATE STUDENT (MCA)
 #L For independent landlords: a shared record is obtainable without surrendering custody of rent, and the confirmation step that such a system requires is a small cost against an auditable account of every month.
 #L For builders of two-sided platforms in regulated areas: establish early whether the design places the operator inside a regulatory perimeter, because that determination constrains architecture rather than configuration.
 #L For project verification: drive the assembled system against real infrastructure, state explicitly what the suites cannot reach, and check documentation against source as a distinct exercise.
+#L Two update channels require two different promises: a change confined to JavaScript reaches installed copies in minutes, while a change touching native code cannot, so the application compares versions on the server and renders the verdict rather than deciding for itself, and says nothing at all when it can get no answer.
+#P Three limitations follow from the design rather than from oversight, and are stated here because the findings above would otherwise be read as covering more than they do.
 #P The system cannot observe money, which follows from the design rather than from an oversight. Session revocation lags by up to two hours on the access path. Push delivery to a handset has never been confirmed: the path is implemented and no device has registered against it, so the in-application notification surface is verified and the device notification tray is not. No iOS build has been produced. A second payment provider is specified and not implemented. Finally, the demonstration listings that populate the discovery interface on a new deployment carry ordinary names and stock photographs and are not marked as samples anywhere a user can see, which requires a visible marker.
 
 #H CONCLUSION
@@ -157,16 +159,19 @@ Anush Kulal M|24MCAR0133|POST GRADUATE STUDENT (MCA)
 #P The verification work produced results of wider application than the system itself. Tests that assert the absence of a string, systems examined only against their own mocks, and tests that share their subject's assumptions all produce the same false confidence, and a passing run discloses which of the three is occurring in none of the cases. Checking documentation against source proved inexpensive and located four defects that every suite had passed, including one in a module written, tested and released three days earlier. A defect recorded as fixed is more damaging than one recorded as open, because it ends the inquiry that would otherwise have found it.
 
 #H REFERENCE
-#L Expo. (2025). Expo Updates and EAS Build documentation. Expo Documentation.
-#L Government of India. (1872). The Indian Contract Act, 1872, s. 11.
-#L Government of India. (2016). The Aadhaar (Targeted Delivery of Financial and Other Subsidies, Benefits and Services) Act, 2016, s. 29.
-#L Government of India. (2023). The Digital Personal Data Protection Act, 2023, and the rules issued thereunder.
-#L Internet Engineering Task Force. (2015). RFC 7519: JSON Web Token (JWT).
-#L Internet Engineering Task Force. (2024). OAuth 2.0 Security Best Current Practice.
-#L National Institute of Standards and Technology. (2007). SP 800-38D: Recommendation for block cipher modes of operation — Galois/Counter Mode (GCM).
-#L National Payments Corporation of India. (2024). UPI linking specification and deep linking guidelines.
-#L Nielsen, J. (1993). Usability engineering. Morgan Kaufmann.
-#L Pressman, R. S., & Maxim, B. R. (2020). Software engineering: A practitioner's approach (9th ed.). McGraw-Hill Education.
-#L Razorpay. (2025). Payment Links API. Razorpay Developer Documentation.
-#L Reserve Bank of India. (2020). Guidelines on regulation of payment aggregators and payment gateways, and subsequent amendments.
-#L World Wide Web Consortium. (2023). Web Content Accessibility Guidelines (WCAG) 2.2.
+#N Beck, K. (2002). Test-driven development: By example. Addison-Wesley.
+#N Expo. (2025). Expo Updates and EAS Build documentation. Expo Documentation.
+#N Fowler, M. (2007). Mocks aren't stubs. martinfowler.com.
+#N Government of India. (1872). The Indian Contract Act, 1872, s. 11.
+#N Government of India. (2016). The Aadhaar (Targeted Delivery of Financial and Other Subsidies, Benefits and Services) Act, 2016, s. 29.
+#N Government of India. (2023). The Digital Personal Data Protection Act, 2023, and the rules issued thereunder.
+#N Internet Engineering Task Force. (2015). RFC 7519: JSON Web Token (JWT).
+#N Internet Engineering Task Force. (2024). OAuth 2.0 Security Best Current Practice.
+#N Meszaros, G. (2007). xUnit test patterns: Refactoring test code. Addison-Wesley.
+#N National Institute of Standards and Technology. (2007). SP 800-38D: Recommendation for block cipher modes of operation — Galois/Counter Mode (GCM).
+#N National Payments Corporation of India. (2024). UPI linking specification and deep linking guidelines.
+#N Nielsen, J. (1993). Usability engineering. Morgan Kaufmann.
+#N Pressman, R. S., & Maxim, B. R. (2020). Software engineering: A practitioner's approach (9th ed.). McGraw-Hill Education.
+#N Razorpay. (2025). Payment Links API. Razorpay Developer Documentation.
+#N Reserve Bank of India. (2020). Guidelines on regulation of payment aggregators and payment gateways, and subsequent amendments.
+#N World Wide Web Consortium. (2023). Web Content Accessibility Guidelines (WCAG) 2.2.
