@@ -3110,6 +3110,24 @@ export default function Sheets() {
                                 </Row>
                             ) : null}
 
+                            {/* Above the headline, not below the fold. This is the
+                                screen where somebody decides to send a request, and
+                                the seeded landlords cannot sign in to answer one. */}
+                            {sh.sample ? (
+                                <View
+                                    accessibilityLabel={`Sample listing. ${sh.sampleNote}`}
+                                    style={{
+                                        marginTop: 14, padding: 11, borderRadius: 14,
+                                        backgroundColor: t.lsoft, borderWidth: 1, borderColor: t.line
+                                    }}>
+                                    <Row gap={7} align="center">
+                                        <Glyph name="information-circle-outline" size={13} color={t.fg2} />
+                                        <T mono w={700} s={9} lh={1.3} ls={0.08} c={t.fg2}>SAMPLE LISTING</T>
+                                    </Row>
+                                    <T w={400} s={12} lh={1.5} c={t.fg2} style={{ marginTop: 5 }}>{sh.sampleNote}</T>
+                                </View>
+                            ) : null}
+
                             {sh.headline ? (
                                 <T w={600} s={14} lh={1.4} c={t.fg} style={{ marginTop: 14 }}>{sh.headline}</T>
                             ) : null}

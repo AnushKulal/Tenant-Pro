@@ -184,6 +184,21 @@ export default function FindScreen() {
                                         <T w={600} s={15} lh={1.2} c={t.fg} numberOfLines={1} style={{ flex: 1 }}>{r.property}</T>
                                         <T w={700} s={15} lh={1.2} c={t.lime}>{r.rent}</T>
                                     </Row>
+                                    {/* One word, on the card itself and not only on the
+                                        detail screen, because the card is where a tenant
+                                        forms the impression that these are real rooms a
+                                        real landlord is offering. */}
+                                    {r.sample ? (
+                                        <View
+                                            accessibilityLabel="Sample listing"
+                                            style={{
+                                                alignSelf: 'flex-start', marginTop: 4,
+                                                paddingHorizontal: 6, paddingVertical: 2,
+                                                borderRadius: 5, backgroundColor: t.lsoft
+                                            }}>
+                                            <T mono w={700} s={8} lh={1.3} ls={0.08} c={t.fg2}>SAMPLE</T>
+                                        </View>
+                                    ) : null}
                                     <T mono w={600} s={9} lh={1.5} ls={0.06} c={t.fg3} numberOfLines={1} style={{ marginTop: 3 }}>
                                         {[r.loc, r.type].filter(Boolean).join(' · ')}
                                     </T>

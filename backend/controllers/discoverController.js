@@ -63,6 +63,7 @@ const BASE_SQL = `
         p.latitude, p.longitude,
         o.id              AS owner_id,
         o.name            AS owner_name,
+        o.email           AS owner_email,
         (SELECT COUNT(*) FROM tenants t
           WHERE t.unit_id = u.id AND t.status = 'Active') AS taken
     FROM listings l
@@ -112,6 +113,21 @@ const AMENITY_LABELS = {
     furnished: 'Furnished', balcony: 'Balcony', kitchen: 'Kitchen'
 };
 
+// Is this one of the sample rooms the showcase seeder writes?
+//
+// The seeded landlords all live at one domain that nobody can register under, so
+// the check is on the owner's address rather than on a column somebody has to
+// remember to set. It is derived at read time in ONE place, immediately below the
+// query both the list and the detail endpoint share, because the two paths read
+// the same rows and a flag set in only one of them is worse than no flag at all:
+// a tenant would see the badge on the card, open it, and find it gone.
+//
+// A listing is a sample because of who owns it, not because of anything stored
+// about the listing, so a real landlord can never be marked by accident.
+const SAMPLE_DOMAIN = '@showcase.invalid';
+const isSample = (ownerEmail) =>
+    String(ownerEmail || '').toLowerCase().endsWith(SAMPLE_DOMAIN);
+
 const parseAmenities = (csv) =>
     String(csv || '')
         .split(',')
@@ -154,6 +170,7 @@ const discover = async (req, res) => {
                 property_id: r.property_id,
                 owner_id: r.owner_id,
                 owner_name: r.owner_name,
+                is_sample: isSample(r.owner_email),
                 property: r.property_name,
                 type: r.property_type,
                 locality: r.locality || '',
@@ -356,7 +373,8 @@ const discoverOne = async (req, res) => {
                 image: r.unit_image || r.property_image || null,
                 lat: num(r.latitude),
                 lng: num(r.longitude),
-                owner_name: r.owner_name
+                owner_name: r.owner_name,
+                is_sample: isSample(r.owner_email)
             },
             also: siblings.map((s) => ({
                 listing_id: s.listing_id,
@@ -371,4 +389,4 @@ const discoverOne = async (req, res) => {
     }
 };
 
-module.exports = { discover, discoverOne, discoverEnabled, perHead, distanceKm, parseAmenities, AMENITY_LABELS };
+module.exports = { discover, discoverOne, discoverEnabled, perHead, distanceKm, parseAmenities, AMENITY_LABELS, isSample, SAMPLE_DOMAIN };

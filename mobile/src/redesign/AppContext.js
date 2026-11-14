@@ -5475,6 +5475,11 @@ function deriveVm(s, api) {
         size: r.capacity === 1 ? 'Private room' : `${r.capacity} sharing`,
         spots: r.spots_left === 1 ? '1 spot left' : `${r.spots_left} spots left`,
         tight: r.spots_left === 1,
+        // A seeded demonstration room rather than a real landlord's. The server
+        // decides this from who owns the listing; the card only renders it. It is
+        // carried on every listing rather than only on the sample ones so that a
+        // screen can never silently omit the badge by reading a missing field.
+        sample: r.is_sample === true,
         near: r.distance_km === null ? '' : (r.distance_km < 1 ? `${Math.round(r.distance_km * 1000)} m away` : `${r.distance_km} km away`),
         why: Array.isArray(r.why) ? r.why : [],
         amenities: (r.amenities || []).slice(0, 4).map((a) => a.label),
@@ -5595,6 +5600,14 @@ function deriveVm(s, api) {
             amenities: (o.amenities || []).map((a) => a.label),
             available: o.available_from ? `Free from ${dmy(o.available_from)}` : 'Available now',
             landlord: o.owner_name || '',
+            sample: o.is_sample === true,
+            // Said once, plainly, on the detail screen where somebody is deciding
+            // whether to act. The seeded landlords cannot sign in, so a request to
+            // join one is never accepted by anybody — telling the tenant that
+            // before they send it is the whole point of the badge.
+            sampleNote: o.is_sample === true
+                ? 'Sample listing, shown so the search has something in it. Nobody will answer a request to join this room.'
+                : '',
             near: o.distance_km == null ? '' : `${o.distance_km} km away`,
             also: (d.also || []).map((a) => ({
               id: a.listing_id,
