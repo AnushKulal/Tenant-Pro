@@ -386,7 +386,7 @@ const OWNER_TOUR = [
   {
     key: 'welcome', route: 'home', spot: 'none',
     title: 'Welcome to TenantPro',
-    body: 'A quick look around — about thirty seconds. You can leave at any point and pick it up again from Settings.'
+    body: 'About thirty seconds. Leave any time and replay it from Settings.'
   },
   {
     key: 'overview', route: 'home', spot: 'top',
@@ -396,27 +396,27 @@ const OWNER_TOUR = [
   {
     key: 'dock', route: 'home', spot: 'dock', target: 'dock',
     title: 'Everything is down here',
-    body: 'Properties and rooms, the people in them, and the ledger. Four taps, no menus to hunt through.'
+    body: 'Properties, the people in them, and the ledger. Four taps, no menus.'
   },
   {
     key: 'units', route: 'units', spot: 'top',
     title: 'Properties and rooms',
-    body: 'Add a building, then the rooms inside it. A room can be listed for tenants to find, or kept private — that is your choice, per room.'
+    body: 'Add a building, then its rooms. List a room for tenants to find, or keep it private.'
   },
   {
     key: 'people', route: 'people', spot: 'top',
     title: 'The people renting from you',
-    body: 'Who is in which room, what they owe and when they are due. Requests to join land here too.'
+    body: 'Who is in which room, what they owe, and requests to join.'
   },
   {
     key: 'ledger', route: 'ledger', spot: 'top',
     title: 'Every rupee, recorded',
-    body: 'Payments, expenses and what each property actually earned. A tenant can say they have paid; it counts once you confirm it, or once a payment gateway does.'
+    body: 'Payments, expenses and what each property earned. A declared payment counts once you confirm it.'
   },
   {
     key: 'settings', route: 'settings', spot: 'middle',
     title: 'Getting paid',
-    body: 'UPI is free and already works. Online payments add cards and netbanking through YOUR OWN gateway account — the money goes to you, never through this app.'
+    body: 'UPI works now, free. Add your own gateway for cards and netbanking — money still goes straight to you.'
   }
 ];
 
@@ -434,22 +434,22 @@ const TENANT_TOUR = [
   {
     key: 'dock', route: 'portal', spot: 'dock', target: 'dock',
     title: 'Where everything lives',
-    body: 'Home for your dues, Find for a new place, Help to raise a problem, and your own profile and documents.'
+    body: 'Your dues, finding a place, raising a problem, and your documents.'
   },
   {
     key: 'find', route: 'tfind', spot: 'top',
     title: 'Looking for somewhere?',
-    body: 'Search rooms by budget, area, type and distance. Ask to join one and the landlord gets your request — your contact details stay private until they accept.'
+    body: 'Search by budget, area and distance. Your details stay private until a landlord accepts.'
   },
   {
     key: 'help', route: 'thelp', spot: 'top',
     title: 'Something broken?',
-    body: 'Raise it here and your landlord sees it immediately, with a thread you can both reply in. No phone calls that nobody remembers.'
+    body: 'Raise it here. Your landlord sees it at once, and you both reply in one thread.'
   },
   {
     key: 'docs', route: 'tme', spot: 'middle',
     title: 'Your profile and documents',
-    body: 'Your ID lives here. A landlord can ask to see it and you decide — and you can see exactly what you have shared, and with whom.'
+    body: 'Your ID lives here. You decide who sees it, and can check what you have shared.'
   }
 ];
 
@@ -2138,13 +2138,13 @@ function deriveVm(s, api) {
           title: 'Notifications',
           // Named by what arrives, not by the feature. "Allow notifications" is a
           // request; "we will tell you when rent is due" is a reason.
-          why: 'To tell you when rent is due, when a payment needs confirming, and when a tenant raises a repair. Nothing else is ever sent.'
+          why: 'Rent due, payments to confirm, repairs raised. Nothing else.'
         },
         {
           key: 'location',
           icon: 'location-outline',
           title: 'Location',
-          why: 'Only while you are placing a property on the map, so the pin can start where you are standing. Searching or dragging works without it, and TenantPro never follows you around.'
+          why: 'Only while you place a property on the map, so the pin starts where you are. Never in the background.'
         }
       ].map((r) => {
         const st = P[r.key] || 'unknown';
@@ -2169,7 +2169,7 @@ function deriveVm(s, api) {
           key: 'calls',
           icon: 'call-outline',
           title: 'Calls & messages',
-          why: 'Tapping a number opens your dialer or messages app with it filled in, and you send it. TenantPro never places the call or sends the message itself, and never reads your contacts — so there is no permission to ask for.'
+          why: 'Tapping a number opens your dialer or messages app with it filled in. Nothing is sent for you, and contacts are never read.'
         }],
         granted,
         allSettled: rows.every((r) => r.settled),
@@ -2628,7 +2628,7 @@ function deriveVm(s, api) {
       // server reports SMS as not configured at all. This says what actually
       // happens: the details are recorded and the landlord has to get consent
       // before a tenancy can start.
-      : 'Someone under 18 cannot sign a tenancy themselves. Your guardian\u2019s details go to your landlord, who must have their consent before your tenancy can start.',
+      : 'Under 18, you cannot sign a tenancy yourself. Your guardian\u2019s details go to the landlord, who needs their consent first.',
     submitSignup: () => api.register(),
 
     jfilters: [['ALL', 'all'], ['KORAMANGALA', 'koramangala'], ['HSR LAYOUT', 'hsr layout'], ['SHARING', 'sharing'], ['PRIVATE', 'single']].map(([label, k]) => {
@@ -3985,7 +3985,7 @@ function deriveVm(s, api) {
           title: 'Guest sign-in ID',
           line: shown
             ? 'Check their face against the ID on file before reading this out. It is the only thing they need to sign in.'
-            : 'This person has no email or password. If they change phones, this code is the only way back into their tenancy — and you are the only one who can give it to them.',
+            : 'No email or password on this tenancy. If they change phones, this code is the only way back in, and only you can give it.',
           cta: shown ? 'Hide' : 'Show guest ID',
           toggle: () => setState({ greveal: shown ? null : who.id }),
           copy: () => copyText(code, 'Guest ID copied'),
@@ -4788,7 +4788,7 @@ function deriveVm(s, api) {
         gate,
         title: gate ? 'One last thing.' : 'My documents',
         blurb: gate
-          ? 'Add a government ID so a landlord can confirm who you are before giving you a room. Aadhaar, PAN, voter ID, licence or passport — any one is enough.'
+          ? 'A landlord confirms who you are before giving you a room. Aadhaar, PAN, voter ID, licence or passport.'
           : 'Your landlord can see these and mark them verified.',
         summaryLine: sum.total
           ? `${sum.total} ${sum.total === 1 ? 'document' : 'documents'} · ${sum.verified} verified`
