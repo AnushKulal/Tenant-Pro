@@ -34,19 +34,15 @@ Anush Kulal M|24MCAR0133|POST GRADUATE STUDENT (MCA)
 #N To verify the result by driving every layer against real infrastructure rather than against mocks, and to report what that verification found, including what it did not cover.
 
 #H DATA COLLECTION
-#B Source of evidence
 #N The evidence in this paper is the system itself and the measurements taken from it. There was no questionnaire and there are no human respondents; the units of observation are source files, endpoints, database tables, test assertions, defects and elapsed times.
 #N All counts were taken mechanically from the repository at a single commit, so that they describe one state of the system rather than an accumulation across several.
-#B Method of verification
 #N The build carries 750 assertions across 22 suites. None uses a test framework; each suite is a plain script that exits non-zero when an assertion fails, which removes any dependency between the suites and a runner's conventions.
 #N End-to-end suites run against a live server and a real MySQL instance seeded by a generator with a fixed seed, so that a failing run is exactly reproducible.
 #N The generator deliberately produces records that break interfaces and seldom appear when sought: a tenant with no room, a guest with no email address, rent overdue and due today and never configured, a payment declared and undecided, another rejected with a reason, and a property containing no rooms.
 #N User-interface suites execute the same JavaScript the handset executes, exported for the web and driven through a browser engine, so that the assertions concern the compiled application rather than a reimplementation of it.
-#B Measurement
 #N Propagation latency was measured by a suite that opens two browser contexts, signs a tenant into one and a landlord into the other, and times the interval between a maintenance request being raised and its becoming visible to the other party.
 #N Defects are counted as distinct causes, not as failing assertions, and each is counted once irrespective of how many suites observed it.
 #N Endpoint coverage was computed by comparing the distinct paths requested by the suites against the routes the server declares.
-#B Limits of the evidence
 #N Nothing behind a native module is exercised, which excludes the camera, the image picker, push delivery and the handoff to a UPI application. These are stated rather than implied, because a passing run is persuasive.
 #N Running a desktop browser is not a substitute for a device and is not claimed as one.
 
@@ -111,7 +107,7 @@ Anush Kulal M|24MCAR0133|POST GRADUATE STUDENT (MCA)
 |Guardian details were stored but retrieved by no query|The interface's undertaking remained false
 |The update prompt had stopped listing an update's contents|Introduced by a refactor three days earlier
 |One suite loaded a dependency by an absolute path|Executable on one machine only
-#S Source: Thirty statements in the project's documents were checked against the source; four failed because the software was wrong. Authors' verification.
+#S Source: Thirty statements in the project's documents were checked against the source; four failed because the software was wrong. Author's verification.
 #T Table 8. Objectives and the mechanism that meets each
 |Objective|Mechanism in the implementation
 |Structured record in place of a register|23 tables holding properties, rooms, tenancies, rent, deposits and payments
@@ -121,27 +117,27 @@ Anush Kulal M|24MCAR0133|POST GRADUATE STUDENT (MCA)
 |Verification against real infrastructure|185 assertions against live MySQL and 260 against the compiled application
 #S Source: Mapping prepared by the author from the implementation.
 
-#H PROPOSITIONS AND THEIR TESTS
-#P This study has no survey and therefore no statistical hypotheses. What it has instead are propositions about the system that can be tested against the measurements above, and the three that carried the most weight for the design are set out here with the evidence that bore on them.
-#B Proposition 1: A shared tenancy record can be maintained without the platform receiving funds.
-#N Claim: A system that never receives money can nonetheless maintain a record both parties regard as authoritative.
-#N Evidence: The implementation maintains such a record across 23 tables and 96 endpoints with no account belonging to the operator appearing in any payment path. Authority is supplied not by custody but by the confirmation model: a payment reported by a tenant advances no rent cycle until the landlord confirms it or a gateway answers a direct query, and both routes terminate in one settlement function so that they cannot disagree.
-#N Result: Supported. The cost of the approach is explicit rather than hidden, which is that the system cannot observe a payment it did not handle, and the confirmation step exists to discharge that cost rather than to conceal it.
-#B Proposition 2: Unit testing over mocks detects the defects that end-to-end execution detects.
-#N Claim: If the units are correct, the assembled system is correct.
-#N Evidence: Sixteen distinct defects were located by driving endpoints against a real database and the compiled application against a real browser engine. None had been detected by the unit suites, which passed throughout. The classes are given in Table 3 and include a cross-account authorisation defect in which one landlord's tenant could be written into another landlord's room.
-#N Result: Not supported. The defects clustered precisely where units meet: authorisation applied in two of three places, a form and a server disagreeing about a rule, and an interface promising something no service implemented.
-#B Proposition 3: A test suite detects defects arising from assumptions it shares with its subject.
-#N Claim: Verification is independent of the thing verified.
-#N Evidence: The client constrains keyboard-driven scrolling so that a focused input cannot pass beneath the header, computing the prohibited region as the safe-area inset plus the header's height. The suite responsible measured the header the same way, as the uppermost fifty-eight pixels of the window. When a notice bar was introduced above the header, both became wrong in the same direction for the same reason, and the resulting defect was invisible to the suite.
-#N Result: Not supported. Detection required a third element that had not previously existed. A test sharing its subject's assumptions does not verify those assumptions, and a passing run does not disclose which assumptions it is failing to examine.
+#H HYPOTHESIS TESTING
+#P The hypotheses below are not statistical. This study has no survey and no respondents, so there is no sampling distribution against which a significance level could be computed. They are falsifiable statements about the system, each stated before the evidence was gathered, each tested against the measurements reported above, and each capable of failing. Two of the three did.
+#B Maintaining a Shared Tenancy Record Without Receiving Funds
+#L Hypothesis: A system that never receives money can nonetheless maintain a record both parties regard as authoritative.
+#L Evidence: The implementation maintains such a record across 23 tables and 96 endpoints with no account belonging to the operator appearing in any payment path. Authority is supplied not by custody but by the confirmation model: a payment reported by a tenant advances no rent cycle until the landlord confirms it or a gateway answers a direct query, and both routes terminate in one settlement function so that they cannot disagree.
+#L Result: Supported. The cost of the approach is explicit rather than hidden, which is that the system cannot observe a payment it did not handle, and the confirmation step exists to discharge that cost rather than to conceal it.
+#B Detection of Defects by Unit Testing Compared with End-to-End Execution
+#L Hypothesis: If the units are correct, the assembled system is correct.
+#L Evidence: Sixteen distinct defects were located by driving endpoints against a real database and the compiled application against a real browser engine. None had been detected by the unit suites, which passed throughout. The classes are given in Table 3 and include a cross-account authorisation defect in which one landlord's tenant could be written into another landlord's room.
+#L Result: Not supported. The defects clustered precisely where units meet: authorisation applied in two of three places, a form and a server disagreeing about a rule, and an interface promising something no service implemented.
+#B Detection of Defects Arising from a Suite's Own Assumptions
+#L Hypothesis: Verification is independent of the thing verified.
+#L Evidence: The client constrains keyboard-driven scrolling so that a focused input cannot pass beneath the header, computing the prohibited region as the safe-area inset plus the header's height. The suite responsible measured the header the same way, as the uppermost fifty-eight pixels of the window. When a notice bar was introduced above the header, both became wrong in the same direction for the same reason, and the resulting defect was invisible to the suite.
+#L Result: Not supported. Detection required a third element that had not previously existed. A test sharing its subject's assumptions does not verify those assumptions, and a passing run does not disclose which assumptions it is failing to examine.
 
-#T Table 9. Summary of propositions tested
-|Proposition|Evidence relied on|Result
+#T Table 9. Summary of hypotheses tested
+|Hypothesis|Evidence relied on|Result
 |A shared record can be maintained without receiving funds|23 tables, 96 endpoints, no operator account in any payment path|Supported
 |Unit testing over mocks detects what end-to-end execution detects|16 defects, none detected by the unit suites|Not supported
 |A suite detects defects arising from assumptions it shares|The focus-clamp defect, invisible to the suite that shared its premise|Not supported
-#S Source: Authors' analysis of the measurements reported in Tables 1 to 5.
+#S Source: Author's analysis of the measurements reported in Tables 1 to 5.
 
 #H FINDINGS
 #L The non-custodial model is workable: A complete two-sided record was maintained with no platform account in any payment path, which keeps the operator outside the payment-aggregator perimeter and leaves settlement where the landlords consulted wanted it.
@@ -151,11 +147,9 @@ Anush Kulal M|24MCAR0133|POST GRADUATE STUDENT (MCA)
 #L A promise can survive two attempts to fix it: The under-eighteen path first asked the question and did nothing with the answer, then collected a guardian's details and stored them where no query retrieved them, leaving the interface's undertaking false in both cases. Only the third revision, which surfaces the guardian where the landlord decides, made it true.
 #L Documentation checked against source is verification: Checking the project's own documents against the code located four defects that every suite had passed, including one that had been recorded as fixed in both a report and a commit message when three of its four cases had been addressed.
 #L Coverage must be stated, not implied: The suites request about fifty of ninety-six declared routes, and roughly a third of the surface is driven by nothing. The routes covered were chosen because they carry money, authorisation or session state, which is the right priority, but a claim that all endpoints are tested would be false.
-#B Suggestions
 #L For independent landlords: a shared record is obtainable without surrendering custody of rent, and the confirmation step that such a system requires is a small cost against an auditable account of every month.
 #L For builders of two-sided platforms in regulated areas: establish early whether the design places the operator inside a regulatory perimeter, because that determination constrains architecture rather than configuration.
 #L For project verification: drive the assembled system against real infrastructure, state explicitly what the suites cannot reach, and check documentation against source as a distinct exercise.
-#B Limitations
 #P The system cannot observe money, which follows from the design rather than from an oversight. Session revocation lags by up to two hours on the access path. Push delivery to a handset has never been confirmed: the path is implemented and no device has registered against it, so the in-application notification surface is verified and the device notification tray is not. No iOS build has been produced. A second payment provider is specified and not implemented. Finally, the demonstration listings that populate the discovery interface on a new deployment carry ordinary names and stock photographs and are not marked as samples anywhere a user can see, which requires a visible marker.
 
 #H CONCLUSION
