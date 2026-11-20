@@ -22,7 +22,7 @@ const { rateLimit } = require('../middleware/rateLimit');
 // These endpoints answer whether an account exists, so they are the ones worth
 // bounding. Reset is tighter than sign-in: a legitimate person needs one or two
 // codes, and each attempt costs an email.
-const loginLimit = rateLimit({ max: 20, scope: 'login' });
+const loginLimit = rateLimit({ max: 20, scope: 'login', countOnly: 'failures' });
 const resetLimit = rateLimit({ max: 5, scope: 'reset' });
 // Registration had no budget of its own. It was covered only by the blanket
 // limiter that used to sit on this whole prefix in server.js, and when that came

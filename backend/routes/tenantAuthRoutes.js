@@ -6,7 +6,7 @@ const { rateLimit } = require('../middleware/rateLimit');
 
 // Separate scope from the landlord login so one portal cannot exhaust the other's
 // budget for the same IP.
-const loginLimit = rateLimit({ max: 20, scope: 'tenant-login' });
+const loginLimit = rateLimit({ max: 20, scope: 'tenant-login', countOnly: 'failures' });
 // Its own scope for the same reason sign-in has one: a landlord registering
 // must not be able to spend what a tenant needs to register, and vice versa.
 // That separation only became real once the shared limiter in server.js — which

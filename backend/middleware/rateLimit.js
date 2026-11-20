@@ -59,8 +59,28 @@ sweeper.unref?.();
  * @param {number} opts.max      attempts allowed per window
  * @param {string} opts.scope    keeps separate endpoints from sharing a budget
  */
-const rateLimit = ({ max, scope }) => {
+const rateLimit = ({ max, scope, countOnly }) => {
     const allowed = allowanceFor(scope, max);
+    // What this counts, and why "every request" was the wrong answer on sign-in.
+    //
+    // An attacker's currency on a credential endpoint is a REFUSED reply. Every
+    // enumeration probe, every stuffed pair, every guess comes back 400, 401, 404
+    // or 409. A 200 means the caller already held the password and learned nothing
+    // by asking. So counting refusals bounds the attack exactly as counting
+    // requests did, and stops bounding the one thing that was never an attack:
+    // somebody signing in correctly.
+    //
+    // That is not cosmetic. The key is `scope:ip`, and on carrier NAT or office
+    // wifi one address is many people — so counting successes meant a stranger's
+    // ordinary sign-ins could refuse yours, with your password correct and never
+    // checked. That is the shape of the bug this was reported as.
+    //
+    // Deliberately NOT the default, and the exceptions are the security argument.
+    // On /forgot-password the 200 IS the enumeration signal — "that address exists
+    // and I have just emailed it" — and each one costs an email, so a success
+    // there is precisely what must be counted. On /register the success IS the
+    // abuse. Those keep counting every request.
+    const refundSuccess = countOnly === 'failures';
     return (req, res, next) => {
     // Render sits behind a proxy, so req.ip is only meaningful with 'trust proxy'
     // set (see server.js). Falling back to the socket address keeps this working
@@ -83,6 +103,33 @@ const rateLimit = ({ max, scope }) => {
         return res.status(429).json({
             code: 'RATE_LIMITED',
             message: `Too many attempts. Try again in ${Math.ceil(retryAfter / 60)} minute(s).`
+        });
+    }
+
+    // `res.on` is always there under Express; the guard is for the unit tests,
+    // which drive this with a minimal response object, and means a caller that
+    // cannot report an outcome simply keeps counting every request rather than
+    // throwing.
+    if (refundSuccess && typeof res.on === 'function') {
+        // Counted on ARRIVAL above and handed back here, rather than counted once
+        // the answer is known. That ordering is load-bearing: deferring the
+        // increment would let a thousand simultaneous guesses all find a count of
+        // zero and all go through, handing an attacker the whole window in one
+        // burst. Counting first and refunding after keeps the ceiling exact.
+        //
+        // Only 2xx and 3xx are refunded. Everything else keeps its cost, and that
+        // INCLUDES 5xx: a payload that makes the handler throw would otherwise be
+        // an unmetered probe, which is the opposite of the point.
+        let settled = false;
+        res.on('finish', () => {
+            if (settled) return;
+            settled = true;
+            if (res.statusCode >= 200 && res.statusCode < 400) {
+                // Only if this is still the same window. A refund into a bucket
+                // that has already rolled over would credit the next window with
+                // an attempt that was never made in it.
+                if (buckets.get(key) === entry && entry.count > 0) entry.count -= 1;
+            }
         });
     }
 
