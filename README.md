@@ -200,7 +200,7 @@ A full run signs in often enough to trip the auth rate limiter. The production
 limits are the defaults; raise them for a test run only:
 
 ```bash
-AUTH_RATE_MAX=100000 API_RATE_MAX=100000 RATE_LIMIT_MAX=100000 node server.js
+API_RATE_MAX=100000 RATE_LIMIT_MAX=100000 node server.js
 ```
 
 ## Releasing

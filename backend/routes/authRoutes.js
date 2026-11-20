@@ -24,9 +24,15 @@ const { rateLimit } = require('../middleware/rateLimit');
 // codes, and each attempt costs an email.
 const loginLimit = rateLimit({ max: 20, scope: 'login' });
 const resetLimit = rateLimit({ max: 5, scope: 'reset' });
+// Registration had no budget of its own. It was covered only by the blanket
+// limiter that used to sit on this whole prefix in server.js, and when that came
+// off — because it made every budget here unreachable — this was the one thing
+// it had been guarding that nothing else did. Ten is loose for a person, who
+// registers once, and tight for a script minting accounts.
+const registerLimit = rateLimit({ max: 10, scope: 'register' });
 
 // Public Route: Register a new owner
-router.post('/register', registerOwner);
+router.post('/register', registerLimit, registerOwner);
 
 // Public Route: Login an existing owner
 router.post('/login', loginLimit, loginOwner);

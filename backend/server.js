@@ -33,30 +33,55 @@ app.use(express.json());
 
 // --- Rate limiting ---
 //
-// The numbers below are the production numbers and stay exactly as they were.
-// What changed is that they can be raised by environment variable, for one
-// reason: an end-to-end run signs in far more often than a person ever does.
+// ONE system for auth, not two. Every auth budget lives in
+// middleware/rateLimit.js and is applied per route in the route files, next to
+// the reasoning for it: sign-in 20, password reset 5, token refresh 60, the
+// Google poll 200, registration 10, and the tenant portal on scopes of its own.
 //
-// A full suite run does something like fifty sign-ins across eight files. The
-// auth limiter allows thirty in fifteen minutes, so from the sixth suite onward
-// every login came back 429 and every request after it came back 401 "no token"
-// — which reads, in a test log, exactly like a broken endpoint. A run spent
-// several hours reporting failures in discover, layout, sign-out, payments and
-// the gateway that were all this one limiter doing its job.
+// There used to be a second, blunter limiter here as well: ONE express-rate-limit
+// instance mounted at both /api/auth and /api/tenant-auth, 30 per 15 minutes.
+// One instance is one counter, keyed on IP alone with no idea of path or method,
+// so the two mounts shared a single budget that every route under both prefixes
+// drew from. Three things followed, none of them intended.
 //
-// Raising the limit in production would be the wrong fix: brute-forcing a
-// password is precisely what this is for. So the defaults are unchanged and a
-// local test server opts out explicitly, e.g.
+//   • It ran first and counted every request, successes included, so no inner
+//     budget above 30 was reachable. Refresh's 60 and the Google poll's 200 were
+//     dead numbers, and the comment arguing for the latter — that a low ceiling
+//     "would cut a legitimate sign-in off after forty seconds" — described a
+//     limit that could never apply, because 30 bound first.
+//   • It covered the three routes the route files deliberately exempt: logout,
+//     token refresh, and Google's browser redirect. A spent budget therefore
+//     stranded an OAuth callback on an error page, left a refresh token
+//     unrevoked, and locked a signed-in app out of renewal for a quarter hour.
+//   • It pooled the two portals. tenantAuthRoutes.js says the tenant scope is
+//     kept separate "so one portal cannot exhaust the other's budget for the
+//     same IP"; one instance across both mounts is exactly that exhaustion.
 //
-//   AUTH_RATE_MAX=100000 API_RATE_MAX=100000 node server.js
+// What it looked like from a phone: the Google sign-in poll fires every 2.5
+// seconds, so roughly 75 seconds of a legitimate Google attempt emptied the
+// budget, and the TENANT password form then refused a correct password for the
+// rest of the window — a different prefix, a different portal, the same counter.
 //
-// Anything deployed sets neither and gets 200/min and 30/15min as before.
+// The one thing the outer limiter guarded that the inner system did not was
+// registration: neither /register had a budget. Both have one now, in the route
+// files with the rest, which is why removing this does not widen anything.
+//
+// AUTH_RATE_MAX and AUTH_RATE_WINDOW_MS are gone with it. The inner system has
+// its own overrides for the same job — RATE_LIMIT_MAX, RATE_LIMIT_<SCOPE>_MAX
+// and RATE_LIMIT_WINDOW_MS — and they are what a test server should set.
 const num = (v, fallback) => {
     const n = Number(v);
     return Number.isFinite(n) && n > 0 ? n : fallback;
 };
 
-// General API limit: guards against abuse/floods.
+// General API limit: guards against abuse and floods rather than against
+// credentials, which is why it is allowed to be path-blind. A full suite run
+// signs in far more often than a person does, so a local test server opts out
+// explicitly, e.g.
+//
+//   API_RATE_MAX=100000 RATE_LIMIT_MAX=100000 node server.js
+//
+// Anything deployed sets neither and gets 200/min as before.
 const apiLimiter = rateLimit({
     windowMs: num(process.env.API_RATE_WINDOW_MS, 60 * 1000),   // 1 minute
     max: num(process.env.API_RATE_MAX, 200),                    // 200 requests/min per IP
@@ -64,17 +89,6 @@ const apiLimiter = rateLimit({
     legacyHeaders: false
 });
 app.use('/api', apiLimiter);
-
-// Stricter limit on auth: blunts brute-force login/registration attempts.
-const authLimiter = rateLimit({
-    windowMs: num(process.env.AUTH_RATE_WINDOW_MS, 15 * 60 * 1000),  // 15 minutes
-    max: num(process.env.AUTH_RATE_MAX, 30),                         // 30 attempts/15 min per IP
-    message: { message: 'Too many attempts. Please try again in a few minutes.' },
-    standardHeaders: true,
-    legacyHeaders: false
-});
-app.use('/api/auth', authLimiter);
-app.use('/api/tenant-auth', authLimiter);
 
 // --- Serve Static Files (Images & Documents) ---
 // This exposes your 'uploads' folder to the web. 
