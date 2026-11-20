@@ -54,6 +54,7 @@ import CheckoutScreen from './screens/CheckoutScreen';
 import HelpScreen from './screens/HelpScreen';
 import MyPlaceScreen from './screens/MyPlaceScreen';
 import MeScreen from './screens/MeScreen';
+import ReceiptsScreen from './screens/ReceiptsScreen';
 import DocumentsScreen from './screens/DocumentsScreen';
 import AgreementScreen from './screens/AgreementScreen';
 import TenantSettingsScreen from './screens/TenantSettingsScreen';
@@ -85,6 +86,7 @@ const SCREENS = {
     thelp: HelpScreen,
     tstay: MyPlaceScreen,
     tme: MeScreen,
+    treceipts: ReceiptsScreen,
     tdocs: DocumentsScreen,
     tagreement: AgreementScreen,
     tsettings: TenantSettingsScreen

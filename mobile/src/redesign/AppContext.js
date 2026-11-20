@@ -472,7 +472,10 @@ const INITIAL_STATE = {
   // `lq` is the ledger's own search box. It had a search bar drawn on it from the
   // very first prototype, but the bar was a plain label — nothing typed, nothing
   // filtered.
-  theme: null, pref: 'system', q: '', pq: '', lq: '', place: 'sunrise', ticket: 1, tstatus: {},
+  // `rq` is the Receipts screen's search box, kept beside the ledger's `lq` for the
+  // same reason: a tenant looking for one payment among fifty is looking for a UTR
+  // or an amount, and scrolling is not a search.
+  theme: null, pref: 'system', q: '', pq: '', lq: '', rq: '', place: 'sunrise', ticket: 1, tstatus: {},
   roster: {}, gone: [], mover: null, invite: 'sunrise', jq: '', rents: {}, draft: 0,
   // Which guest's code is currently revealed on the member screen. Held as an id
   // rather than a boolean so opening a different member never inherits the last
@@ -1350,7 +1353,7 @@ function deriveVm(s, api) {
         title: `You said you paid ${money(myAwaiting.amount_paid)}`,
         sub: 'Waiting for your landlord to confirm it',
         at: aDate(myAwaiting.declared_at || myAwaiting.payment_date),
-        go: () => go('tme')
+        go: () => go('treceipts')
       });
     }
     // A decision is news exactly once — but it stays READABLE afterwards.
@@ -1378,7 +1381,7 @@ function deriveVm(s, api) {
           title: `${money(p.amount_paid)} confirmed`,
           sub: `${p.payment_method || 'Payment'} received${more}`,
           at,
-          go: () => go('tme')
+          go: () => go('treceipts')
         }
         : {
           icon: 'close-circle',
@@ -1388,7 +1391,7 @@ function deriveVm(s, api) {
           // what makes a tenant phone their landlord in a panic.
           sub: p.decision_note || 'No reason was given — ask your landlord',
           at,
-          go: () => go('tme')
+          go: () => go('treceipts')
         });
     }
     // Rent itself. No `at`: a due date is a standing fact, not an event, so it must
@@ -1402,10 +1405,10 @@ function deriveVm(s, api) {
           sub: myAwaiting ? 'Your claim is still waiting to be confirmed' : 'Pay now to clear it',
           // Already claimed? The checkout would refuse them — one claim at a time —
           // so send them where that claim actually is rather than into a 409.
-          go: () => (myAwaiting ? go('tme') : openCheckout())
+          go: () => (myAwaiting ? go('treceipts') : openCheckout())
         });
       } else if (days === 0) {
-        push({ icon: 'card', tone: 'amber', title: `${amount} is due today`, sub: tDueLabel ? `Due ${tDueLabel}` : '', go: () => (myAwaiting ? go('tme') : openCheckout()) });
+        push({ icon: 'card', tone: 'amber', title: `${amount} is due today`, sub: tDueLabel ? `Due ${tDueLabel}` : '', go: () => (myAwaiting ? go('treceipts') : openCheckout()) });
       } else if (days <= REMINDER_LEAD) {
         // The same lead the email reminder uses — one constant, so the bell and the
         // inbox can never tell a tenant two different things.
@@ -1414,7 +1417,7 @@ function deriveVm(s, api) {
           tone: 'accent',
           title: `${amount} due in ${days} ${days === 1 ? 'day' : 'days'}`,
           sub: tDueLabel ? `Due ${tDueLabel}` : '',
-          go: () => (myAwaiting ? go('tme') : openCheckout())
+          go: () => (myAwaiting ? go('treceipts') : openCheckout())
         });
       }
     }
@@ -4735,7 +4738,7 @@ function deriveVm(s, api) {
         // undefined and threw the moment a tenant tapped "See my receipts" on the
         // screen they land on straight after paying. Navigate the same way the vm
         // does.
-        goReceipts: () => go('tme')
+        goReceipts: () => go('treceipts')
       };
     })(),
 
@@ -4753,7 +4756,7 @@ function deriveVm(s, api) {
     // the LANDLORD's dashboard, complete with somebody else's portfolio figures.
     // MeScreen is where a tenant's receipts actually live, and 'tme' is the route
     // the dock already highlights for it.
-    goReceipts: () => go('tme'),
+    goReceipts: () => go('treceipts'),
     receipts: (() => {
       const chip = (st) => (
         st === 'Confirmed' ? { label: 'PAID', fg: 'pos', bg: 'lsoft' }
@@ -4950,13 +4953,13 @@ function deriveVm(s, api) {
 
     isTMe: s.route === 'tme',
     tenantSide: ['portal', 'tfind', 'thelp', 'tstay', 'tme', 'tcheckout', 'tsettings', 'tdocs', 'tagreement'].includes(s.route),
-    showTenantDock: ['portal', 'tfind', 'thelp', 'tstay', 'tme', 'tsettings'].includes(s.route)
+    showTenantDock: ['portal', 'tfind', 'thelp', 'tstay', 'tme', 'tsettings', 'treceipts'].includes(s.route)
       || (s.route === 'tdocs' && !s.docGate) || s.route === 'tagreement',
     goTMe: () => go('tme'),
     goStay: () => go('tstay'),
     tmeOn: s.route === 'tme' ? '1' : '0',
-    tmeBg: ['tme', 'tstay', 'tsettings'].includes(s.route) ? 'lime' : 'ink2',
-    tmeFg: ['tme', 'tstay', 'tsettings'].includes(s.route) ? 'on' : 'fg2',
+    tmeBg: ['tme', 'tstay', 'tsettings', 'treceipts'].includes(s.route) ? 'lime' : 'ink2',
+    tmeFg: ['tme', 'tstay', 'tsettings', 'treceipts'].includes(s.route) ? 'on' : 'fg2',
     // My place lives inside the profile now, so the ME card also owns it.
     tmeH: ['tme', 'tstay', 'tsettings'].includes(s.route) ? '68px' : '52px',
     backFromStay: () => go('tme'),
@@ -4994,6 +4997,131 @@ function deriveVm(s, api) {
     // empty card under a heading promising a timeline.
     myTimelineEmpty: MY_PAYMENTS.length === 0,
     myTimelineEmptyLine: 'Nothing here yet. Payments appear once your landlord confirms them.',
+
+    // ── Receipts ──────────────────────────────────────────────────────────────
+    // The full payment history, which MeScreen has only ever shown four rows of.
+    // Every state is here on purpose, Rejected included: the server returns those
+    // deliberately ("a claim that quietly disappears is the version of this that
+    // generates a phone call") and a screen that hid them would undo that.
+    isReceipts: s.route === 'treceipts',
+    receipts: (() => {
+      const q = String(s.rq || '').trim().toLowerCase();
+      const sum = (TD && TD.paySummary) || null;
+
+      // A DATE column can arrive as a Date or as a bare "yyyy-mm-dd", and handing
+      // the bare form to `new Date` reads it as UTC midnight — which rolls into the
+      // previous month for anyone east of Greenwich, i.e. every user of this app.
+      // Grouping by month has to be right at the boundary, so parse by hand.
+      const ym = (v) => {
+        if (!v) return null;
+        if (v instanceof Date) return { y: v.getFullYear(), m: v.getMonth() };
+        const s2 = String(v);
+        const m = s2.match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (m) return { y: Number(m[1]), m: Number(m[2]) - 1 };
+        const d = new Date(s2);
+        return isNaN(d.getTime()) ? null : { y: d.getFullYear(), m: d.getMonth() };
+      };
+
+      const rows = MY_PAYMENTS.map((p) => {
+        const state = p.status === 'Confirmed' ? 'confirmed'
+          : p.status === 'Declared' ? 'awaiting' : 'rejected';
+        return {
+          id: p.id,
+          amount: Number(p.amount_paid || 0),
+          amt: money(p.amount_paid),
+          method: String(p.payment_method || 'UPI').toUpperCase(),
+          day: fmtDay(p.payment_date),
+          ref: p.reference_id || '',
+          state,
+          label: state === 'confirmed' ? 'CONFIRMED' : state === 'awaiting' ? 'AWAITING' : 'REJECTED',
+          fg: state === 'confirmed' ? 'pos' : state === 'awaiting' ? 'amber' : 'coral',
+          soft: state === 'confirmed' ? 'lsoft' : state === 'awaiting' ? 'asoft' : 'csoft',
+          icon: state === 'confirmed' ? 'checkmark-circle' : state === 'awaiting' ? 'time-outline' : 'close-circle',
+          // Why it was refused. The column exists for this and nothing rendered it.
+          note: state === 'rejected'
+            ? (p.decision_note || 'No reason was given — ask your landlord')
+            : (state === 'awaiting' ? 'Waiting for your landlord to confirm it' : ''),
+          decided: p.decided_at ? fmtDay(p.decided_at) : '',
+          at: ym(p.payment_date || p.created_at)
+        };
+      });
+
+      // "8000" should find ₹8,000 even though the rendered amount carries a comma,
+      // so the digits are matched separately against the raw number. Guarded on
+      // there being any: every string contains the empty string, so an unguarded
+      // digit match returns every row for any word.
+      const digits = q.replace(/[^\d]/g, '');
+      const hit = (r) => [r.amt, r.method, r.day, r.ref, r.label].join(' ').toLowerCase().includes(q)
+        || (!!digits && String(Math.round(r.amount)).includes(digits));
+      const shown = q ? rows.filter(hit) : rows;
+
+      // Rows already arrive newest-first from the server, so walking them in order
+      // keeps the groups in order without a second sort.
+      const groups = [];
+      for (const r of shown) {
+        const key = r.at ? `${r.at.y}-${r.at.m}` : 'unknown';
+        let g = groups.length && groups[groups.length - 1].key === key ? groups[groups.length - 1] : null;
+        if (!g) {
+          g = {
+            key,
+            title: r.at ? `${MON_SHORT[r.at.m].toUpperCase()} ${r.at.y}` : 'UNDATED',
+            rows: [],
+            confirmed: 0
+          };
+          groups.push(g);
+        }
+        g.rows.push(r);
+        if (r.state === 'confirmed') g.confirmed += r.amount;
+      }
+      // Only confirmed money is totalled. A claim still waiting is not money the
+      // landlord has agreed they received, and adding it to a month's total is how
+      // a tenant believes a month is settled when it is not.
+      groups.forEach((g) => { g.total = g.confirmed ? `+${money(g.confirmed)}` : ''; });
+
+      const total = sum ? Number(sum.paid_total || 0) : rows.filter((r) => r.state === 'confirmed').reduce((n, r) => n + r.amount, 0);
+      const paidCount = sum ? Number(sum.paid_count || 0) : rows.filter((r) => r.state === 'confirmed').length;
+      const awaitingCount = sum ? Number(sum.awaiting_count || 0) : rows.filter((r) => r.state === 'awaiting').length;
+      const awaitingTotal = sum ? Number(sum.awaiting_total || 0) : rows.filter((r) => r.state === 'awaiting').reduce((n, r) => n + r.amount, 0);
+      const rejectedCount = sum ? Number(sum.rejected_count || 0) : rows.filter((r) => r.state === 'rejected').length;
+
+      return {
+        groups,
+        q: s.rq || '',
+        hasQ: !!q,
+        setQ: (e) => set('rq', evStr(e)),
+        clearQ: () => set('rq', ''),
+        // Confirmed money only, and the label says so — "₹48,000" over "PAID" with
+        // a waiting claim in the list would be read as the claim having counted.
+        totalLabel: 'CONFIRMED BY YOUR LANDLORD',
+        total: money(total),
+        countLine: `${paidCount} ${paidCount === 1 ? 'payment' : 'payments'} confirmed`,
+        awaiting: awaitingCount
+          ? `${awaitingCount} waiting · ${money(awaitingTotal)}`
+          : '',
+        rejected: rejectedCount
+          ? `${rejectedCount} not accepted`
+          : '',
+        // Two different nothings. "You have not paid yet" and "that search found
+        // nothing" are not the same sentence, and the ledger already makes this
+        // distinction on the landlord's side.
+        empty: shown.length === 0,
+        emptyLine: q
+          ? 'No payment matches that. Try a UTR, an amount, or a month.'
+          : 'Nothing here yet. Payments appear once you record one and your landlord confirms it.',
+        emptyIcon: q ? 'search-outline' : 'receipt-outline',
+        // Pull-to-refresh reloads the TENANT bundle. `vm.refresh` is the landlord's
+        // loader and would 403 on a tenant token — the landlord screens are the only
+        // ones that have ever had a RefreshControl, so there was no tenant-side one
+        // to reuse. Worth having here of all places: the row a tenant is waiting on
+        // changes when their landlord confirms it, not when they do anything.
+        refresh: () => api.loadTenantData({ refresh: true }),
+        refreshing: !!s.refreshing,
+        sub: rows.length
+          ? `${rows.length} ${rows.length === 1 ? 'payment' : 'payments'} on record`
+          : 'Your rent history lives here',
+        back: () => { if (!api.goBackOneStep()) go('tme'); }
+      };
+    })(),
     myStats: [
       { k: 'WITH YOU', v: me.since, fg: 'fg' },
       { k: 'RENT SHARE', v: me.rentFull, fg: 'fg' },
@@ -6274,7 +6402,16 @@ export function AppProvider({ children }) {
       if (pulseRes && pulseRes.stamp) pulseRef.current.stamp = pulseRes.stamp;
       const now = new Date();
       setState({
-        tdata: { me: meRes, requests: reqRes.requests || [], payments: payRes.payments || [], joins: joinRes.requests || [] },
+        // `summary` comes back from /tenant-portal/payments beside the rows and was
+        // being dropped. The Receipts screen's header reads it rather than re-adding
+        // the amounts in the client, so the totals a tenant sees are the server's.
+        tdata: {
+          me: meRes,
+          requests: reqRes.requests || [],
+          payments: payRes.payments || [],
+          paySummary: payRes.summary || null,
+          joins: joinRes.requests || []
+        },
         // Only when the call actually succeeded. Overwriting a loaded list with an
         // empty one on a failed refresh would blank the documents screen and, worse,
         // silently drop a prompt the tenant is meant to be seeing.
