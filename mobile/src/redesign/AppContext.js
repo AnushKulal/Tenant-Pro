@@ -4560,7 +4560,15 @@ function deriveVm(s, api) {
 
     isFind: s.route === 'tfind',
     isCheckout: s.route === 'tcheckout',
-    goCheckout: () => setState({ route: 'tcheckout', paid: false, pay: { ...BLANK_PAY } }),
+    // Mint the reference ONCE, here, for the whole attempt. `pay.reference` exists
+    // for this — its comment says "held so the reference survives the round trip out
+    // to the UPI app and back" — but only openUpiPayment ever wrote it, so a tenant
+    // who scanned the QR instead of tapping the button got a fresh `TP${refStamp()}`
+    // on every render. refStamp() is Math.random(), so the string under the QR, the
+    // string sent with the claim and the string on the receipt were three different
+    // references, and the landlord had nothing to match their bank credit against —
+    // which is the one job the comment at the fallback says this field has.
+    goCheckout: () => setState({ route: 'tcheckout', paid: false, pay: { ...BLANK_PAY, reference: `TP${refStamp()}` } }),
 
     // ── Paying rent ───────────────────────────────────────────────────────────
     // Three routes, and which exist depends on what the landlord has set up.
@@ -4673,7 +4681,10 @@ function deriveVm(s, api) {
         // payments that failed or lose ones that succeeded.
         asked: !!pay.asked,
         confirmSent: () => api.declareMyPayment({ method: 'UPI', reference }),
-        cancelSent: () => setState({ pay: { ...BLANK_PAY } }),
+        // Backing out of "did that work?" returns them to the same checkout for the
+        // same month, so the reference has to survive it. Resetting to a bare
+        // BLANK_PAY would mint a new one behind a QR they may already have scanned.
+        cancelSent: () => setState({ pay: { ...BLANK_PAY, reference } }),
 
         // The other path, for money that moved outside UPI.
         isOther: !!pay.other,
@@ -6303,7 +6314,11 @@ export function AppProvider({ children }) {
       // Reload so the receipts screen and the portal's due state both reflect it, and
       // so the pulse stamp moves with them.
       await loadTenantData({ silent: true });
-      setState({ pay: { ...BLANK_PAY }, paid: true });
+      // Keep the reference that was actually sent. The receipt screen prints it as
+      // "REF · …" and it is what the tenant will quote if the landlord asks which
+      // payment they mean, so it has to be the one on the row — not a fresh random
+      // from re-rendering against an emptied `pay`.
+      setState({ pay: { ...BLANK_PAY, reference }, paid: true });
       flash((res && res.message) || 'Sent to your landlord');
     } catch (e) {
       // 409 means they already have one waiting. That is not a failure to hide — it is
