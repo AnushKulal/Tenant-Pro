@@ -58,7 +58,7 @@ function Card({ row, t }) {
                     the OS for a module that is not installed. */}
                 {row.ask && !settled ? (
                     row.busy ? (
-                        <ActivityIndicator color={t.lime} />
+                        <ActivityIndicator color={t.accent} />
                     ) : (
                         <Press
                             onPress={row.ask}

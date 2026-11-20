@@ -1210,7 +1210,7 @@ export default function Sheets() {
 
                         {vm.docs.loading ? (
                             <View style={{ alignItems: 'center', paddingVertical: 30, rowGap: 12 }}>
-                                <ActivityIndicator color={t.lime} />
+                                <ActivityIndicator color={t.accent} />
                                 <Eyebrow s={9} ls={0.12} c={t.fg3}>LOADING DOCUMENTS</Eyebrow>
                             </View>
                         ) : null}
@@ -1342,7 +1342,7 @@ export default function Sheets() {
                                     ) : null}
 
                                     {d.busy ? (
-                                        <View style={{ paddingVertical: 12 }}><ActivityIndicator color={t.lime} /></View>
+                                        <View style={{ paddingVertical: 12 }}><ActivityIndicator color={t.accent} /></View>
                                     ) : (
                                         <Row gap={7} style={{ marginTop: 11 }}>
                                             <Press onPress={d.open} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', columnGap: 6, paddingVertical: 11, borderRadius: 13, backgroundColor: t.ink2, borderWidth: 1, borderColor: t.line }}>
@@ -2640,8 +2640,8 @@ export default function Sheets() {
                                             nobody is cut off from paying meanwhile. */}
                                         {!!vm.gateway.expect.meanwhile && (
                                             <Row gap={8} align="flex-start" style={{ marginTop: 11, paddingTop: 11, borderTopWidth: 1, borderTopColor: t.line }}>
-                                                <Glyph name="checkmark-circle-outline" size={15} color={t.lime} />
-                                                <T w={500} s={12.5} lh={1.45} c={t.lime} style={{ flex: 1 }}>{vm.gateway.expect.meanwhile}</T>
+                                                <Glyph name="checkmark-circle-outline" size={15} color={t.accent} />
+                                                <T w={500} s={12.5} lh={1.45} c={t.accent} style={{ flex: 1 }}>{vm.gateway.expect.meanwhile}</T>
                                             </Row>
                                         )}
                                         {/* Advice for SOME landlords, not a fact about
@@ -3098,7 +3098,7 @@ export default function Sheets() {
                                     </T>
                                 </View>
                                 <View style={{ alignItems: 'flex-end' }}>
-                                    <T w={700} s={21} lh={1.1} c={t.lime}>{sh.rent}</T>
+                                    <T w={700} s={21} lh={1.1} c={t.accent}>{sh.rent}</T>
                                     <T w={400} s={11} lh={1.3} c={t.fg3} style={{ marginTop: 3 }}>{sh.rentNote}</T>
                                 </View>
                             </Row>

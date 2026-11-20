@@ -75,7 +75,7 @@ export default function DocumentsScreen() {
 
             {d.loading ? (
                 <View style={{ alignItems: 'center', paddingVertical: 26 }}>
-                    <ActivityIndicator color={t.lime} />
+                    <ActivityIndicator color={t.accent} />
                 </View>
             ) : null}
 

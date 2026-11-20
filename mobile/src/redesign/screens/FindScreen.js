@@ -125,7 +125,7 @@ export default function FindScreen() {
             {/* ── Results ────────────────────────────────────────────────────── */}
             {d.loading && !d.results.length ? (
                 <View style={{ paddingVertical: 34, alignItems: 'center', rowGap: 12 }}>
-                    <ActivityIndicator color={t.lime} />
+                    <ActivityIndicator color={t.accent} />
                     <T mono w={600} s={9} ls={0.12} c={t.fg3}>LOOKING FOR PLACES</T>
                 </View>
             ) : null}
@@ -176,13 +176,13 @@ export default function FindScreen() {
                                     />
                                 ) : (
                                     <View style={{ width: 76, height: 76, borderRadius: 18, backgroundColor: t.lsoft, alignItems: 'center', justifyContent: 'center' }}>
-                                        <Glyph name={r.icon} size={26} color={t.lime} />
+                                        <Glyph name={r.icon} size={26} color={t.accent} />
                                     </View>
                                 )}
                                 <View style={{ flex: 1, minWidth: 0 }}>
                                     <Row gap={8}>
                                         <T w={600} s={15} lh={1.2} c={t.fg} numberOfLines={1} style={{ flex: 1 }}>{r.property}</T>
-                                        <T w={700} s={15} lh={1.2} c={t.lime}>{r.rent}</T>
+                                        <T w={700} s={15} lh={1.2} c={t.accent}>{r.rent}</T>
                                     </Row>
                                     {/* One word, on the card itself and not only on the
                                         detail screen, because the card is where a tenant
@@ -219,8 +219,8 @@ export default function FindScreen() {
                                 <Row gap={6} style={{ paddingHorizontal: 13, paddingBottom: 13, flexWrap: 'wrap' }}>
                                     {r.why.map((w, k) => (
                                         <Row key={k} gap={5} style={{ paddingVertical: 5, paddingHorizontal: 9, borderRadius: 999, backgroundColor: t.lsoft }}>
-                                            <Glyph name="sparkles" size={10} color={t.lime} />
-                                            <T mono w={600} s={9} lh={1} ls={0.05} c={t.lime}>{w}</T>
+                                            <Glyph name="sparkles" size={10} color={t.accent} />
+                                            <T mono w={600} s={9} lh={1} ls={0.05} c={t.accent}>{w}</T>
                                         </Row>
                                     ))}
                                 </Row>
@@ -316,7 +316,7 @@ export default function FindScreen() {
             {/* Looking one up by code. */}
             {vm.lookup.loading ? (
                 <View style={{ paddingVertical: 28, alignItems: 'center', rowGap: 12 }}>
-                    <ActivityIndicator color={t.lime} />
+                    <ActivityIndicator color={t.accent} />
                     <T mono w={600} s={9} ls={0.12} c={t.fg3}>{`LOOKING FOR ${vm.lookup.code}`}</T>
                 </View>
             ) : null}
