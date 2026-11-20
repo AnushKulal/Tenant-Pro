@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Image } from 'react-native';
 import { useVm } from '../AppContext';
 import { useT } from '../ThemeContext';
-import { T, Eyebrow, Row, Press, Glyph } from '../ui';
+import { T, Eyebrow, Row, Press, Glyph, QrCode } from '../ui';
 import { Stagger } from '../motion';
 import { Body, useTitleAnchor } from '../layout';
 
@@ -172,9 +172,11 @@ export default function MyPlaceScreen() {
                     <View style={{ borderRadius: 22, backgroundColor: t.ink2, borderWidth: 1, borderColor: t.line, paddingVertical: 16, paddingHorizontal: 18, marginTop: 8 }}>
                         <Eyebrow s={10} ls={0.12} c={t.fg3} style={{ marginBottom: 12 }}>BRING A FRIEND</Eyebrow>
                         <Row gap={13}>
-                            <View style={{ width: 76, height: 76, borderRadius: 16, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center', padding: 6 }}>
-                                <Image source={{ uri: vm.myInvite.qr }} style={{ width: '100%', height: '100%' }} resizeMode="contain" />
-                            </View>
+                            {/* Computed offline by qr.js rather than fetched from
+                                api.qrserver.com, so it still draws on a flaky
+                                connection and the property's join link is not sent
+                                to a third party to render it. */}
+                            <QrCode value={vm.myInvite.link} size={76} quiet={1} label={`Invite QR code for ${me.propName}`} />
                             <View style={{ flex: 1, minWidth: 0 }}>
                                 <T w={600} s={14} lh={1.3} c={t.fg}>Share {me.propName} with someone</T>
                                 <T w={700} s={14} lh={1} c={t.accent} style={{ marginTop: 8, letterSpacing: 0.5 }}>{me.propCode}</T>

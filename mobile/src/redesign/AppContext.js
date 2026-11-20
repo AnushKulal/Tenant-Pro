@@ -3829,8 +3829,9 @@ function deriveVm(s, api) {
       name: invProp.name,
       code: invProp.code,
       policy: invProp.policy,
+      // The sheet draws this with QrCode (qr.js) rather than fetching a picture
+      // of it, so `link` is all the view needs.
       link: inviteLink,
-      qr: `https://api.qrserver.com/v1/create-qr-code/?size=320x320&margin=8&data=${encodeURIComponent(inviteLink)}`,
       options: PROPS.map((p) => {
         const on = p.id === s.invite;
         return {
@@ -5294,7 +5295,9 @@ function deriveVm(s, api) {
       // when tapped instead of silently doing nothing.
     ].map((r) => ({ ...r, go: r.go || (() => flash(`${r.label} — not built yet`)) })),
     myInvite: {
-      qr: myProp ? `https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=6&data=${encodeURIComponent(`https://tenantpro.app/join/${myProp.code}`)}` : '',
+      // Drawn offline by QrCode, so this is the link itself, not a URL that
+      // renders a picture of it.
+      link: myProp ? `https://tenantpro.app/join/${myProp.code}` : '',
       beds: myProp ? (() => {
         const free = UNITS.filter((u) => u.prop === myProp.id).reduce((a, u) => a + (u.cap - occupantsOf(u.no).length), 0);
         return free ? `${free} ${free === 1 ? 'BED' : 'BEDS'} FREE RIGHT NOW` : 'NO BEDS FREE RIGHT NOW';

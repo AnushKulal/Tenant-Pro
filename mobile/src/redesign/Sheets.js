@@ -8,7 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useVm } from './AppContext';
 import { useT } from './ThemeContext';
 import { grotesk } from './theme';
-import { T, Eyebrow, Row, Press, Glyph, Field, Avatar, Composer, DocThumb, NoteBox } from './ui';
+import { T, Eyebrow, Row, Press, Glyph, Field, Avatar, Composer, DocThumb, NoteBox, QrCode } from './ui';
 import { useSheetIn, useFadeIn, Stagger } from './motion';
 import { useIdShield } from './shield';
 import { KeyboardScroll, useKeyboardHeight } from './keyboard';
@@ -765,7 +765,15 @@ export default function Sheets() {
                         </Row>
 
                         <View style={{ borderRadius: 20, backgroundColor: '#FFFFFF', padding: 18, alignItems: 'center', marginBottom: 10 }}>
-                            <Image source={{ uri: vm.invite.qr }} style={{ width: 196, height: 196 }} resizeMode="contain" />
+                            {/* Drawn here, not fetched. This used to be an <Image>
+                                pointing at api.qrserver.com, which meant the invite
+                                code only appeared if the landlord had a working
+                                connection AND that third party was up — and it sent
+                                every property's invite link to them to find out.
+                                qr.js already computes this offline; it was written
+                                for exactly this reason and was only wired into the
+                                payment screen. */}
+                            <QrCode value={vm.invite.link} size={196} quiet={2} label={`Invite QR code for ${vm.invite.name}`} />
                             <T w={700} s={15} lh={1.2} numberOfLines={2} c="#0A0A0C" style={{ marginTop: 14, textAlign: 'center' }}>{vm.invite.name}</T>
                             <T mono w={600} s={10} lh={1} ls={0.08} c="rgba(10,10,12,.5)" style={{ marginTop: 7 }}>{vm.invite.policy}</T>
                         </View>

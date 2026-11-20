@@ -316,7 +316,7 @@ share:action, manual:action }`.
 | `myFood` | string | |
 | `myFoodNote` | string | |
 | `houseRules` | array | `{ icon:string, label:string, v:string }` |
-| `myInvite` | object | `{ qr:url, beds:string, share:action }` |
+| `myInvite` | object | `{ link:string, beds:string, share:action }` |
 
 **`me`** (object): `{ name:string (first name), img:url, rent:string, deposit:string, since:string,
 movedIn:string, due:string, dueFg:token, home:string, propName:string, propImg:url, propCode:string,
