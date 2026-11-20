@@ -74,6 +74,26 @@ export const RADII = { sm: 5, md: 11, lg: 16, xl: 18, pill: 22, round: 999 };
 
 export const DEFAULTS = { mode: 'dark', accent: 'lime', surface: 'ink', edges: 'hairline' };
 
+// What the phone is set to, as a mode this app can use.
+//
+// useColorScheme() and Appearance.getColorScheme() both return
+// 'light' | 'dark' | NULL — null when the platform cannot say. Two places read
+// this, and both used to write `scheme === 'light' ? 'light' : 'dark'`, which
+// quietly sends null to dark. That is not a fallback, it is an accident: it
+// makes "unknown" indistinguishable from "the user chose dark", and it is why
+// an Android phone set to light still opened the app dark.
+//
+// Android is exactly where null happens. app.json sets
+// userInterfaceStyle: "automatic", but on Android that setting does nothing on
+// its own — expo-system-ui has to be installed for it, and until it was, the
+// SDK's own config plugin did no more than log "Install expo-system-ui in your
+// project to enable this feature" and return the config untouched.
+//
+// So: an explicit answer when there is one, and a named fallback when there is
+// not, rather than a comparison that happens to land on dark.
+export const systemMode = (scheme, fallback = DEFAULTS.mode) =>
+    (scheme === 'light' || scheme === 'dark') ? scheme : fallback;
+
 // Resolve the four axes into a flat token object mirroring the prototype's CSS
 // custom properties.
 export function buildTheme({ mode = 'dark', accent = 'lime', surface = 'ink', edges = 'hairline' } = {}) {

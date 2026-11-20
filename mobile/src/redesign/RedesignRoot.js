@@ -19,6 +19,7 @@ import { useEnter, useWipe } from './motion';
 import { Monogram, T, Glyph, Press } from './ui';
 
 import Header from './Header';
+import { systemMode, DEFAULTS } from './theme';
 import { LayoutProvider } from './layout';
 import DeckDock from './DeckDock';
 import Sheets from './Sheets';
@@ -120,8 +121,8 @@ function Shell() {
     const ctl = useThemeCtl();
     const osScheme = useColorScheme();
     const wantMode = state.pref === 'system'
-        ? (osScheme === 'light' ? 'light' : 'dark')
-        : (state.theme || 'dark');
+        ? systemMode(osScheme)
+        : (state.theme || DEFAULTS.mode);
     React.useEffect(() => {
         if (state.theme !== wantMode) setState({ theme: wantMode });
     }, [wantMode, state.theme, setState]);

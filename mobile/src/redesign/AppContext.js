@@ -23,6 +23,7 @@ import {
 } from './api';
 import { mapOwnerData, mapPortalRequest, mapDocument, mapMyPlace } from './mapping';
 import { hasPin, roundCoord, DEFAULT_CENTER, openDirections, MIN_ZOOM, MAX_ZOOM } from './maps';
+import { systemMode } from './theme';
 import { upiUri } from './qr';
 import { readBuild } from './buildinfo';
 import { resolvePushToken, onNotificationTap, setForegroundBehaviour } from './push';
@@ -4341,9 +4342,7 @@ function deriveVm(s, api) {
           // "System" resolves to whatever the OS is set to right now; RedesignRoot
           // keeps it in step from then on. It used to hard-code dark, which is why
           // picking System on a light phone still gave you a dark app.
-          const next = k === 'system'
-            ? (Appearance.getColorScheme() === 'light' ? 'light' : 'dark')
-            : k;
+          const next = k === 'system' ? systemMode(Appearance.getColorScheme()) : k;
           if (next === mode) { setState({ pref: k }); return; }
           setState({ fx: '1' });
           clearTimeout(fxRef.current);
