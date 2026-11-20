@@ -815,6 +815,13 @@ function deriveVm(s, api) {
   // the seed/demo walk-through) the shapes below stand in.
   const TD = s.tdata || null;
   const TLIVE = !!TD;
+  // /tenant-portal/me says `linked: true` the moment a landlord accepts somebody,
+  // which is NOT the same as having been put in a room — a landlord can accept a
+  // request without choosing one, and the People tab has an "Unassigned" filter
+  // precisely because that is a normal state. Read separately from `me.unit` so
+  // the portal can tell "nobody has accepted me" apart from "accepted, waiting
+  // for a room": the first should go looking for a property, the second must not.
+  const T_LINKED = !!(TD && TD.me && TD.me.linked);
   // The landlord on the other end of this tenancy — the person the tenant needs to
   // reach about a request. /tenant-portal/me calls this block `landlord`.
   const LANDLORD = (TD && TD.me && TD.me.landlord) || null;
@@ -4989,11 +4996,22 @@ function deriveVm(s, api) {
           state: ready ? 'READY' : 'LOCKED',
           fg: ready ? 'pos' : 'fg3',
           locked: !ready,
+          // Two reasons there is no room, and they need different sentences. Someone
+          // their landlord has already accepted must not be told to go and join a
+          // property: they have one, and acting on that advice sends a second
+          // request for it.
           lockLine: !placed
-            ? 'Your agreement is written from the room you are given. Join a property and your landlord will place you in one.'
+            ? (T_LINKED
+              ? 'Your agreement is written from the room you are given. Your landlord has accepted you and still has to put you in one.'
+              : 'Your agreement is written from the room you are given. Join a property and your landlord will place you in one.')
             : 'Your agreement unlocks once your first rent payment is recorded.',
           go: () => {
-            if (!placed) { flash('Join a property first — the agreement is written from your room'); return; }
+            if (!placed) {
+              flash(T_LINKED
+                ? 'Waiting for a room — the agreement is written from it'
+                : 'Join a property first — the agreement is written from your room');
+              return;
+            }
             if (!paid) { flash('Your agreement unlocks after your first rent payment'); return; }
             go('tagreement');
           }
@@ -5349,7 +5367,25 @@ function deriveVm(s, api) {
     // "No property yet — go find one" is the wrong screen for somebody whose landlord
     // is already being asked about them. Split into three states rather than two: not
     // linked and waiting, not linked and nobody asked, or linked.
-    portalUnlinked: !me.unit && !MY_PENDING_JOIN,
+    //
+    // A fourth: accepted, but not yet put in a room. `me.unit` is empty and there is
+    // no pending request any more — the request was decided — so this used to fall
+    // through to "No property yet. Scan your landlord's invite QR…", telling somebody
+    // their landlord had already taken in to go and find a property. Following that
+    // advice sends a second request for the property they are already in.
+    portalUnlinked: !me.unit && !MY_PENDING_JOIN && !T_LINKED,
+    portalRoomless: !me.unit && !MY_PENDING_JOIN && T_LINKED,
+    portalRoom: {
+      title: 'Waiting for a room',
+      line: LANDLORD && LANDLORD.name
+        ? `${LANDLORD.name} has accepted you. They need to put you in a room before your rent, deposit and agreement appear here.`
+        : 'Your landlord has accepted you. They need to put you in a room before your rent, deposit and agreement appear here.',
+      note: 'Nothing is owed until a room is set.',
+      hasPhone: !!(LANDLORD && LANDLORD.phone),
+      call: () => ((LANDLORD && LANDLORD.phone)
+        ? callNumber(LANDLORD.phone, LANDLORD.name || 'your landlord')
+        : flash('No number on file for your landlord'))
+    },
     portalWaiting: !me.unit && !!MY_PENDING_JOIN,
     portalWait: MY_PENDING_JOIN ? {
       // A request the tenant never made needs saying plainly, or it reads as the app
