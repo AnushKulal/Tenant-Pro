@@ -8444,6 +8444,19 @@ export function AppProvider({ children }) {
           route: asTenant ? 'tdocs' : 'home'
         });
         flash('Account created');
+        // Load this account's own data before anything renders from it. Without
+        // this the portal has no `tdata`, and every tenant screen falls through
+        // to the walkthrough seed — a brand-new tenant was shown Rahul Sharma's
+        // name, his ₹8,000 rent, his deposit, his room at Sunrise PG, his
+        // maintenance tickets and the demo landlord's phone number, with "RENT
+        // DUE" over figures they owe nobody. The correct "No property yet"
+        // screen already exists; it only needs `linked: false` from /me to pick
+        // it, which is the same call every other way into the portal makes
+        // (adoptSession does it below, and the boot path does it too). Restarting
+        // the app cleared it, which is why it survived: it is invisible to
+        // anyone who does not watch the very first session.
+        if (asTenant) loadTenantData();
+        else loadOwnerData();
         // The fourth way into a portal, and the one that was missed when the
         // other three were wired up. A commit claimed this path was covered; it
         // was not, and a fact-check against the code found the claim before a
@@ -8472,7 +8485,7 @@ export function AppProvider({ children }) {
       // under a field the user has since fixed is worse than no rail at all.
       setState({ authBusy: false, authFieldErrors: {}, authError: errText(e, 'Could not create the account.') });
     }
-  }, [setState, flash, requestToJoin]);
+  }, [setState, flash, requestToJoin, loadOwnerData, loadTenantData, maybeStartTour]);
 
 
   // ── Push notifications ──────────────────────────────────────────────────────
