@@ -764,6 +764,28 @@ const BLANK_REQUEST = { category: 'Plumbing', title: '', body: '', priority: 'Me
 function deriveVm(s, api) {
   const { setState, set, go, flash, fxRef } = api;
 
+  // Opening the rent checkout, in one place because two things do it: the Pay
+  // button on the portal home, and the rent rows in the tenant's alert bell.
+  // The bell rows used to set `overlay: 'tpay'` — an overlay no screen or sheet
+  // renders — so "₹8,000 is due today" and its two siblings did nothing at all
+  // when tapped. `overlay: null` is what makes them work from inside the bell:
+  // the sheet has to close or the checkout opens behind it.
+  //
+  // The reference is minted ONCE here, for the whole attempt. `pay.reference`
+  // exists for this — its own comment says "held so the reference survives the
+  // round trip out to the UPI app and back" — but only openUpiPayment ever wrote
+  // it, so a tenant who scanned the QR instead of tapping the button got a fresh
+  // `TP${refStamp()}` on every render. refStamp() is Math.random(), so the string
+  // under the QR, the string sent with the claim and the string on the receipt
+  // were three different references, and the landlord had nothing to match their
+  // bank credit against — the one job the comment at the fallback gives it.
+  const openCheckout = () => setState({
+    route: 'tcheckout',
+    paid: false,
+    overlay: null,
+    pay: { ...BLANK_PAY, reference: `TP${refStamp()}` }
+  });
+
   // ── Data source (Phase 3) ─────────────────────────────────────────────────
   // Everything below reads its collections from state.data, which is EITHER the
   // seed bundle (demo account / before the first fetch) or the live payload
@@ -1328,7 +1350,7 @@ function deriveVm(s, api) {
         title: `You said you paid ${money(myAwaiting.amount_paid)}`,
         sub: 'Waiting for your landlord to confirm it',
         at: aDate(myAwaiting.declared_at || myAwaiting.payment_date),
-        go: () => go('treceipts')
+        go: () => go('tme')
       });
     }
     // A decision is news exactly once — but it stays READABLE afterwards.
@@ -1356,7 +1378,7 @@ function deriveVm(s, api) {
           title: `${money(p.amount_paid)} confirmed`,
           sub: `${p.payment_method || 'Payment'} received${more}`,
           at,
-          go: () => go('treceipts')
+          go: () => go('tme')
         }
         : {
           icon: 'close-circle',
@@ -1366,7 +1388,7 @@ function deriveVm(s, api) {
           // what makes a tenant phone their landlord in a panic.
           sub: p.decision_note || 'No reason was given — ask your landlord',
           at,
-          go: () => go('treceipts')
+          go: () => go('tme')
         });
     }
     // Rent itself. No `at`: a due date is a standing fact, not an event, so it must
@@ -1378,10 +1400,12 @@ function deriveVm(s, api) {
           tone: 'coral',
           title: `${amount} is ${Math.abs(days)} ${Math.abs(days) === 1 ? 'day' : 'days'} late`,
           sub: myAwaiting ? 'Your claim is still waiting to be confirmed' : 'Pay now to clear it',
-          go: () => setState({ overlay: 'tpay' })
+          // Already claimed? The checkout would refuse them — one claim at a time —
+          // so send them where that claim actually is rather than into a 409.
+          go: () => (myAwaiting ? go('tme') : openCheckout())
         });
       } else if (days === 0) {
-        push({ icon: 'card', tone: 'amber', title: `${amount} is due today`, sub: tDueLabel ? `Due ${tDueLabel}` : '', go: () => setState({ overlay: 'tpay' }) });
+        push({ icon: 'card', tone: 'amber', title: `${amount} is due today`, sub: tDueLabel ? `Due ${tDueLabel}` : '', go: () => (myAwaiting ? go('tme') : openCheckout()) });
       } else if (days <= REMINDER_LEAD) {
         // The same lead the email reminder uses — one constant, so the bell and the
         // inbox can never tell a tenant two different things.
@@ -1390,7 +1414,7 @@ function deriveVm(s, api) {
           tone: 'accent',
           title: `${amount} due in ${days} ${days === 1 ? 'day' : 'days'}`,
           sub: tDueLabel ? `Due ${tDueLabel}` : '',
-          go: () => setState({ overlay: 'tpay' })
+          go: () => (myAwaiting ? go('tme') : openCheckout())
         });
       }
     }
@@ -4560,15 +4584,7 @@ function deriveVm(s, api) {
 
     isFind: s.route === 'tfind',
     isCheckout: s.route === 'tcheckout',
-    // Mint the reference ONCE, here, for the whole attempt. `pay.reference` exists
-    // for this — its comment says "held so the reference survives the round trip out
-    // to the UPI app and back" — but only openUpiPayment ever wrote it, so a tenant
-    // who scanned the QR instead of tapping the button got a fresh `TP${refStamp()}`
-    // on every render. refStamp() is Math.random(), so the string under the QR, the
-    // string sent with the claim and the string on the receipt were three different
-    // references, and the landlord had nothing to match their bank credit against —
-    // which is the one job the comment at the fallback says this field has.
-    goCheckout: () => setState({ route: 'tcheckout', paid: false, pay: { ...BLANK_PAY, reference: `TP${refStamp()}` } }),
+    goCheckout: openCheckout,
 
     // ── Paying rent ───────────────────────────────────────────────────────────
     // Three routes, and which exist depends on what the landlord has set up.
@@ -4714,7 +4730,12 @@ function deriveVm(s, api) {
         waitingLine: myAwaiting
           ? `₹${inr(myAwaiting.amount_paid)} is already waiting for ${landlordCard.name} to confirm.`
           : '',
-        goReceipts: () => api.goReceipts()
+        // `api` is the provider's action bag and has never had goReceipts on it —
+        // that name only exists on the vm this function returns — so this called
+        // undefined and threw the moment a tenant tapped "See my receipts" on the
+        // screen they land on straight after paying. Navigate the same way the vm
+        // does.
+        goReceipts: () => go('tme')
       };
     })(),
 
@@ -4726,8 +4747,13 @@ function deriveVm(s, api) {
     // Every payment on this tenancy and where each one stands. A tenant could not see
     // their own history at all before this — the endpoint returned it and nothing
     // rendered it.
-    isReceipts: s.route === 'treceipts',
-    goReceipts: () => go('treceipts'),
+    // 'treceipts' was never a route. RedesignRoot's table has no key for it and
+    // falls back to OverviewScreen, so every "See my receipts" — including the one
+    // on the screen a tenant reaches immediately after paying — dropped them onto
+    // the LANDLORD's dashboard, complete with somebody else's portfolio figures.
+    // MeScreen is where a tenant's receipts actually live, and 'tme' is the route
+    // the dock already highlights for it.
+    goReceipts: () => go('tme'),
     receipts: (() => {
       const chip = (st) => (
         st === 'Confirmed' ? { label: 'PAID', fg: 'pos', bg: 'lsoft' }
