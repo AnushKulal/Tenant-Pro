@@ -64,3 +64,42 @@ services:
         sync: false
       - key: TWILIO_WHATSAPP_NUMBER
         sync: false
+      # ── "There is a newer app than the one you are running" ──────────────────
+      #
+      # appVersionController reads these on every request and compares
+      # APP_LATEST_VERSION against the version the phone reports. With it unset
+      # the endpoint answers `no-latest-configured` and no phone is ever told
+      # about an update — deliberate, so an unconfigured server cannot produce a
+      # banner on everybody at once.
+      #
+      # Literal values rather than `sync: false`, because neither is a secret: a
+      # version string, and the public download the release page already serves.
+      # They belong in version control for the same reason the version number
+      # does — "which build is current" should not live only in a dashboard.
+      #
+      # BUMP BOTH ON EVERY NATIVE RELEASE. A JS-only change ships over the air
+      # and needs nothing here; a new APK needs this, or nobody is told it exists.
+      - key: APP_LATEST_VERSION
+        value: "1.5.0"
+      - key: APP_DOWNLOAD_URL
+        value: https://github.com/AnushKulal/Tenant-Pro/releases/download/build-27/tenantpro.apk
+      # One line each; shown in the in-app update sheet. Keep in step with
+      # mobile/app.json's extra.whatsNew, which is what the sheet shows for an
+      # over-the-air update.
+      #
+      # SIX LINES MAXIMUM. notesFrom() ends in .slice(0, 6), so a seventh is
+      # dropped without a word — which is how a release note nobody ever reads
+      # gets written. Checked against the running endpoint, not assumed.
+      - key: APP_UPDATE_NOTES
+        value: |-
+          Light and dark now follow your phone, and prices are readable in both
+          Invite QR codes draw offline instead of being fetched
+          A new account no longer shows another tenant's rent
+          Receipts: your full payment history, searchable
+          The payment reference now matches from QR to receipt
+          Signing in correctly no longer uses up your sign-in attempts
+      # Below this, the update stops being optional. Left unset: 1.5.0 fixes real
+      # bugs but nothing that makes an older build unusable, and a forced notice
+      # on a build people cannot install from inside the app only strands them.
+      # - key: APP_MIN_VERSION
+      #   value: "1.5.0"

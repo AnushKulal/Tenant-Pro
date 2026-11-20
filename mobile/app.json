@@ -62,7 +62,7 @@
       "eas": {
         "projectId": "3b258101-bef2-412f-8be0-53af8b224dfb"
       },
-      "whatsNew": "Follow your phone's light/dark setting properly on Android\nRent prices and badges are readable in light mode\nInvite QR codes now draw offline instead of being fetched\nA new account no longer shows another tenant's rent\nReceipts screen: your full payment history, searchable\nPayment reference stays the same from QR to receipt\nSigning in correctly no longer uses up your sign-in attempts",
+      "whatsNew": "Light and dark now follow your phone, and prices are readable in both\nInvite QR codes draw offline instead of being fetched\nA new account no longer shows another tenant's rent\nReceipts: your full payment history, searchable\nThe payment reference now matches from QR to receipt\nSigning in correctly no longer uses up your sign-in attempts",
       "releaseNotes": [
         "Add glass design system: theme tokens, UI kit, navigation flow helpers",
         "Fix OTA pointing app at dead LAN IP \u2014 use hosted backend",
