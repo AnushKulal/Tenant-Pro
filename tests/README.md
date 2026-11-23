@@ -1,6 +1,6 @@
 # Tests
 
-Twenty-two suites. None of them needs a CI service, a test framework, or a dependency that
+Twenty-five suites. None of them needs a CI service, a test framework, or a dependency that
 is not already here — they are plain Node scripts that exit non-zero on failure.
 
 | File | What it drives | Needs |
@@ -11,6 +11,11 @@ is not already here — they are plain Node scripts that exit non-zero on failur
 | `vm.gateway.test.js` | the real `deriveVm`, with react-native stubbed | `mobile/node_modules` |
 | `refresh.client.test.js` | the real axios interceptor: refresh-on-401, retry, and when NOT to sign out | nothing |
 | `layout.test.js` | the header/content alignment rule: when the header takes the title over, that a focused field can never end under it, and that the flag really reverts | `mobile/node_modules` |
+| `ratelimit.test.js` | that the auth limiter still limits: the production numbers, the per-scope overrides, that it counts refusals rather than requests, and that `RATE_LIMIT_REFUND=off` is a real revert | nothing |
+| `authlimits.test.js` | structural: that no blanket limiter is mounted on an auth prefix, that every auth route carries its own budget, and that the two portals never share a scope | nothing |
+| `appversion.test.js` | the "there is a newer build" endpoint: version comparison, the notes limit, and that an unconfigured server tells nobody anything | nothing |
+| `sample.test.js` | the SAMPLE badge on seeded showcase listings | nothing |
+| `theme.tokens.test.js` | that `t.lime` is never used as a text colour on a surface that goes light, with the contrast arithmetic done rather than asserted by naming convention | nothing |
 | `refresh.e2e.js` | refresh tokens against a real server and a real MySQL | a running server + seeded DB + `E2E_SOCK` |
 | `api.e2e.js` | every HTTP endpoint, against a real server and a real MySQL | a running server + seeded DB |
 | `ui.e2e.js` | the real app in a browser, clicking real buttons | a web build + Chromium |
@@ -34,10 +39,15 @@ mysql -e "SELECT tu.email FROM payments p
 ```
 
 ```bash
-# the four that need nothing but node
+# the ten that need nothing but node
 cd backend && node ../tests/secretbox.test.js
 cd backend && node ../tests/session.test.js
 cd backend && node ../tests/gateway.test.js
+cd backend && node ../tests/ratelimit.test.js
+cd backend && node ../tests/authlimits.test.js
+cd backend && node ../tests/appversion.test.js
+cd backend && node ../tests/sample.test.js
+node tests/theme.tokens.test.js          # reads source with fs; runs from anywhere
 cd mobile  && node ../tests/refresh.client.test.js
 cd mobile  && node ../tests/vm.gateway.test.js
 cd mobile  && node ../tests/layout.test.js

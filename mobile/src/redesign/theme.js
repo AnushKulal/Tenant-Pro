@@ -39,7 +39,7 @@ const BASE = {
 
 // ── Axis definitions (from the prototype's renderVals) ───────────────────────
 const ACCENTS = {
-    lime: { fill: '#C8F751', on: '#08080A', deep: '#5A7A00', soft: 'rgba(200,247,81,.14)', softL: 'rgba(160,200,40,.22)' },
+    lime: { fill: '#C8F751', on: '#08080A', deep: '#527000', soft: 'rgba(200,247,81,.14)', softL: 'rgba(160,200,40,.22)' },
     amber: { fill: '#FFC24B', on: '#100A00', deep: '#8A5600', soft: 'rgba(255,194,75,.16)', softL: 'rgba(200,140,0,.18)' },
     sky: { fill: '#6FD3FF', on: '#04121A', deep: '#0B5C7A', soft: 'rgba(111,211,255,.16)', softL: 'rgba(11,92,122,.14)' },
     magenta: { fill: '#FF8ADB', on: '#1A0714', deep: '#9B1C6B', soft: 'rgba(255,138,219,.16)', softL: 'rgba(155,28,107,.13)' }
@@ -124,6 +124,12 @@ export function buildTheme({ mode = 'dark', accent = 'lime', surface = 'ink', ed
 
         // Accent (axis: accent). `lime` is the fill, `accent` the readable text
         // tone (the prototype's --violet/--violet2 slot), `on` sits on the fill.
+        // lime.deep is #527000 and not a rounder number because that is where it
+        // clears WCAG AA (4.5:1) on ALL THREE light surfaces rather than only the
+        // white cards. #5A7A00 managed 4.98 on #FFFFFF but 4.29 on the #F0EEE9
+        // page background, i.e. it failed exactly where body text most often
+        // sits. tests/theme.tokens.test.js does the arithmetic rather than
+        // trusting this comment.
         lime: acc.fill,
         on: acc.on,
         lsoft: dark ? acc.soft : acc.softL,

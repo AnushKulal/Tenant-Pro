@@ -51,9 +51,9 @@ export default function CheckoutScreen() {
         <Press
             onPress={onPress}
             disabled={disabled}
-            style={{ width: '100%', marginTop: 14, paddingVertical: 17, borderRadius: 999, borderWidth: 1, borderColor: disabled ? t.line : t.lime, alignItems: 'center', opacity: disabled ? 0.7 : 1 }}
+            style={{ width: '100%', marginTop: 14, paddingVertical: 17, borderRadius: 999, borderWidth: 1, borderColor: disabled ? t.line : t.accent, alignItems: 'center', opacity: disabled ? 0.7 : 1 }}
         >
-            <T w={700} s={15} lh={1} c={disabled ? t.fg3 : t.lime}>{label}</T>
+            <T w={700} s={15} lh={1} c={disabled ? t.fg3 : t.accent}>{label}</T>
         </Press>
     );
 
@@ -186,9 +186,9 @@ export default function CheckoutScreen() {
                                     <Press
                                         key={m.label}
                                         onPress={m.go}
-                                        style={{ paddingVertical: 10, paddingHorizontal: 14, borderRadius: 999, borderWidth: 1, borderColor: m.on ? t.lime : t.line, backgroundColor: m.on ? t.lsoft : 'transparent' }}
+                                        style={{ paddingVertical: 10, paddingHorizontal: 14, borderRadius: 999, borderWidth: 1, borderColor: m.on ? t.accent : t.line, backgroundColor: m.on ? t.lsoft : 'transparent' }}
                                     >
-                                        <T w={600} s={12.5} lh={1} c={m.on ? t.lime : t.fg2}>{m.label}</T>
+                                        <T w={600} s={12.5} lh={1} c={m.on ? t.accent : t.fg2}>{m.label}</T>
                                     </Press>
                                 ))}
                             </Row>

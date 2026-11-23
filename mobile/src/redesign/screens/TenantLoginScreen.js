@@ -121,7 +121,7 @@ export default function TenantLoginScreen() {
                         <T
                             w={vm.authOfferSignup ? 700 : 600}
                             s={13}
-                            c={vm.authOfferSignup ? t.lime : t.accent}
+                            c={t.accent}
                         >
                             Create account
                         </T>

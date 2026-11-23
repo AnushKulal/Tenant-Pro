@@ -1158,7 +1158,7 @@ export default function Sheets() {
                                                 <T w={400} s={11.5} lh={1.4} c={r.full ? t.amber : t.pos} style={{ marginTop: 5 }}>{r.freeLine}</T>
                                             </View>
                                             <View style={{ alignItems: 'flex-end' }}>
-                                                <T w={700} s={16} lh={1.1} c={r.on ? t.lime : t.fg}>{r.price}</T>
+                                                <T w={700} s={16} lh={1.1} c={r.on ? t.accent : t.fg}>{r.price}</T>
                                                 <T mono w={600} s={8} lh={1} ls={0.06} c={t.fg3} style={{ marginTop: 4 }}>{r.priceNote.toUpperCase()}</T>
                                             </View>
                                         </Row>
@@ -1600,7 +1600,7 @@ export default function Sheets() {
                             them: it is a fact about the request, and the chip that
                             matches it is already selected below. */}
                         <Row gap={8} align="flex-start" style={{ marginBottom: 10, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 13, backgroundColor: vm.joinDecide.hasAskedUnit ? t.lsoft : t.ink3 }}>
-                            <Glyph name="bed-outline" size={14} color={vm.joinDecide.hasAskedUnit ? t.lime : t.fg3} style={{ marginTop: 1 }} />
+                            <Glyph name="bed-outline" size={14} color={vm.joinDecide.hasAskedUnit ? t.accent : t.fg3} style={{ marginTop: 1 }} />
                             <T w={500} s={11.5} lh={1.45} c={vm.joinDecide.hasAskedUnit ? t.fg : t.fg3} style={{ flex: 1 }}>{vm.joinDecide.askedRoomLine}</T>
                         </Row>
                         {vm.joinDecide.hasRooms ? (
@@ -1622,7 +1622,7 @@ export default function Sheets() {
                             not one of the options — the option that matches it is
                             already preselected below. */}
                         <Row gap={8} align="flex-start" style={{ marginBottom: 10, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 13, backgroundColor: vm.joinDecide.hasAsked ? t.lsoft : t.ink3 }}>
-                            <Glyph name="person-outline" size={14} color={vm.joinDecide.hasAsked ? t.lime : t.fg3} style={{ marginTop: 1 }} />
+                            <Glyph name="person-outline" size={14} color={vm.joinDecide.hasAsked ? t.accent : t.fg3} style={{ marginTop: 1 }} />
                             <T w={500} s={11.5} lh={1.45} c={vm.joinDecide.hasAsked ? t.fg : t.fg3} style={{ flex: 1 }}>{vm.joinDecide.askedLine}</T>
                         </Row>
                         <Chips items={vm.joinDecide.stayOptions} t={t} />
@@ -1768,7 +1768,7 @@ export default function Sheets() {
                                 <T w={700} s={20} lh={1.1} style={{ letterSpacing: -0.8 }}>{vm.declaredQueue.title}</T>
                                 <Eyebrow s={10} ls={0.08} style={{ marginTop: 7 }}>TENANTS SAY THEY HAVE PAID</Eyebrow>
                             </View>
-                            <Glyph name="cash" size={20} color={vm.declaredQueue.count ? t.lime : t.fg3} />
+                            <Glyph name="cash" size={20} color={vm.declaredQueue.count ? t.accent : t.fg3} />
                         </Row>
 
                         {vm.declaredQueue.empty ? (
@@ -2582,9 +2582,9 @@ export default function Sheets() {
                                     <Glyph
                                         name={vm.gateway.enabled ? 'checkmark-circle' : 'pause-circle-outline'}
                                         size={16}
-                                        color={vm.gateway.enabled ? t.lime : t.amber}
+                                        color={vm.gateway.enabled ? t.accent : t.amber}
                                     />
-                                    <T w={600} s={13} lh={1.3} c={vm.gateway.enabled ? t.lime : t.amber}>
+                                    <T w={600} s={13} lh={1.3} c={vm.gateway.enabled ? t.accent : t.amber}>
                                         {vm.gateway.enabled
                                             ? `${vm.gateway.providerLabel} connected`
                                             : `${vm.gateway.providerLabel} paused`}
