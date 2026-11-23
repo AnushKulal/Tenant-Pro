@@ -62,14 +62,14 @@
       "eas": {
         "projectId": "3b258101-bef2-412f-8be0-53af8b224dfb"
       },
-      "whatsNew": "Light and dark now follow your phone, and prices are readable in both\nInvite QR codes draw offline instead of being fetched\nA new account no longer shows another tenant's rent\nReceipts: your full payment history, searchable\nThe payment reference now matches from QR to receipt\nSigning in correctly no longer uses up your sign-in attempts",
+      "whatsNew": "Prices and labels are readable in light mode\nLight and dark now follow your phone, and prices are readable in both\nInvite QR codes draw offline instead of being fetched\nA new account no longer shows another tenant's rent\nReceipts: your full payment history, searchable\nThe payment reference now matches from QR to receipt",
       "releaseNotes": [
-        "Add glass design system: theme tokens, UI kit, navigation flow helpers",
-        "Fix OTA pointing app at dead LAN IP \u2014 use hosted backend",
-        "Fail fast when DB is down + add back button to role login screens",
-        "Fix login instability and add guest login + auto-OTA",
-        "Show a 'What's new' changelog in the in-app update popup",
-        "Tenant portal Phase 1: role selection + tenant accounts"
+        "Prices and labels are readable in light mode",
+        "Light and dark now follow your phone, and prices are readable in both",
+        "Invite QR codes draw offline instead of being fetched",
+        "A new account no longer shows another tenant's rent",
+        "Receipts: your full payment history, searchable",
+        "The payment reference now matches from QR to receipt"
       ],
       "releaseVersion": "1.0.0"
     },
