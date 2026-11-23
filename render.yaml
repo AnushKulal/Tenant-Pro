@@ -64,6 +64,29 @@ services:
         sync: false
       - key: TWILIO_WHATSAPP_NUMBER
         sync: false
+      # ── The revert flags ─────────────────────────────────────────────────────
+      #
+      # Two things in this release can be undone from this dashboard alone, with
+      # no redeploy and no new app build. Both are listed here commented out,
+      # because an escape hatch nobody can find is not one.
+      #
+      # 1. RATE_LIMIT_REFUND=off
+      #    Puts the old sign-in limiter back: every request counts again, a
+      #    correct password included. Reach for it if sign-ins start being
+      #    refused when they should not be, or if the refund turns out to hand
+      #    an attacker an unmetered channel on an endpoint that can be made to
+      #    answer 2xx. Both sides are tested in tests/ratelimit.test.js.
+      #
+      # 2. Clear APP_LATEST_VERSION (below)
+      #    Stops every phone being told a new build exists. The endpoint goes
+      #    back to answering `no-latest-configured` and no banner is drawn.
+      #    Reach for it if the download is wrong or the release is pulled.
+      #
+      # Restart the service after either; both are read at request time, so the
+      # change lands as soon as the new process is up.
+      # - key: RATE_LIMIT_REFUND
+      #   value: "off"
+      #
       # ── "There is a newer app than the one you are running" ──────────────────
       #
       # appVersionController reads these on every request and compares

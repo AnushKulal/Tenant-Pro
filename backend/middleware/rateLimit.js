@@ -35,6 +35,29 @@ const num = (v, fallback) => {
 
 const WINDOW_MS = num(process.env.RATE_LIMIT_WINDOW_MS, 15 * 60 * 1000);
 
+// ── The revert flag ─────────────────────────────────────────────────────────
+//
+// RATE_LIMIT_REFUND = 'off' puts the old behaviour back: every request to every
+// scope counts, a correct sign-in included, exactly as it did before refusals
+// became the thing being counted. Anything else, or unset, is the new behaviour.
+//
+// Same mechanism as the flags in mobile/src/appConfig.js and for the same
+// reason, except that this one is read at request time rather than at build
+// time, because of what it guards. Refunding a success is a judgement about
+// which replies are harmless, and the judgement is wrong the moment an endpoint
+// can be made to answer 2xx without the caller proving anything -- at which
+// point the refund hands an attacker an unmetered channel. That is a security
+// regression, on a server that is already live, and the revert for it cannot
+// wait on a redeploy. Setting one variable in Render and restarting is the
+// whole revert: no code change, no app update, no data touched.
+//
+// It deliberately does NOT try to restore the two blanket mounts removed from
+// server.js. Those shared a single counter across both portals, so one tenant's
+// wrong password refused an owner's right one; putting them back would put that
+// back. The backstop that remains is apiLimiter on /api, which bounds every
+// endpoint underneath it whatever happens in here.
+const REFUND_ON_SUCCESS = String(process.env.RATE_LIMIT_REFUND || 'on').trim().toLowerCase() !== 'off';
+
 // A scope's own override wins over the blanket one, so a test can open up the
 // endpoint it is exercising without unlocking the rest.
 const allowanceFor = (scope, max) => {
@@ -80,7 +103,7 @@ const rateLimit = ({ max, scope, countOnly }) => {
     // and I have just emailed it" — and each one costs an email, so a success
     // there is precisely what must be counted. On /register the success IS the
     // abuse. Those keep counting every request.
-    const refundSuccess = countOnly === 'failures';
+    const refundSuccess = REFUND_ON_SUCCESS && countOnly === 'failures';
     return (req, res, next) => {
     // Render sits behind a proxy, so req.ip is only meaningful with 'trust proxy'
     // set (see server.js). Falling back to the socket address keeps this working

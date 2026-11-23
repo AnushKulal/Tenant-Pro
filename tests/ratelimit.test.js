@@ -199,6 +199,83 @@ withEnv({}, (rateLimit) => {
     ok('register still counts successes', m === 3, `${m} allowed`);
 });
 
+console.log('\nTHE REVERT FLAG IS A REAL REVERT');
+
+// The flag's whole promise is that setting one variable puts the OLD behaviour
+// back, so both sides are driven here rather than only the new one. The pair
+// below is the promise stated twice: same middleware, same ten successful
+// sign-ins, and the only difference is the variable.
+withEnv({}, (rateLimit) => {
+    const mw = rateLimit({ max: 3, scope: 'login', countOnly: 'failures' });
+    let n = 0;
+    for (let i = 0; i < 10; i += 1) if (hit(mw, '9.9.9.1', 200).allowed) n += 1;
+    ok('unset: ten correct sign-ins all go through', n === 10, `${n} allowed`);
+});
+
+withEnv({ RATE_LIMIT_REFUND: 'off' }, (rateLimit) => {
+    const mw = rateLimit({ max: 3, scope: 'login', countOnly: 'failures' });
+    let n = 0;
+    for (let i = 0; i < 10; i += 1) if (hit(mw, '9.9.9.2', 200).allowed) n += 1;
+    ok('off: a correct sign-in spends budget again, stopping at 3', n === 3, `${n} allowed`);
+});
+
+withEnv({ RATE_LIMIT_REFUND: 'off' }, (rateLimit) => {
+    // The half that must NOT change. Reverting the refund is meant to restore
+    // the old cost of a success, not to loosen what a wrong password costs.
+    const mw = rateLimit({ max: 3, scope: 'login', countOnly: 'failures' });
+    let n = 0;
+    for (let i = 0; i < 10; i += 1) if (hit(mw, '9.9.9.3', 401).allowed) n += 1;
+    ok('off: wrong passwords are still bounded at 3', n === 3, `${n} allowed`);
+});
+
+withEnv({ RATE_LIMIT_REFUND: 'off', RATE_LIMIT_LOGIN_MAX: '7' }, (rateLimit) => {
+    // The flag and the allowances are separate dials; turning one must not move
+    // the other, or a revert under test conditions would read as a pass.
+    const mw = rateLimit({ max: 3, scope: 'login', countOnly: 'failures' });
+    let n = 0;
+    for (let i = 0; i < 12; i += 1) if (hit(mw, '9.9.9.4', 200).allowed) n += 1;
+    ok("off: a scope's own override still applies, stopping at 7", n === 7, `${n} allowed`);
+});
+
+withEnv({ RATE_LIMIT_REFUND: 'off' }, (rateLimit) => {
+    // Nothing to revert on these: they counted successes before the rewrite and
+    // they count them after, because there the 200 IS the signal and the abuse.
+    const reset = rateLimit({ max: 3, scope: 'reset' });
+    let n = 0;
+    for (let i = 0; i < 10; i += 1) if (hit(reset, '9.9.9.5', 200).allowed) n += 1;
+    ok('off: the always-counting scopes are untouched by the flag', n === 3, `${n} allowed`);
+});
+
+// Whoever reaches for this will be typing it into a dashboard field under
+// pressure, so the spelling is forgiving in the directions that are safe.
+[['OFF', 'upper case'], [' off ', 'stray spaces'], ['Off', 'mixed case']].forEach(([v, why]) => {
+    withEnv({ RATE_LIMIT_REFUND: v }, (rateLimit) => {
+        const mw = rateLimit({ max: 3, scope: 'login', countOnly: 'failures' });
+        let n = 0;
+        for (let i = 0; i < 10; i += 1) if (hit(mw, '9.9.9.6', 200).allowed) n += 1;
+        ok(`off survives ${why}`, n === 3, `${n} allowed`);
+    });
+});
+
+// Forgiving in the safe directions only. A value that is not the word "off"
+// leaves the shipped behaviour alone rather than guessing at an intention, so a
+// typo cannot quietly half-revert a security control.
+[['of', 'a typo'], ['false', 'the wrong word'], ['0', 'a zero'], ['', 'an empty value']].forEach(([v, why]) => {
+    withEnv({ RATE_LIMIT_REFUND: v }, (rateLimit) => {
+        const mw = rateLimit({ max: 3, scope: 'login', countOnly: 'failures' });
+        let n = 0;
+        for (let i = 0; i < 10; i += 1) if (hit(mw, '9.9.9.7', 200).allowed) n += 1;
+        ok(`${why} does not revert anything`, n === 10, `${n} allowed`);
+    });
+});
+
+withEnv({ RATE_LIMIT_REFUND: 'on' }, (rateLimit) => {
+    const mw = rateLimit({ max: 3, scope: 'login', countOnly: 'failures' });
+    let n = 0;
+    for (let i = 0; i < 10; i += 1) if (hit(mw, '9.9.9.8', 200).allowed) n += 1;
+    ok('on: says out loud what unset already does', n === 10, `${n} allowed`);
+});
+
 console.log('\n' + '='.repeat(60));
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
