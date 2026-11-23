@@ -58,16 +58,25 @@ const withEnv = (env, fn) => {
 
 // Drive the middleware without a server: a request is an IP, a response is
 // whatever status it ends up with.
-const hit = (mw, ip) => {
+const hit = (mw, ip, outcome) => {
     let status = 0, body = null;
     const req = { ip, socket: {} };
+    // `outcome` is the status the handler would have ended with. Supplying it
+    // makes the response emit 'finish', which is what a failures-only limiter
+    // listens for to hand a successful attempt back.
+    const finishers = [];
     const res = {
         set: () => {},
+        on(ev, fn) { if (ev === 'finish') finishers.push(fn); return this; },
         status(s) { status = s; return this; },
         json(j) { body = j; return this; }
     };
     let passed = false;
     mw(req, res, () => { passed = true; });
+    if (outcome !== undefined && passed) {
+        res.statusCode = outcome;
+        finishers.forEach((fn) => fn());
+    }
     return { allowed: passed, status, body };
 };
 
@@ -132,6 +141,62 @@ withEnv({}, (rateLimit) => {
     through(login, '6.6.6.1');
     ok('a spent IP on one scope is untouched on another', through(reset, '6.6.6.1') === 3);
     ok('...and another IP still has its full allowance', through(login, '6.6.6.2') === 3);
+});
+
+
+// ── Counting refusals rather than requests ────────────────────────────────────
+//
+// On a credential endpoint the attacker's currency is a REFUSED reply; a 200
+// means the caller already held the password. So `countOnly: 'failures'` hands
+// a successful attempt back, and the reported bug — a correct password refused
+// because the budget had been spent by successes — stops being possible.
+//
+// The ordering matters more than the feature. The attempt is counted on arrival
+// and refunded afterwards, never counted only on failure, because a burst that
+// all arrived before any of them answered would otherwise all see an empty
+// bucket and all go through.
+console.log('\nCOUNTING REFUSALS RATHER THAN REQUESTS');
+withEnv({}, (rateLimit) => {
+    const mw = rateLimit({ max: 3, scope: 'login', countOnly: 'failures' });
+    // Ten successes against a budget of three.
+    let allowedCount = 0;
+    for (let i = 0; i < 10; i += 1) if (hit(mw, '7.7.7.1', 200).allowed) allowedCount += 1;
+    ok('a correct password never spends the budget', allowedCount === 10, `${allowedCount}/10 allowed`);
+
+    // Failures still bite, on a fresh IP.
+    ok('refusals are still counted', through(rateLimit({ max: 3, scope: 'login', countOnly: 'failures' }), '7.7.7.2') === 3);
+});
+
+withEnv({}, (rateLimit) => {
+    // Everything arrives before anything answers: the ceiling must still hold.
+    const mw = rateLimit({ max: 3, scope: 'login', countOnly: 'failures' });
+    const inFlight = [];
+    for (let i = 0; i < 20; i += 1) inFlight.push(hit(mw, '7.7.7.3'));
+    const got = inFlight.filter((r) => r.allowed).length;
+    ok('a burst that answers nothing cannot exceed the ceiling', got === 3, `${got} got through`);
+});
+
+withEnv({}, (rateLimit) => {
+    const mw = rateLimit({ max: 3, scope: 'login', countOnly: 'failures' });
+    // A 500 is not a success. Refunding one would make a payload that crashes
+    // the handler into an unmetered probe.
+    let n = 0;
+    for (let i = 0; i < 10; i += 1) if (hit(mw, '7.7.7.4', 500).allowed) n += 1;
+    ok('a server error keeps its cost', n === 3, `${n} allowed`);
+});
+
+withEnv({}, (rateLimit) => {
+    // The scopes where the SUCCESS is the thing worth bounding keep counting it:
+    // on /forgot-password a 200 is the enumeration signal and costs an email, and
+    // on /register the success is the abuse.
+    const reset = rateLimit({ max: 3, scope: 'reset' });
+    let n = 0;
+    for (let i = 0; i < 10; i += 1) if (hit(reset, '7.7.7.5', 200).allowed) n += 1;
+    ok('reset still counts successes', n === 3, `${n} allowed`);
+    const reg = rateLimit({ max: 3, scope: 'register' });
+    let m = 0;
+    for (let i = 0; i < 10; i += 1) if (hit(reg, '7.7.7.6', 201).allowed) m += 1;
+    ok('register still counts successes', m === 3, `${m} allowed`);
 });
 
 console.log('\n' + '='.repeat(60));

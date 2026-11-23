@@ -8,7 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useVm } from './AppContext';
 import { useT } from './ThemeContext';
 import { grotesk } from './theme';
-import { T, Eyebrow, Row, Press, Glyph, Field, Avatar, Composer, DocThumb, NoteBox } from './ui';
+import { T, Eyebrow, Row, Press, Glyph, Field, Avatar, Composer, DocThumb, NoteBox, QrCode } from './ui';
 import { useSheetIn, useFadeIn, Stagger } from './motion';
 import { useIdShield } from './shield';
 import { KeyboardScroll, useKeyboardHeight } from './keyboard';
@@ -765,7 +765,15 @@ export default function Sheets() {
                         </Row>
 
                         <View style={{ borderRadius: 20, backgroundColor: '#FFFFFF', padding: 18, alignItems: 'center', marginBottom: 10 }}>
-                            <Image source={{ uri: vm.invite.qr }} style={{ width: 196, height: 196 }} resizeMode="contain" />
+                            {/* Drawn here, not fetched. This used to be an <Image>
+                                pointing at api.qrserver.com, which meant the invite
+                                code only appeared if the landlord had a working
+                                connection AND that third party was up — and it sent
+                                every property's invite link to them to find out.
+                                qr.js already computes this offline; it was written
+                                for exactly this reason and was only wired into the
+                                payment screen. */}
+                            <QrCode value={vm.invite.link} size={196} quiet={2} label={`Invite QR code for ${vm.invite.name}`} />
                             <T w={700} s={15} lh={1.2} numberOfLines={2} c="#0A0A0C" style={{ marginTop: 14, textAlign: 'center' }}>{vm.invite.name}</T>
                             <T mono w={600} s={10} lh={1} ls={0.08} c="rgba(10,10,12,.5)" style={{ marginTop: 7 }}>{vm.invite.policy}</T>
                         </View>
@@ -1210,7 +1218,7 @@ export default function Sheets() {
 
                         {vm.docs.loading ? (
                             <View style={{ alignItems: 'center', paddingVertical: 30, rowGap: 12 }}>
-                                <ActivityIndicator color={t.lime} />
+                                <ActivityIndicator color={t.accent} />
                                 <Eyebrow s={9} ls={0.12} c={t.fg3}>LOADING DOCUMENTS</Eyebrow>
                             </View>
                         ) : null}
@@ -1342,7 +1350,7 @@ export default function Sheets() {
                                     ) : null}
 
                                     {d.busy ? (
-                                        <View style={{ paddingVertical: 12 }}><ActivityIndicator color={t.lime} /></View>
+                                        <View style={{ paddingVertical: 12 }}><ActivityIndicator color={t.accent} /></View>
                                     ) : (
                                         <Row gap={7} style={{ marginTop: 11 }}>
                                             <Press onPress={d.open} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', columnGap: 6, paddingVertical: 11, borderRadius: 13, backgroundColor: t.ink2, borderWidth: 1, borderColor: t.line }}>
@@ -1449,6 +1457,29 @@ export default function Sheets() {
 
                                         {j.hasNote ? (
                                             <T w={400} s={12.5} lh={1.5} c={t.fg2} style={{ marginTop: 11 }}>{`“${j.note}”`}</T>
+                                        ) : null}
+
+                                        {/* Under eighteen. Drawn like the "matched"
+                                            card above it, and for the same reason: it
+                                            is not decoration on the row, it changes the
+                                            decision being made on it. A minor cannot
+                                            hold a tenancy in their own name, so the
+                                            person who consents has to be reachable
+                                            BEFORE the landlord accepts, not after. */}
+                                        {j.isMinor ? (
+                                            <View style={{ marginTop: 11, padding: 11, borderRadius: 13, backgroundColor: t.asoft, borderWidth: 1, borderColor: t.line }}>
+                                                <Row gap={7} align="center">
+                                                    <Glyph name="shield-checkmark" size={14} color={t.amber} />
+                                                    <T mono w={600} s={9.5} ls={0.1} c={t.amber}>UNDER 18 — GUARDIAN CONSENTS</T>
+                                                </Row>
+                                                <T w={600} s={12.5} lh={1.4} c={t.fg} style={{ marginTop: 6 }}>{j.guardianLine}</T>
+                                                {j.guardianPhoneLabel ? (
+                                                    <Press onPress={j.callGuardian} style={{ marginTop: 8, flexDirection: 'row', alignItems: 'center', columnGap: 6, paddingVertical: 9, paddingHorizontal: 11, borderRadius: 11, backgroundColor: t.ink2, borderWidth: 1, borderColor: t.line, alignSelf: 'flex-start' }}>
+                                                        <Glyph name="call" size={13} color={t.pos} />
+                                                        <T w={600} s={12} c={t.fg}>{j.guardianPhoneLabel}</T>
+                                                    </Press>
+                                                ) : null}
+                                            </View>
                                         ) : null}
 
                                         {/* Reach them before deciding. */}
@@ -2617,8 +2648,8 @@ export default function Sheets() {
                                             nobody is cut off from paying meanwhile. */}
                                         {!!vm.gateway.expect.meanwhile && (
                                             <Row gap={8} align="flex-start" style={{ marginTop: 11, paddingTop: 11, borderTopWidth: 1, borderTopColor: t.line }}>
-                                                <Glyph name="checkmark-circle-outline" size={15} color={t.lime} />
-                                                <T w={500} s={12.5} lh={1.45} c={t.lime} style={{ flex: 1 }}>{vm.gateway.expect.meanwhile}</T>
+                                                <Glyph name="checkmark-circle-outline" size={15} color={t.accent} />
+                                                <T w={500} s={12.5} lh={1.45} c={t.accent} style={{ flex: 1 }}>{vm.gateway.expect.meanwhile}</T>
                                             </Row>
                                         )}
                                         {/* Advice for SOME landlords, not a fact about
@@ -3075,7 +3106,7 @@ export default function Sheets() {
                                     </T>
                                 </View>
                                 <View style={{ alignItems: 'flex-end' }}>
-                                    <T w={700} s={21} lh={1.1} c={t.lime}>{sh.rent}</T>
+                                    <T w={700} s={21} lh={1.1} c={t.accent}>{sh.rent}</T>
                                     <T w={400} s={11} lh={1.3} c={t.fg3} style={{ marginTop: 3 }}>{sh.rentNote}</T>
                                 </View>
                             </Row>
@@ -3085,6 +3116,24 @@ export default function Sheets() {
                                     <ActivityIndicator size="small" color={t.accent} />
                                     <T mono w={600} s={9} ls={0.12} c={t.fg3}>LOADING THE DETAIL</T>
                                 </Row>
+                            ) : null}
+
+                            {/* Above the headline, not below the fold. This is the
+                                screen where somebody decides to send a request, and
+                                the seeded landlords cannot sign in to answer one. */}
+                            {sh.sample ? (
+                                <View
+                                    accessibilityLabel={`Sample listing. ${sh.sampleNote}`}
+                                    style={{
+                                        marginTop: 14, padding: 11, borderRadius: 14,
+                                        backgroundColor: t.lsoft, borderWidth: 1, borderColor: t.line
+                                    }}>
+                                    <Row gap={7} align="center">
+                                        <Glyph name="information-circle-outline" size={13} color={t.fg2} />
+                                        <T mono w={700} s={9} lh={1.3} ls={0.08} c={t.fg2}>SAMPLE LISTING</T>
+                                    </Row>
+                                    <T w={400} s={12} lh={1.5} c={t.fg2} style={{ marginTop: 5 }}>{sh.sampleNote}</T>
+                                </View>
                             ) : null}
 
                             {sh.headline ? (

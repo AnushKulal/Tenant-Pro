@@ -456,6 +456,18 @@ const getJoinRequests = async (req, res) => {
                     -- document and see who this is.
                     tu.is_guest AS requester_is_guest,
                     tu.guest_code AS requester_guest_code,
+                    -- Who signs, when the applicant cannot sign for themselves.
+                    --
+                    -- A tenant under eighteen is not competent to contract, so the
+                    -- signup form collects a guardian and tells them the details go
+                    -- to their landlord. They have to actually arrive somewhere for
+                    -- that to be true, and this is the screen where it matters:
+                    -- the landlord is deciding whether to accept this person, and
+                    -- "this applicant is a minor, here is who consents for them" is
+                    -- part of that decision rather than something to discover after.
+                    tu.guardian_name AS requester_guardian_name,
+                    tu.guardian_relation AS requester_guardian_relation,
+                    tu.guardian_phone AS requester_guardian_phone,
                     p.name AS property_name,
                     u.unit_number,
                     -- Whether this stranger has put an ID up, and whether anyone has

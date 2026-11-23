@@ -33,8 +33,6 @@ TITLE = "TENANTPRO — SMART TENANT AND RENT MANAGEMENT SYSTEM"
 TITLE_PLAIN = "TenantPro — Smart Tenant and Rent Management System"
 STUDENTS = [
     ("Anush Kulal M", "24MCAR0133"),
-    ("Akshita Bansal", "24MCAR0131"),
-    ("Chandan Mathur", "24MCAR0230"),
 ]
 GUIDE = "Dr. Kamalraj R"
 GUIDE_DESIG = "Department of Computer Science and IT"
@@ -309,8 +307,8 @@ def certificate_university(doc):
     para(doc,
          f"Certified that the project report titled “{TITLE_PLAIN}” is based on an "
          f"original project study conducted by {names} of the Master of Computer Applications "
-         f"programme, under the guidance of {GUIDE}. They have attended the required guidance "
-         f"sessions held. The project report has not formed a basis for the award of any "
+         f"programme, under the guidance of {GUIDE}. The required guidance sessions have been "
+         f"attended. The project report has not formed a basis for the award of any "
          f"Degree or Diploma of any university or any other institution.",
          align=WD_ALIGN_PARAGRAPH.JUSTIFY, line=2.0)
     blank_lines(doc, 3)
@@ -347,12 +345,12 @@ def certificate_guide(doc):
 def declaration(doc):
     page_break(doc)
     put_logo(doc, width=Inches(2.4), after=Pt(18))
-    para(doc, "DECLARATION BY THE STUDENTS", align=WD_ALIGN_PARAGRAPH.CENTER,
+    para(doc, "DECLARATION BY THE STUDENT", align=WD_ALIGN_PARAGRAPH.CENTER,
          bold=True, size=Pt(15))
     blank_lines(doc, 2)
     para(doc,
          f"This is to declare that the project titled “{TITLE_PLAIN}” is carried out "
-         f"independently by us under the guidance of {GUIDE}, {GUIDE_DESIG}, {UNIV}, {PLACE}. "
+         f"independently by me under the guidance of {GUIDE}, {GUIDE_DESIG}, {UNIV}, {PLACE}. "
          f"This work is an original one and has not been submitted earlier to any University or "
          f"any other Institution for the fulfilment of the requirement of a course of study or "
          f"any other credential.",
@@ -373,20 +371,20 @@ def acknowledgement(doc):
     para(doc, "ACKNOWLEDGEMENT", align=WD_ALIGN_PARAGRAPH.CENTER, bold=True, size=Pt(15))
     blank_lines(doc, 1)
     body = [
-        f"We are deeply indebted to Dr. CHENRAJ ROYCHAND, President, {UNIV} Trust, {PLACE}, for "
-        f"having admitted us to undergo the Master of Computer Applications Post Graduate course "
+        f"I am deeply indebted to Dr. CHENRAJ ROYCHAND, President, {UNIV} Trust, {PLACE}, for "
+        f"having admitted me to undergo the Master of Computer Applications Post Graduate course "
         f"during the academic term {YEAR}.",
-        f"We are pleased to thank {DIRECTOR.title()}, Director, School of Computer Science and IT, "
-        f"{UNIV}, {PLACE}, for the facilities and the academic environment extended to us during "
+        f"I am pleased to thank {DIRECTOR.title()}, Director, School of Computer Science and IT, "
+        f"{UNIV}, {PLACE}, for the facilities and the academic environment extended to me during "
         f"the course of this work.",
-        f"We take this opportunity to express our gratitude to Dr. Ananta Charan Ojha, Deputy "
+        f"I take this opportunity to express my gratitude to Dr. Ananta Charan Ojha, Deputy "
         f"Director, Dr. K Suneetha, Head of the Department of Computer Science and IT, and "
         f"Dr. Murugan R, Programme Head of the MCA Programme, for their valuable guidance and "
         f"support for the successful completion of the project work.",
-        f"We express our profound thanks to our project coordinator Dr. I Brem Navas, Professor, "
-        f"Department of Computer Science and IT, and above all to our guide {GUIDE}, for guidance "
+        f"I express my profound thanks to my project coordinator Dr. I Brem Navas, Professor, "
+        f"Department of Computer Science and IT, and above all to my guide {GUIDE}, for guidance "
         f"at the decisive points of this work and for being available whenever it mattered.",
-        "We are very thankful to our families and friends for their constant and unconditional "
+        "I am very thankful to my family and friends for their constant and unconditional "
         "encouragement and support.",
     ]
     for t in body:

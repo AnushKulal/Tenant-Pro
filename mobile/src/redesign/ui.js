@@ -644,7 +644,7 @@ export const S = StyleSheet.create({ flex1: { flex: 1 }, center: { alignItems: '
 // the matrix is recomputed and the code on screen is for the new amount. The useMemo
 // keys on the string, so nothing recomputes while a sheet re-renders for other
 // reasons.
-export function QrCode({ value, size = 232, quiet = 2, ec }) {
+export function QrCode({ value, size = 232, quiet = 2, ec, label = 'QR code' }) {
     const t = useT();
     const built = React.useMemo(() => {
         try {
@@ -687,7 +687,7 @@ export function QrCode({ value, size = 232, quiet = 2, ec }) {
             style={{ width: size, height: size, backgroundColor: '#FFFFFF', borderRadius: 14, overflow: 'hidden' }}
             accessible
             accessibilityRole="image"
-            accessibilityLabel="Payment QR code"
+            accessibilityLabel={label}
         >
             {rows.map((run) => (
                 <View

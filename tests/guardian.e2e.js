@@ -132,6 +132,77 @@ const newTenant = (extra = {}) => {
     ok('a guardian sent by an adult is NOT stored',
         storedA && storedA.guardian_name === null && storedA.guardian_phone === null, storedA);
 
+    section('AND THE GUARDIAN ACTUALLY REACHES THE LANDLORD');
+    // The point of collecting a guardian at all. The signup form tells a minor
+    // that their details go to their landlord, and for a while that was not
+    // true: the three columns were written and read back by nothing. No SELECT
+    // anywhere in the server mentioned them, so the landlord had no way to see
+    // who consents for somebody they were being asked to accept.
+    //
+    // This is the assertion that would have caught it, and it is deliberately
+    // end to end rather than a check that the column is populated: a column
+    // nobody reads is exactly what the bug was.
+    {
+        const OWNER = process.env.E2E_OWNER;
+        const owner = await POST('/api/auth/login', { email: OWNER, password: 'Test@1234' });
+        if (!(owner.json && owner.json.token)) {
+            ok('the landlord can sign in to be asked', false, { s: owner.status, j: owner.json });
+        } else {
+            const ot = owner.json.token;
+            const props = await fetch(BASE + '/api/properties', { headers: { Authorization: `Bearer ${ot}` } })
+                .then((r) => r.json()).catch(() => null);
+            const list = Array.isArray(props) ? props : (props && props.properties) || [];
+            ok('the landlord has a property to be asked about', list.length > 0, list.length);
+
+            if (list.length) {
+                const m3 = newTenant({
+                    adult: false,
+                    guardian: { name: 'Meera Rao', relation: 'Guardian', phone: '9812345670' }
+                });
+                const reg = await POST('/api/tenant-auth/register', m3);
+                ok('a minor registers', reg.status === 201, { s: reg.status, j: reg.json });
+
+                const asked = await fetch(BASE + '/api/tenant-portal/join-requests', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${reg.json.token}` },
+                    body: JSON.stringify({ property_id: list[0].id, note: 'Guardian round-trip check' })
+                }).then((r) => r.json()).catch(() => null);
+                ok('...and asks to join a property', !!asked, asked);
+
+                const queue = await fetch(BASE + '/api/owner/join-requests', {
+                    headers: { Authorization: `Bearer ${ot}` }
+                }).then((r) => r.json()).catch(() => null);
+                const rows = (queue && (queue.requests || queue.join_requests)) || (Array.isArray(queue) ? queue : []);
+                const mine = rows.find((r) => r.requester_email === m3.email);
+                ok('the landlord sees the request', !!mine, rows.length + ' rows back');
+                if (mine) {
+                    ok('...carrying the guardian name', mine.requester_guardian_name === 'Meera Rao', mine.requester_guardian_name);
+                    ok('...the relationship', mine.requester_guardian_relation === 'Guardian', mine.requester_guardian_relation);
+                    ok('...and a number to ring', mine.requester_guardian_phone === '9812345670', mine.requester_guardian_phone);
+                }
+
+                // An adult's request must not grow a guardian block on the
+                // landlord's screen, which is what a non-null here would cause.
+                const a2 = newTenant({ adult: true });
+                const reg2 = await POST('/api/tenant-auth/register', a2);
+                if (reg2.status === 201) {
+                    await fetch(BASE + '/api/tenant-portal/join-requests', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${reg2.json.token}` },
+                        body: JSON.stringify({ property_id: list[0].id })
+                    }).catch(() => {});
+                    const q2 = await fetch(BASE + '/api/owner/join-requests', {
+                        headers: { Authorization: `Bearer ${ot}` }
+                    }).then((r) => r.json()).catch(() => null);
+                    const rows2 = (q2 && (q2.requests || q2.join_requests)) || (Array.isArray(q2) ? q2 : []);
+                    const adult = rows2.find((r) => r.requester_email === a2.email);
+                    ok('an adult applicant carries no guardian',
+                        !adult || adult.requester_guardian_name === null, adult && adult.requester_guardian_name);
+                }
+            }
+        }
+    }
+
     section('A BUILD THAT PREDATES THIS STILL WORKS');
     const old = newTenant();   // no `adult` key at all
     r = await POST('/api/tenant-auth/register', old);

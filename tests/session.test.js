@@ -148,7 +148,12 @@ chk('45 days of silence ends the session', r.status === 401, r);
 console.log('\nTHE APP ADOPTS A RENEWED TOKEN');
 // The real axios interceptor from api.js, rebuilt here against a stub adapter. The
 // source check at the bottom fails if api.js ever stops doing this.
-const axios = require('/tmp/claude-0/-home-user-Tenant-Pro/3e770449-8676-5ed5-beec-0c3226347b75/scratchpad/node_modules/axios');
+// Resolved from the backend's own node_modules, the way the other suites that
+// need a dependency do it. This line used to be an absolute path into one
+// machine's scratch directory, so the suite ran there and nowhere else — which
+// made "reproducible from one command", claimed in the report, untrue of it.
+const path = require('path');
+const axios = require(path.join(__dirname, '..', 'backend', 'node_modules', 'axios'));
 let TOKEN = 'old-token-value-aaaaaaaaaaaaaaaaaaaa';
 let persisted = [];
 const renewedTokenOf = (res) => {

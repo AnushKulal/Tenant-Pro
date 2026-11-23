@@ -6,10 +6,15 @@ const { rateLimit } = require('../middleware/rateLimit');
 
 // Separate scope from the landlord login so one portal cannot exhaust the other's
 // budget for the same IP.
-const loginLimit = rateLimit({ max: 20, scope: 'tenant-login' });
+const loginLimit = rateLimit({ max: 20, scope: 'tenant-login', countOnly: 'failures' });
+// Its own scope for the same reason sign-in has one: a landlord registering
+// must not be able to spend what a tenant needs to register, and vice versa.
+// That separation only became real once the shared limiter in server.js — which
+// pooled both portals into a single 30 — was removed.
+const registerLimit = rateLimit({ max: 10, scope: 'tenant-register' });
 
 // Public: tenant registration and login
-router.post('/register', registerTenant);
+router.post('/register', registerLimit, registerTenant);
 router.post('/login', loginLimit, loginTenant);
 
 // Guests can no longer be CREATED. The two public routes that did it — POST /guest

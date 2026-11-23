@@ -227,8 +227,8 @@ export default function CheckoutScreen() {
                                     <Eyebrow s={10} ls={0.12} c={t.fg3} style={{ marginTop: 18, marginBottom: 10 }}>PAY ONLINE</Eyebrow>
                                     <Card radius={20} pad={16}>
                                         <Row gap={9} style={{ marginBottom: 10 }}>
-                                            <Glyph name="shield-checkmark-outline" size={16} color={t.lime} />
-                                            <Eyebrow s={10} ls={0.1} c={t.lime}>CONFIRMED AUTOMATICALLY</Eyebrow>
+                                            <Glyph name="shield-checkmark-outline" size={16} color={t.accent} />
+                                            <Eyebrow s={10} ls={0.1} c={t.accent}>CONFIRMED AUTOMATICALLY</Eyebrow>
                                         </Row>
                                         <T w={400} s={13} lh={1.5} c={t.fg2}>{c.online.line}</T>
                                     </Card>
@@ -276,7 +276,7 @@ export default function CheckoutScreen() {
                                             stale code to clear. */}
                                         {c.canUpi ? (
                                             <View style={{ alignItems: 'center', marginTop: 15 }}>
-                                                <QrCode value={c.upiUri} size={220} />
+                                                <QrCode value={c.upiUri} size={220} label="Payment QR code" />
                                                 <T w={400} s={12} lh={1.45} c={t.fg2} style={{ marginTop: 13, textAlign: 'center', maxWidth: 250 }}>
                                                     Scan with any UPI app to pay {c.amountLabel}, or use the button below on this phone.
                                                 </T>

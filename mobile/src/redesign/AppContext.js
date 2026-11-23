@@ -23,6 +23,7 @@ import {
 } from './api';
 import { mapOwnerData, mapPortalRequest, mapDocument, mapMyPlace } from './mapping';
 import { hasPin, roundCoord, DEFAULT_CENTER, openDirections, MIN_ZOOM, MAX_ZOOM } from './maps';
+import { systemMode } from './theme';
 import { upiUri } from './qr';
 import { readBuild } from './buildinfo';
 import { resolvePushToken, onNotificationTap, setForegroundBehaviour } from './push';
@@ -386,7 +387,7 @@ const OWNER_TOUR = [
   {
     key: 'welcome', route: 'home', spot: 'none',
     title: 'Welcome to TenantPro',
-    body: 'A quick look around — about thirty seconds. You can leave at any point and pick it up again from Settings.'
+    body: 'About thirty seconds. Leave any time and replay it from Settings.'
   },
   {
     key: 'overview', route: 'home', spot: 'top',
@@ -396,27 +397,27 @@ const OWNER_TOUR = [
   {
     key: 'dock', route: 'home', spot: 'dock', target: 'dock',
     title: 'Everything is down here',
-    body: 'Properties and rooms, the people in them, and the ledger. Four taps, no menus to hunt through.'
+    body: 'Properties, the people in them, and the ledger. Four taps, no menus.'
   },
   {
     key: 'units', route: 'units', spot: 'top',
     title: 'Properties and rooms',
-    body: 'Add a building, then the rooms inside it. A room can be listed for tenants to find, or kept private — that is your choice, per room.'
+    body: 'Add a building, then its rooms. List a room for tenants to find, or keep it private.'
   },
   {
     key: 'people', route: 'people', spot: 'top',
     title: 'The people renting from you',
-    body: 'Who is in which room, what they owe and when they are due. Requests to join land here too.'
+    body: 'Who is in which room, what they owe, and requests to join.'
   },
   {
     key: 'ledger', route: 'ledger', spot: 'top',
     title: 'Every rupee, recorded',
-    body: 'Payments, expenses and what each property actually earned. A tenant can say they have paid; it counts once you confirm it, or once a payment gateway does.'
+    body: 'Payments, expenses and what each property earned. A declared payment counts once you confirm it.'
   },
   {
     key: 'settings', route: 'settings', spot: 'middle',
     title: 'Getting paid',
-    body: 'UPI is free and already works. Online payments add cards and netbanking through YOUR OWN gateway account — the money goes to you, never through this app.'
+    body: 'UPI works now, free. Add your own gateway for cards and netbanking — money still goes straight to you.'
   }
 ];
 
@@ -434,22 +435,22 @@ const TENANT_TOUR = [
   {
     key: 'dock', route: 'portal', spot: 'dock', target: 'dock',
     title: 'Where everything lives',
-    body: 'Home for your dues, Find for a new place, Help to raise a problem, and your own profile and documents.'
+    body: 'Your dues, finding a place, raising a problem, and your documents.'
   },
   {
     key: 'find', route: 'tfind', spot: 'top',
     title: 'Looking for somewhere?',
-    body: 'Search rooms by budget, area, type and distance. Ask to join one and the landlord gets your request — your contact details stay private until they accept.'
+    body: 'Search by budget, area and distance. Your details stay private until a landlord accepts.'
   },
   {
     key: 'help', route: 'thelp', spot: 'top',
     title: 'Something broken?',
-    body: 'Raise it here and your landlord sees it immediately, with a thread you can both reply in. No phone calls that nobody remembers.'
+    body: 'Raise it here. Your landlord sees it at once, and you both reply in one thread.'
   },
   {
     key: 'docs', route: 'tme', spot: 'middle',
     title: 'Your profile and documents',
-    body: 'Your ID lives here. A landlord can ask to see it and you decide — and you can see exactly what you have shared, and with whom.'
+    body: 'Your ID lives here. You decide who sees it, and can check what you have shared.'
   }
 ];
 
@@ -472,7 +473,10 @@ const INITIAL_STATE = {
   // `lq` is the ledger's own search box. It had a search bar drawn on it from the
   // very first prototype, but the bar was a plain label — nothing typed, nothing
   // filtered.
-  theme: null, pref: 'system', q: '', pq: '', lq: '', place: 'sunrise', ticket: 1, tstatus: {},
+  // `rq` is the Receipts screen's search box, kept beside the ledger's `lq` for the
+  // same reason: a tenant looking for one payment among fifty is looking for a UTR
+  // or an amount, and scrolling is not a search.
+  theme: null, pref: 'system', q: '', pq: '', lq: '', rq: '', place: 'sunrise', ticket: 1, tstatus: {},
   roster: {}, gone: [], mover: null, invite: 'sunrise', jq: '', rents: {}, draft: 0,
   // Which guest's code is currently revealed on the member screen. Held as an id
   // rather than a boolean so opening a different member never inherits the last
@@ -764,6 +768,28 @@ const BLANK_REQUEST = { category: 'Plumbing', title: '', body: '', priority: 'Me
 function deriveVm(s, api) {
   const { setState, set, go, flash, fxRef } = api;
 
+  // Opening the rent checkout, in one place because two things do it: the Pay
+  // button on the portal home, and the rent rows in the tenant's alert bell.
+  // The bell rows used to set `overlay: 'tpay'` — an overlay no screen or sheet
+  // renders — so "₹8,000 is due today" and its two siblings did nothing at all
+  // when tapped. `overlay: null` is what makes them work from inside the bell:
+  // the sheet has to close or the checkout opens behind it.
+  //
+  // The reference is minted ONCE here, for the whole attempt. `pay.reference`
+  // exists for this — its own comment says "held so the reference survives the
+  // round trip out to the UPI app and back" — but only openUpiPayment ever wrote
+  // it, so a tenant who scanned the QR instead of tapping the button got a fresh
+  // `TP${refStamp()}` on every render. refStamp() is Math.random(), so the string
+  // under the QR, the string sent with the claim and the string on the receipt
+  // were three different references, and the landlord had nothing to match their
+  // bank credit against — the one job the comment at the fallback gives it.
+  const openCheckout = () => setState({
+    route: 'tcheckout',
+    paid: false,
+    overlay: null,
+    pay: { ...BLANK_PAY, reference: `TP${refStamp()}` }
+  });
+
   // ── Data source (Phase 3) ─────────────────────────────────────────────────
   // Everything below reads its collections from state.data, which is EITHER the
   // seed bundle (demo account / before the first fetch) or the live payload
@@ -815,6 +841,13 @@ function deriveVm(s, api) {
   // the seed/demo walk-through) the shapes below stand in.
   const TD = s.tdata || null;
   const TLIVE = !!TD;
+  // /tenant-portal/me says `linked: true` the moment a landlord accepts somebody,
+  // which is NOT the same as having been put in a room — a landlord can accept a
+  // request without choosing one, and the People tab has an "Unassigned" filter
+  // precisely because that is a normal state. Read separately from `me.unit` so
+  // the portal can tell "nobody has accepted me" apart from "accepted, waiting
+  // for a room": the first should go looking for a property, the second must not.
+  const T_LINKED = !!(TD && TD.me && TD.me.linked);
   // The landlord on the other end of this tenancy — the person the tenant needs to
   // reach about a request. /tenant-portal/me calls this block `landlord`.
   const LANDLORD = (TD && TD.me && TD.me.landlord) || null;
@@ -1371,10 +1404,12 @@ function deriveVm(s, api) {
           tone: 'coral',
           title: `${amount} is ${Math.abs(days)} ${Math.abs(days) === 1 ? 'day' : 'days'} late`,
           sub: myAwaiting ? 'Your claim is still waiting to be confirmed' : 'Pay now to clear it',
-          go: () => setState({ overlay: 'tpay' })
+          // Already claimed? The checkout would refuse them — one claim at a time —
+          // so send them where that claim actually is rather than into a 409.
+          go: () => (myAwaiting ? go('treceipts') : openCheckout())
         });
       } else if (days === 0) {
-        push({ icon: 'card', tone: 'amber', title: `${amount} is due today`, sub: tDueLabel ? `Due ${tDueLabel}` : '', go: () => setState({ overlay: 'tpay' }) });
+        push({ icon: 'card', tone: 'amber', title: `${amount} is due today`, sub: tDueLabel ? `Due ${tDueLabel}` : '', go: () => (myAwaiting ? go('treceipts') : openCheckout()) });
       } else if (days <= REMINDER_LEAD) {
         // The same lead the email reminder uses — one constant, so the bell and the
         // inbox can never tell a tenant two different things.
@@ -1383,7 +1418,7 @@ function deriveVm(s, api) {
           tone: 'accent',
           title: `${amount} due in ${days} ${days === 1 ? 'day' : 'days'}`,
           sub: tDueLabel ? `Due ${tDueLabel}` : '',
-          go: () => setState({ overlay: 'tpay' })
+          go: () => (myAwaiting ? go('treceipts') : openCheckout())
         });
       }
     }
@@ -2138,13 +2173,13 @@ function deriveVm(s, api) {
           title: 'Notifications',
           // Named by what arrives, not by the feature. "Allow notifications" is a
           // request; "we will tell you when rent is due" is a reason.
-          why: 'To tell you when rent is due, when a payment needs confirming, and when a tenant raises a repair. Nothing else is ever sent.'
+          why: 'Rent due, payments to confirm, repairs raised. Nothing else.'
         },
         {
           key: 'location',
           icon: 'location-outline',
           title: 'Location',
-          why: 'Only while you are placing a property on the map, so the pin can start where you are standing. Searching or dragging works without it, and TenantPro never follows you around.'
+          why: 'Only while you place a property on the map, so the pin starts where you are. Never in the background.'
         }
       ].map((r) => {
         const st = P[r.key] || 'unknown';
@@ -2169,7 +2204,7 @@ function deriveVm(s, api) {
           key: 'calls',
           icon: 'call-outline',
           title: 'Calls & messages',
-          why: 'Tapping a number opens your dialer or messages app with it filled in, and you send it. TenantPro never places the call or sends the message itself, and never reads your contacts — so there is no permission to ask for.'
+          why: 'Tapping a number opens your dialer or messages app with it filled in. Nothing is sent for you, and contacts are never read.'
         }],
         granted,
         allSettled: rows.every((r) => r.settled),
@@ -2628,7 +2663,7 @@ function deriveVm(s, api) {
       // server reports SMS as not configured at all. This says what actually
       // happens: the details are recorded and the landlord has to get consent
       // before a tenancy can start.
-      : 'Someone under 18 cannot sign a tenancy themselves. Your guardian\u2019s details go to your landlord, who must have their consent before your tenancy can start.',
+      : 'Under 18, you cannot sign a tenancy yourself. Your guardian\u2019s details go to the landlord, who needs their consent first.',
     submitSignup: () => api.register(),
 
     jfilters: [['ALL', 'all'], ['KORAMANGALA', 'koramangala'], ['HSR LAYOUT', 'hsr layout'], ['SHARING', 'sharing'], ['PRIVATE', 'single']].map(([label, k]) => {
@@ -3337,6 +3372,21 @@ function deriveVm(s, api) {
           property: j.property,
           note: j.note,
           hasNote: !!j.note,
+          // Under eighteen, and who consents for them.
+          //
+          // The signup form tells a minor that their guardian's details go to
+          // their landlord. They were written to the account and read back by
+          // nothing, so the sentence was not true — the same shape of promise
+          // this form was rewritten to stop making. It is true now: the
+          // landlord sees it on the row where they decide.
+          isMinor: !!j.guardian,
+          guardianLine: j.guardian
+            ? `${j.guardian.name}${j.guardian.relation ? ` · ${j.guardian.relation}` : ''}`
+            : '',
+          guardianPhoneLabel: j.guardian && j.guardian.phone ? fmtPhone(j.guardian.phone) : '',
+          callGuardian: () => (j.guardian && j.guardian.phone
+            ? callNumber(j.guardian.phone, j.guardian.name)
+            : flash('No guardian number on file')),
           // Somebody the landlord entered themselves, who has now registered — not a
           // stranger at the door. Shown as its own line because the difference decides
           // the answer: "wants to join" invites a decline, and declining here declines
@@ -3814,8 +3864,9 @@ function deriveVm(s, api) {
       name: invProp.name,
       code: invProp.code,
       policy: invProp.policy,
+      // The sheet draws this with QrCode (qr.js) rather than fetching a picture
+      // of it, so `link` is all the view needs.
       link: inviteLink,
-      qr: `https://api.qrserver.com/v1/create-qr-code/?size=320x320&margin=8&data=${encodeURIComponent(inviteLink)}`,
       options: PROPS.map((p) => {
         const on = p.id === s.invite;
         return {
@@ -3970,7 +4021,7 @@ function deriveVm(s, api) {
           title: 'Guest sign-in ID',
           line: shown
             ? 'Check their face against the ID on file before reading this out. It is the only thing they need to sign in.'
-            : 'This person has no email or password. If they change phones, this code is the only way back into their tenancy — and you are the only one who can give it to them.',
+            : 'No email or password on this tenancy. If they change phones, this code is the only way back in, and only you can give it.',
           cta: shown ? 'Hide' : 'Show guest ID',
           toggle: () => setState({ greveal: shown ? null : who.id }),
           copy: () => copyText(code, 'Guest ID copied'),
@@ -4291,9 +4342,7 @@ function deriveVm(s, api) {
           // "System" resolves to whatever the OS is set to right now; RedesignRoot
           // keeps it in step from then on. It used to hard-code dark, which is why
           // picking System on a light phone still gave you a dark app.
-          const next = k === 'system'
-            ? (Appearance.getColorScheme() === 'light' ? 'light' : 'dark')
-            : k;
+          const next = k === 'system' ? systemMode(Appearance.getColorScheme()) : k;
           if (next === mode) { setState({ pref: k }); return; }
           setState({ fx: '1' });
           clearTimeout(fxRef.current);
@@ -4537,7 +4586,7 @@ function deriveVm(s, api) {
 
     isFind: s.route === 'tfind',
     isCheckout: s.route === 'tcheckout',
-    goCheckout: () => setState({ route: 'tcheckout', paid: false, pay: { ...BLANK_PAY } }),
+    goCheckout: openCheckout,
 
     // ── Paying rent ───────────────────────────────────────────────────────────
     // Three routes, and which exist depends on what the landlord has set up.
@@ -4650,7 +4699,10 @@ function deriveVm(s, api) {
         // payments that failed or lose ones that succeeded.
         asked: !!pay.asked,
         confirmSent: () => api.declareMyPayment({ method: 'UPI', reference }),
-        cancelSent: () => setState({ pay: { ...BLANK_PAY } }),
+        // Backing out of "did that work?" returns them to the same checkout for the
+        // same month, so the reference has to survive it. Resetting to a bare
+        // BLANK_PAY would mint a new one behind a QR they may already have scanned.
+        cancelSent: () => setState({ pay: { ...BLANK_PAY, reference } }),
 
         // The other path, for money that moved outside UPI.
         isOther: !!pay.other,
@@ -4680,7 +4732,12 @@ function deriveVm(s, api) {
         waitingLine: myAwaiting
           ? `₹${inr(myAwaiting.amount_paid)} is already waiting for ${landlordCard.name} to confirm.`
           : '',
-        goReceipts: () => api.goReceipts()
+        // `api` is the provider's action bag and has never had goReceipts on it —
+        // that name only exists on the vm this function returns — so this called
+        // undefined and threw the moment a tenant tapped "See my receipts" on the
+        // screen they land on straight after paying. Navigate the same way the vm
+        // does.
+        goReceipts: () => go('treceipts')
       };
     })(),
 
@@ -4692,7 +4749,12 @@ function deriveVm(s, api) {
     // Every payment on this tenancy and where each one stands. A tenant could not see
     // their own history at all before this — the endpoint returned it and nothing
     // rendered it.
-    isReceipts: s.route === 'treceipts',
+    // 'treceipts' was never a route. RedesignRoot's table has no key for it and
+    // falls back to OverviewScreen, so every "See my receipts" — including the one
+    // on the screen a tenant reaches immediately after paying — dropped them onto
+    // the LANDLORD's dashboard, complete with somebody else's portfolio figures.
+    // MeScreen is where a tenant's receipts actually live, and 'tme' is the route
+    // the dock already highlights for it.
     goReceipts: () => go('treceipts'),
     receipts: (() => {
       const chip = (st) => (
@@ -4773,7 +4835,7 @@ function deriveVm(s, api) {
         gate,
         title: gate ? 'One last thing.' : 'My documents',
         blurb: gate
-          ? 'Add a government ID so a landlord can confirm who you are before giving you a room. Aadhaar, PAN, voter ID, licence or passport — any one is enough.'
+          ? 'A landlord confirms who you are before giving you a room. Aadhaar, PAN, voter ID, licence or passport.'
           : 'Your landlord can see these and mark them verified.',
         summaryLine: sum.total
           ? `${sum.total} ${sum.total === 1 ? 'document' : 'documents'} · ${sum.verified} verified`
@@ -4890,13 +4952,13 @@ function deriveVm(s, api) {
 
     isTMe: s.route === 'tme',
     tenantSide: ['portal', 'tfind', 'thelp', 'tstay', 'tme', 'tcheckout', 'tsettings', 'tdocs', 'tagreement'].includes(s.route),
-    showTenantDock: ['portal', 'tfind', 'thelp', 'tstay', 'tme', 'tsettings'].includes(s.route)
+    showTenantDock: ['portal', 'tfind', 'thelp', 'tstay', 'tme', 'tsettings', 'treceipts'].includes(s.route)
       || (s.route === 'tdocs' && !s.docGate) || s.route === 'tagreement',
     goTMe: () => go('tme'),
     goStay: () => go('tstay'),
     tmeOn: s.route === 'tme' ? '1' : '0',
-    tmeBg: ['tme', 'tstay', 'tsettings'].includes(s.route) ? 'lime' : 'ink2',
-    tmeFg: ['tme', 'tstay', 'tsettings'].includes(s.route) ? 'on' : 'fg2',
+    tmeBg: ['tme', 'tstay', 'tsettings', 'treceipts'].includes(s.route) ? 'lime' : 'ink2',
+    tmeFg: ['tme', 'tstay', 'tsettings', 'treceipts'].includes(s.route) ? 'on' : 'fg2',
     // My place lives inside the profile now, so the ME card also owns it.
     tmeH: ['tme', 'tstay', 'tsettings'].includes(s.route) ? '68px' : '52px',
     backFromStay: () => go('tme'),
@@ -4934,6 +4996,131 @@ function deriveVm(s, api) {
     // empty card under a heading promising a timeline.
     myTimelineEmpty: MY_PAYMENTS.length === 0,
     myTimelineEmptyLine: 'Nothing here yet. Payments appear once your landlord confirms them.',
+
+    // ── Receipts ──────────────────────────────────────────────────────────────
+    // The full payment history, which MeScreen has only ever shown four rows of.
+    // Every state is here on purpose, Rejected included: the server returns those
+    // deliberately ("a claim that quietly disappears is the version of this that
+    // generates a phone call") and a screen that hid them would undo that.
+    isReceipts: s.route === 'treceipts',
+    receipts: (() => {
+      const q = String(s.rq || '').trim().toLowerCase();
+      const sum = (TD && TD.paySummary) || null;
+
+      // A DATE column can arrive as a Date or as a bare "yyyy-mm-dd", and handing
+      // the bare form to `new Date` reads it as UTC midnight — which rolls into the
+      // previous month for anyone east of Greenwich, i.e. every user of this app.
+      // Grouping by month has to be right at the boundary, so parse by hand.
+      const ym = (v) => {
+        if (!v) return null;
+        if (v instanceof Date) return { y: v.getFullYear(), m: v.getMonth() };
+        const s2 = String(v);
+        const m = s2.match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (m) return { y: Number(m[1]), m: Number(m[2]) - 1 };
+        const d = new Date(s2);
+        return isNaN(d.getTime()) ? null : { y: d.getFullYear(), m: d.getMonth() };
+      };
+
+      const rows = MY_PAYMENTS.map((p) => {
+        const state = p.status === 'Confirmed' ? 'confirmed'
+          : p.status === 'Declared' ? 'awaiting' : 'rejected';
+        return {
+          id: p.id,
+          amount: Number(p.amount_paid || 0),
+          amt: money(p.amount_paid),
+          method: String(p.payment_method || 'UPI').toUpperCase(),
+          day: fmtDay(p.payment_date),
+          ref: p.reference_id || '',
+          state,
+          label: state === 'confirmed' ? 'CONFIRMED' : state === 'awaiting' ? 'AWAITING' : 'REJECTED',
+          fg: state === 'confirmed' ? 'pos' : state === 'awaiting' ? 'amber' : 'coral',
+          soft: state === 'confirmed' ? 'lsoft' : state === 'awaiting' ? 'asoft' : 'csoft',
+          icon: state === 'confirmed' ? 'checkmark-circle' : state === 'awaiting' ? 'time-outline' : 'close-circle',
+          // Why it was refused. The column exists for this and nothing rendered it.
+          note: state === 'rejected'
+            ? (p.decision_note || 'No reason was given — ask your landlord')
+            : (state === 'awaiting' ? 'Waiting for your landlord to confirm it' : ''),
+          decided: p.decided_at ? fmtDay(p.decided_at) : '',
+          at: ym(p.payment_date || p.created_at)
+        };
+      });
+
+      // "8000" should find ₹8,000 even though the rendered amount carries a comma,
+      // so the digits are matched separately against the raw number. Guarded on
+      // there being any: every string contains the empty string, so an unguarded
+      // digit match returns every row for any word.
+      const digits = q.replace(/[^\d]/g, '');
+      const hit = (r) => [r.amt, r.method, r.day, r.ref, r.label].join(' ').toLowerCase().includes(q)
+        || (!!digits && String(Math.round(r.amount)).includes(digits));
+      const shown = q ? rows.filter(hit) : rows;
+
+      // Rows already arrive newest-first from the server, so walking them in order
+      // keeps the groups in order without a second sort.
+      const groups = [];
+      for (const r of shown) {
+        const key = r.at ? `${r.at.y}-${r.at.m}` : 'unknown';
+        let g = groups.length && groups[groups.length - 1].key === key ? groups[groups.length - 1] : null;
+        if (!g) {
+          g = {
+            key,
+            title: r.at ? `${MON_SHORT[r.at.m].toUpperCase()} ${r.at.y}` : 'UNDATED',
+            rows: [],
+            confirmed: 0
+          };
+          groups.push(g);
+        }
+        g.rows.push(r);
+        if (r.state === 'confirmed') g.confirmed += r.amount;
+      }
+      // Only confirmed money is totalled. A claim still waiting is not money the
+      // landlord has agreed they received, and adding it to a month's total is how
+      // a tenant believes a month is settled when it is not.
+      groups.forEach((g) => { g.total = g.confirmed ? `+${money(g.confirmed)}` : ''; });
+
+      const total = sum ? Number(sum.paid_total || 0) : rows.filter((r) => r.state === 'confirmed').reduce((n, r) => n + r.amount, 0);
+      const paidCount = sum ? Number(sum.paid_count || 0) : rows.filter((r) => r.state === 'confirmed').length;
+      const awaitingCount = sum ? Number(sum.awaiting_count || 0) : rows.filter((r) => r.state === 'awaiting').length;
+      const awaitingTotal = sum ? Number(sum.awaiting_total || 0) : rows.filter((r) => r.state === 'awaiting').reduce((n, r) => n + r.amount, 0);
+      const rejectedCount = sum ? Number(sum.rejected_count || 0) : rows.filter((r) => r.state === 'rejected').length;
+
+      return {
+        groups,
+        q: s.rq || '',
+        hasQ: !!q,
+        setQ: (e) => set('rq', evStr(e)),
+        clearQ: () => set('rq', ''),
+        // Confirmed money only, and the label says so — "₹48,000" over "PAID" with
+        // a waiting claim in the list would be read as the claim having counted.
+        totalLabel: 'CONFIRMED BY YOUR LANDLORD',
+        total: money(total),
+        countLine: `${paidCount} ${paidCount === 1 ? 'payment' : 'payments'} confirmed`,
+        awaiting: awaitingCount
+          ? `${awaitingCount} waiting · ${money(awaitingTotal)}`
+          : '',
+        rejected: rejectedCount
+          ? `${rejectedCount} not accepted`
+          : '',
+        // Two different nothings. "You have not paid yet" and "that search found
+        // nothing" are not the same sentence, and the ledger already makes this
+        // distinction on the landlord's side.
+        empty: shown.length === 0,
+        emptyLine: q
+          ? 'No payment matches that. Try a UTR, an amount, or a month.'
+          : 'Nothing here yet. Payments appear once you record one and your landlord confirms it.',
+        emptyIcon: q ? 'search-outline' : 'receipt-outline',
+        // Pull-to-refresh reloads the TENANT bundle. `vm.refresh` is the landlord's
+        // loader and would 403 on a tenant token — the landlord screens are the only
+        // ones that have ever had a RefreshControl, so there was no tenant-side one
+        // to reuse. Worth having here of all places: the row a tenant is waiting on
+        // changes when their landlord confirms it, not when they do anything.
+        refresh: () => api.loadTenantData({ refresh: true }),
+        refreshing: !!s.refreshing,
+        sub: rows.length
+          ? `${rows.length} ${rows.length === 1 ? 'payment' : 'payments'} on record`
+          : 'Your rent history lives here',
+        back: () => { if (!api.goBackOneStep()) go('tme'); }
+      };
+    })(),
     myStats: [
       { k: 'WITH YOU', v: me.since, fg: 'fg' },
       { k: 'RENT SHARE', v: me.rentFull, fg: 'fg' },
@@ -4973,11 +5160,22 @@ function deriveVm(s, api) {
           state: ready ? 'READY' : 'LOCKED',
           fg: ready ? 'pos' : 'fg3',
           locked: !ready,
+          // Two reasons there is no room, and they need different sentences. Someone
+          // their landlord has already accepted must not be told to go and join a
+          // property: they have one, and acting on that advice sends a second
+          // request for it.
           lockLine: !placed
-            ? 'Your agreement is written from the room you are given. Join a property and your landlord will place you in one.'
+            ? (T_LINKED
+              ? 'Your agreement is written from the room you are given. Your landlord has accepted you and still has to put you in one.'
+              : 'Your agreement is written from the room you are given. Join a property and your landlord will place you in one.')
             : 'Your agreement unlocks once your first rent payment is recorded.',
           go: () => {
-            if (!placed) { flash('Join a property first — the agreement is written from your room'); return; }
+            if (!placed) {
+              flash(T_LINKED
+                ? 'Waiting for a room — the agreement is written from it'
+                : 'Join a property first — the agreement is written from your room');
+              return;
+            }
             if (!paid) { flash('Your agreement unlocks after your first rent payment'); return; }
             go('tagreement');
           }
@@ -5279,7 +5477,9 @@ function deriveVm(s, api) {
       // when tapped instead of silently doing nothing.
     ].map((r) => ({ ...r, go: r.go || (() => flash(`${r.label} — not built yet`)) })),
     myInvite: {
-      qr: myProp ? `https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=6&data=${encodeURIComponent(`https://tenantpro.app/join/${myProp.code}`)}` : '',
+      // Drawn offline by QrCode, so this is the link itself, not a URL that
+      // renders a picture of it.
+      link: myProp ? `https://tenantpro.app/join/${myProp.code}` : '',
       beds: myProp ? (() => {
         const free = UNITS.filter((u) => u.prop === myProp.id).reduce((a, u) => a + (u.cap - occupantsOf(u.no).length), 0);
         return free ? `${free} ${free === 1 ? 'BED' : 'BEDS'} FREE RIGHT NOW` : 'NO BEDS FREE RIGHT NOW';
@@ -5331,7 +5531,25 @@ function deriveVm(s, api) {
     // "No property yet — go find one" is the wrong screen for somebody whose landlord
     // is already being asked about them. Split into three states rather than two: not
     // linked and waiting, not linked and nobody asked, or linked.
-    portalUnlinked: !me.unit && !MY_PENDING_JOIN,
+    //
+    // A fourth: accepted, but not yet put in a room. `me.unit` is empty and there is
+    // no pending request any more — the request was decided — so this used to fall
+    // through to "No property yet. Scan your landlord's invite QR…", telling somebody
+    // their landlord had already taken in to go and find a property. Following that
+    // advice sends a second request for the property they are already in.
+    portalUnlinked: !me.unit && !MY_PENDING_JOIN && !T_LINKED,
+    portalRoomless: !me.unit && !MY_PENDING_JOIN && T_LINKED,
+    portalRoom: {
+      title: 'Waiting for a room',
+      line: LANDLORD && LANDLORD.name
+        ? `${LANDLORD.name} has accepted you. They need to put you in a room before your rent, deposit and agreement appear here.`
+        : 'Your landlord has accepted you. They need to put you in a room before your rent, deposit and agreement appear here.',
+      note: 'Nothing is owed until a room is set.',
+      hasPhone: !!(LANDLORD && LANDLORD.phone),
+      call: () => ((LANDLORD && LANDLORD.phone)
+        ? callNumber(LANDLORD.phone, LANDLORD.name || 'your landlord')
+        : flash('No number on file for your landlord'))
+    },
     portalWaiting: !me.unit && !!MY_PENDING_JOIN,
     portalWait: MY_PENDING_JOIN ? {
       // A request the tenant never made needs saying plainly, or it reads as the app
@@ -5460,6 +5678,11 @@ function deriveVm(s, api) {
         size: r.capacity === 1 ? 'Private room' : `${r.capacity} sharing`,
         spots: r.spots_left === 1 ? '1 spot left' : `${r.spots_left} spots left`,
         tight: r.spots_left === 1,
+        // A seeded demonstration room rather than a real landlord's. The server
+        // decides this from who owns the listing; the card only renders it. It is
+        // carried on every listing rather than only on the sample ones so that a
+        // screen can never silently omit the badge by reading a missing field.
+        sample: r.is_sample === true,
         near: r.distance_km === null ? '' : (r.distance_km < 1 ? `${Math.round(r.distance_km * 1000)} m away` : `${r.distance_km} km away`),
         why: Array.isArray(r.why) ? r.why : [],
         amenities: (r.amenities || []).slice(0, 4).map((a) => a.label),
@@ -5580,6 +5803,14 @@ function deriveVm(s, api) {
             amenities: (o.amenities || []).map((a) => a.label),
             available: o.available_from ? `Free from ${dmy(o.available_from)}` : 'Available now',
             landlord: o.owner_name || '',
+            sample: o.is_sample === true,
+            // Said once, plainly, on the detail screen where somebody is deciding
+            // whether to act. The seeded landlords cannot sign in, so a request to
+            // join one is never accepted by anybody — telling the tenant that
+            // before they send it is the whole point of the badge.
+            sampleNote: o.is_sample === true
+                ? 'Sample listing, shown so the search has something in it. Nobody will answer a request to join this room.'
+                : '',
             near: o.distance_km == null ? '' : `${o.distance_km} km away`,
             also: (d.also || []).map((a) => ({
               id: a.listing_id,
@@ -6170,7 +6401,16 @@ export function AppProvider({ children }) {
       if (pulseRes && pulseRes.stamp) pulseRef.current.stamp = pulseRes.stamp;
       const now = new Date();
       setState({
-        tdata: { me: meRes, requests: reqRes.requests || [], payments: payRes.payments || [], joins: joinRes.requests || [] },
+        // `summary` comes back from /tenant-portal/payments beside the rows and was
+        // being dropped. The Receipts screen's header reads it rather than re-adding
+        // the amounts in the client, so the totals a tenant sees are the server's.
+        tdata: {
+          me: meRes,
+          requests: reqRes.requests || [],
+          payments: payRes.payments || [],
+          paySummary: payRes.summary || null,
+          joins: joinRes.requests || []
+        },
         // Only when the call actually succeeded. Overwriting a loaded list with an
         // empty one on a failed refresh would blank the documents screen and, worse,
         // silently drop a prompt the tenant is meant to be seeing.
@@ -6236,7 +6476,11 @@ export function AppProvider({ children }) {
       // Reload so the receipts screen and the portal's due state both reflect it, and
       // so the pulse stamp moves with them.
       await loadTenantData({ silent: true });
-      setState({ pay: { ...BLANK_PAY }, paid: true });
+      // Keep the reference that was actually sent. The receipt screen prints it as
+      // "REF · …" and it is what the tenant will quote if the landlord asks which
+      // payment they mean, so it has to be the one on the row — not a fresh random
+      // from re-rendering against an emptied `pay`.
+      setState({ pay: { ...BLANK_PAY, reference }, paid: true });
       flash((res && res.message) || 'Sent to your landlord');
     } catch (e) {
       // 409 means they already have one waiting. That is not a failure to hide — it is
@@ -8413,6 +8657,25 @@ export function AppProvider({ children }) {
           route: asTenant ? 'tdocs' : 'home'
         });
         flash('Account created');
+        // Load this account's own data before anything renders from it. Without
+        // this the portal has no `tdata`, and every tenant screen falls through
+        // to the walkthrough seed — a brand-new tenant was shown Rahul Sharma's
+        // name, his ₹8,000 rent, his deposit, his room at Sunrise PG, his
+        // maintenance tickets and the demo landlord's phone number, with "RENT
+        // DUE" over figures they owe nobody. The correct "No property yet"
+        // screen already exists; it only needs `linked: false` from /me to pick
+        // it, which is the same call every other way into the portal makes
+        // (adoptSession does it below, and the boot path does it too). Restarting
+        // the app cleared it, which is why it survived: it is invisible to
+        // anyone who does not watch the very first session.
+        if (asTenant) loadTenantData();
+        else loadOwnerData();
+        // The fourth way into a portal, and the one that was missed when the
+        // other three were wired up. A commit claimed this path was covered; it
+        // was not, and a fact-check against the code found the claim before a
+        // user did. Someone who registers is the single most likely person to
+        // want the tour, so of the four this was the worst one to omit.
+        maybeStartTour(asTenant ? 'tenant' : 'owner');
         // A code carried in from "Join as a guest" is spent here, the moment there is
         // an account to attribute the request to. Sent BEFORE the ID step rather than
         // after: the landlord sees it straight away with a "NO ID ON FILE" badge,
@@ -8435,7 +8698,7 @@ export function AppProvider({ children }) {
       // under a field the user has since fixed is worse than no rail at all.
       setState({ authBusy: false, authFieldErrors: {}, authError: errText(e, 'Could not create the account.') });
     }
-  }, [setState, flash, requestToJoin]);
+  }, [setState, flash, requestToJoin, loadOwnerData, loadTenantData, maybeStartTour]);
 
 
   // ── Push notifications ──────────────────────────────────────────────────────

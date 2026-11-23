@@ -19,6 +19,7 @@ import { useEnter, useWipe } from './motion';
 import { Monogram, T, Glyph, Press } from './ui';
 
 import Header from './Header';
+import { systemMode, DEFAULTS } from './theme';
 import { LayoutProvider } from './layout';
 import DeckDock from './DeckDock';
 import Sheets from './Sheets';
@@ -54,6 +55,7 @@ import CheckoutScreen from './screens/CheckoutScreen';
 import HelpScreen from './screens/HelpScreen';
 import MyPlaceScreen from './screens/MyPlaceScreen';
 import MeScreen from './screens/MeScreen';
+import ReceiptsScreen from './screens/ReceiptsScreen';
 import DocumentsScreen from './screens/DocumentsScreen';
 import AgreementScreen from './screens/AgreementScreen';
 import TenantSettingsScreen from './screens/TenantSettingsScreen';
@@ -85,6 +87,7 @@ const SCREENS = {
     thelp: HelpScreen,
     tstay: MyPlaceScreen,
     tme: MeScreen,
+    treceipts: ReceiptsScreen,
     tdocs: DocumentsScreen,
     tagreement: AgreementScreen,
     tsettings: TenantSettingsScreen
@@ -118,8 +121,8 @@ function Shell() {
     const ctl = useThemeCtl();
     const osScheme = useColorScheme();
     const wantMode = state.pref === 'system'
-        ? (osScheme === 'light' ? 'light' : 'dark')
-        : (state.theme || 'dark');
+        ? systemMode(osScheme)
+        : (state.theme || DEFAULTS.mode);
     React.useEffect(() => {
         if (state.theme !== wantMode) setState({ theme: wantMode });
     }, [wantMode, state.theme, setState]);

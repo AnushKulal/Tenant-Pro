@@ -193,6 +193,41 @@ export default function PortalHomeScreen() {
                 </View>
             )}
 
+            {/* Accepted, but the landlord has not picked a room yet. Deliberately
+                NOT the "find a property" screen: they have one. The only useful
+                action is reaching the landlord, so that is the only one offered. */}
+            {vm.portalRoomless && (
+                <View
+                    style={{
+                        alignItems: 'center',
+                        paddingVertical: 40,
+                        paddingHorizontal: 20,
+                        borderRadius: 22,
+                        backgroundColor: t.ink2,
+                        borderWidth: 1,
+                        borderStyle: 'dashed',
+                        borderColor: t.line2,
+                        marginBottom: 8
+                    }}
+                >
+                    <IconChip name="time-outline" box={44} radius={14} size={20} bg={t.asoft} color={t.amber} />
+                    <T w={600} s={15} lh={1.3} c={t.fg} style={{ marginTop: 14 }}>{vm.portalRoom.title}</T>
+                    <T w={400} s={13} lh={1.5} c={t.fg2} style={{ marginTop: 7, maxWidth: 260, textAlign: 'center' }}>
+                        {vm.portalRoom.line}
+                    </T>
+                    <T w={400} s={12} lh={1.45} c={t.fg3} style={{ marginTop: 7 }}>{vm.portalRoom.note}</T>
+                    {vm.portalRoom.hasPhone ? (
+                        <Press
+                            onPress={vm.portalRoom.call}
+                            style={{ marginTop: 16, flexDirection: 'row', alignItems: 'center', columnGap: 7, paddingVertical: 12, paddingHorizontal: 18, borderRadius: 999, backgroundColor: t.ink3, borderWidth: 1, borderColor: t.line }}
+                        >
+                            <Glyph name="call-outline" size={14} color={t.fg} />
+                            <T w={600} s={12} c={t.fg}>Call your landlord</T>
+                        </Press>
+                    ) : null}
+                </View>
+            )}
+
             {/* Linked: rent card + stats + requests */}
             {vm.portalLinked && (
                 <>

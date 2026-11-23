@@ -1,6 +1,6 @@
 # Tests
 
-Nine suites. None of them needs a CI service, a test framework, or a dependency that
+Twenty-two suites. None of them needs a CI service, a test framework, or a dependency that
 is not already here — they are plain Node scripts that exit non-zero on failure.
 
 | File | What it drives | Needs |
